@@ -187,3 +187,31 @@ def parse_eslog_invoic(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
     if not df.empty:
         df.sort_values(["sifra_dobavitelja", "naziv"], inplace=True, ignore_index=True)
     return df
+
+# ——— Wrapper functions for CLI ———
+
+from pathlib import Path
+from decimal import Decimal
+from wsm.parsing.money import parse_invoice_total
+
+def parse_invoice(xml_path: Path):
+    """
+    Parsanje XML e-računa v DataFrame in pridobitev vsote (header total).
+    """
+    # Parse line items
+    df = parse_eslog_invoic(xml_path, {})
+    # Parse header total
+    try:
+        header_total = parse_invoice_total(xml_path)
+    except Exception:
+        header_total = Decimal("0")
+    return df, header_total
+
+def validate_invoice(df, header_total: Decimal) -> bool:
+    """
+    Preveri, ali se vsota stolpca 'vrednost' ujema s header_total (tolerance 0.05).
+    """
+    if df is None or header_total is None:
+        return False
+    line_sum = df['vrednost'].sum() if 'vrednost' in df.columns else Decimal("0")
+    return abs(line_sum - header_total) < Decimal("0.05")
