@@ -169,7 +169,7 @@ def parse_eslog_invoic(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
     doc_discount = Decimal("0")
     for seg in root.findall(".//e:G_SG50", NS) + root.findall(".//e:G_SG20", NS):
         for moa in seg.findall(".//e:S_MOA", NS):
-            if _text(moa.find("./e:C_C516/e:D_5025", NS)) in {"204", "260"}:
+            if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "260":
                 doc_discount += _decimal(moa.find("./e:C_C516/e:D_5004", NS))
     if doc_discount != 0:
         items.append({
@@ -221,9 +221,6 @@ def validate_invoice(df, header_total: Decimal, currency: str | None = None) -> 
 
     if 'vrednost' not in df.columns:
         line_sum = Decimal("0")
-    elif 'sifra_dobavitelja' in df.columns:
-        mask = df.get("sifra_dobavitelja") != "_DOC_"
-        line_sum = df.loc[mask, "vrednost"].sum()
     else:
         line_sum = df['vrednost'].sum()
 

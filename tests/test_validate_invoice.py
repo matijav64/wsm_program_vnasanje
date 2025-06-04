@@ -1,5 +1,6 @@
 import pytest
 from pathlib import Path
+from decimal import Decimal
 from wsm.parsing.eslog import parse_invoice, validate_invoice
 
 @pytest.mark.parametrize('xml_file', [
@@ -29,4 +30,10 @@ def test_validate_currency_mismatch(tmp_path):
     temp.write_text(data, encoding='utf-8')
     df, header_total, currency = parse_invoice(temp)
     assert not validate_invoice(df, header_total, currency)
+
+
+def test_parse_total_after_discount():
+    """Invoice with document discount should return net total."""
+    _, header_total, _ = parse_invoice(Path('tests') / '2025-581-racun.xml')
+    assert header_total == Decimal('904.29')
 
