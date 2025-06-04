@@ -1,4 +1,4 @@
-﻿
-from .eslog import parse_eslog_invoic
-from .pdf   import parse_pdf
-from .money import parse_invoice_total
+﻿# File: wsm/parsing/__init__.py
+
+# Uvozi glavno funkcijo iz eslog.py (popravljeno ime)
+from .eslog import parse_eslog_invoice
