@@ -1,6 +1,6 @@
 # WSM – Program za vnašanje računov
 
-Ta repozitorij vsebuje kodo aplikacije **WSM** (White-label Supplier Manager),  
+Ta repozitorij vsebuje kodo aplikacije **WSM** (White-label Supplier Manager),
 ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
 
 ## Struktura projekta
@@ -22,3 +22,18 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    ```bash
    git clone https://github.com/matijav64/wsm_program_vnasanje.git
    cd wsm_program_vnasanje
+   ```
+2. (Opcijsko) ustvari virtualno okolje in namesti odvisnosti:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+   Med glavnimi odvisnostmi so `pandas`, `pdfplumber` in `openpyxl`.
+
+3. Za osnovno validacijo računov lahko zaženete:
+   ```bash
+   python -m wsm.cli validate <mapa_z_racuni>
+   ```
+   kjer `<mapa_z_racuni>` vsebuje XML ali PDF datoteke z e‑računi.
+
