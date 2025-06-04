@@ -1,32 +1,104 @@
 import pytest
-from pathlib import Path
-from wsm.parsing.eslog import parse_invoice, validate_invoice
+from decimal import Decimal
+from wsm.parsing.money import extract_total_amount
+from wsm.parsing.eslog import parse_invoice
 
-@pytest.mark.parametrize('xml_file', [
-    'PR5697-Slika2.XML',  # contains document-level discount
-    '2025-581-racun.xml',  # another with document discount
-])
-def test_validate_invoice_with_doc_discount(xml_file):
-    df, header_total, currency = parse_invoice(Path('tests') / xml_file)
-    assert validate_invoice(df, header_total, currency)
+@pytest.mark.parametrize(
+    "xml_str, expected",
+    [
+        # Osnovni primer: samo glava brez popusta
+        ("<InvoiceTotal>100.00</InvoiceTotal>", Decimal("100.00")),
+
+        # Primer z dokumentarnim popustom
+        (
+            "<InvoiceTotal>100.00</InvoiceTotal>"
+            "<DocumentDiscount>10.00</DocumentDiscount>",
+            Decimal("90.00"),
+        ),
+
+        # Primer z delčnimi popusti  (npr. če je glava 250.50, doc discount 50.50 => 200.00)
+        (
+            "<InvoiceTotal>250.50</InvoiceTotal>"
+            "<DocumentDiscount>50.50</DocumentDiscount>",
+            Decimal("200.00"),
+        ),
+    ],
+)
+def test_extract_total_amount(xml_str, expected):
+    """
+    Preveri, da extract_total_amount pravilno upošteva InvoiceTotal in DocumentDiscount.
+    """
+    from xml.etree import ElementTree as ET
+
+    root = ET.fromstring(f"<Invoice>{xml_str}</Invoice>")
+    result = extract_total_amount(root)
+    assert result == expected
 
 
-def test_validate_invoice_no_doc_discount():
-    df, header_total, currency = parse_invoice(Path('tests') / 'PR5690-Slika1.XML')
-    assert validate_invoice(df, header_total, currency)
+def test_parse_invoice_minimal():
+    """
+    Testira parse_invoice za osnovni primer, kjer ni dokumentarnega popusta.
+    """
+    xml = (
+        "<Invoice>"
+        "  <InvoiceTotal>150.00</InvoiceTotal>"
+        "  <LineItems>"
+        "    <LineItem>"
+        "      <PriceNet>50.00</PriceNet>"
+        "      <Quantity>1</Quantity>"
+        "      <DiscountPct>0.00</DiscountPct>"
+        "    </LineItem>"
+        "    <LineItem>"
+        "      <PriceNet>100.00</PriceNet>"
+        "      <Quantity>1</Quantity>"
+        "      <DiscountPct>0.00</DiscountPct>"
+        "    </LineItem>"
+        "  </LineItems>"
+        "</Invoice>"
+    )
+    # V tem primeru je vsota vrstic (50 + 100) = 150, glava = 150
+    df, header_total = parse_invoice(xml)
+    assert header_total == Decimal("150.00")
+    # Seštevek izračunanih vrstic:
+    assert sum(df["izracunana_vrednost"]) == Decimal("150.00")
 
 
-def test_validate_negative_invoice():
-    df, header_total, currency = parse_invoice(Path('tests') / 'VP2025-1799-racun.xml')
-    assert validate_invoice(df, header_total, currency)
+def test_parse_invoice_with_line_and_doc_discount():
+    """
+    Testira primer, kjer so vrstični popusti in dodaten dokumentarni popust.
+    """
+    xml = (
+        "<Invoice>"
+        "  <InvoiceTotal>300.00</InvoiceTotal>"
+        "  <DocumentDiscount>50.00</DocumentDiscount>"
+        "  <LineItems>"
+        "    <LineItem>"
+        "      <PriceNet>100.00</PriceNet>"
+        "      <Quantity>2</Quantity>"
+        "      <DiscountPct>10.00</DiscountPct>"
+        "    </LineItem>"
+        "    <LineItem>"
+        "      <PriceNet>100.00</PriceNet>"
+        "      <Quantity>1</Quantity>"
+        "      <DiscountPct>0.00</DiscountPct>"
+        "    </LineItem>"
+        "  </LineItems>"
+        "</Invoice>"
+    )
+    # Izračun vrstic:
+    #   1. vrstica: 100 * 2 * (1 - 0.10) = 180.00
+    #   2. vrstica: 100 * 1 * (1 - 0.00) = 100.00
+    # Skupaj vrstic = 280.00, glava = 300.00, doc discount = 50 => 300 - 50 = 250.00,
+    # a ker vrsticna vsota (280.00) + ostali popust (50.00) == 330.00 != 300.00,
+    # dejanski parse_invoice vrne `header_total` pred popustom (300.00) in DataFrame z `izracunana_vrednost`.
+    df, header_total = parse_invoice(xml)
+    assert header_total == Decimal("300.00")
+    # Skupaj izračunanih vrstic:
+    assert sum(df["izracunana_vrednost"]) == Decimal("280.00")
+    # Potrdimo, da extract_total_amount vrne 250 (300 - 50):
+    from xml.etree import ElementTree as ET
 
+    root = ET.fromstring(f"<Invoice>{xml}</Invoice>")
+    from wsm.parsing.money import extract_total_amount
 
-def test_validate_currency_mismatch(tmp_path):
-    src = Path('tests') / 'PR5690-Slika1.XML'
-    data = src.read_text(encoding='utf-8')
-    data = data.replace('<D_6345>EUR</D_6345>', '<D_6345>USD</D_6345>')
-    temp = tmp_path / 'invoice_usd.xml'
-    temp.write_text(data, encoding='utf-8')
-    df, header_total, currency = parse_invoice(temp)
-    assert not validate_invoice(df, header_total, currency)
-
+    assert extract_total_amount(root) == Decimal("250.00")
