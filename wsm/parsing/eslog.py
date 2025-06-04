@@ -213,5 +213,13 @@ def validate_invoice(df, header_total: Decimal) -> bool:
     """
     if df is None or header_total is None:
         return False
-    line_sum = df['vrednost'].sum() if 'vrednost' in df.columns else Decimal("0")
+
+    if 'vrednost' not in df.columns:
+        line_sum = Decimal("0")
+    elif 'sifra_dobavitelja' in df.columns:
+        mask = df.get("sifra_dobavitelja") != "_DOC_"
+        line_sum = df.loc[mask, "vrednost"].sum()
+    else:
+        line_sum = df['vrednost'].sum()
+
     return abs(line_sum - header_total) < Decimal("0.05")
