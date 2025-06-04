@@ -32,5 +32,6 @@ if header_neto:
 
 
 def main():
-    from wsm.ui.review_links import preveri_in_povezi
-    preveri_in_povezi()
+    """Delegate execution to the full CLI implementation."""
+    from wsm_program_vnasanje.wsm.cli import main as real_main
+    real_main()
