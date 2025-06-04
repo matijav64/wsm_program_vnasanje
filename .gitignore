@@ -1,0 +1,19 @@
+# Ignoriraj virtualno okolje
+venv/
+
+# Ignoriraj Pythonske začasne datoteke
+__pycache__/
+*.pyc
+
+# Ignoriraj Excel in druge binarne podatke (če jih ne želiš verzionirati)
+*.xlsx
+*.xls
+
+# Ignoriraj začasne datoteke
+tmp.txt
+
+# Ignoriraj datoteke IDE (če želiš)
+.vscode/
+.idea/
+
+# (Dodaj še kaj po potrebi)
