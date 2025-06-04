@@ -5,10 +5,10 @@ ESLOG 2.0 (INVOIC) parser
 =========================
 • get_supplier_info()  → (šifra, ime) dobavitelja  
   – najprej NAD+SU (Supplier)
-  – če SU ni, NAD+SE (Seller) (namespace-agnostično)
-• parse_eslog_invoice() → DataFrame postavk + popustov
-• parse_invoice()         → DataFrame postavk + header_total (za CLI)
-• validate_invoice()      → preveri vsoto vrstičnih vrednosti proti header_total
+  – če SU ni, uporabimo NAD+SE (Seller)
+• parse_eslog_invoice() → DataFrame postavk + popusti
+• parse_invoice()        → DataFrame postavk + header_total (za CLI)
+• validate_invoice()     → preveri vsoto vrstičnih vrednosti proti header_total
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from wsm.parsing.money import extract_total_amount, validate_invoice as validate
 
 decimal.getcontext().prec = 12  # cent-natančno računanje
 
-# ───────────────────────── helperji ─────────────────────────
+# ───────────────────────── help funkcije ─────────────────────────
 def _text(el: ET.Element | None) -> str:
     return el.text.strip() if el is not None and el.text else ""
 
@@ -49,11 +49,9 @@ def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
-        seller_code = seller_name = ""  # fallback SE
+        seller_code = seller_name = ""
 
-        # 1) po idealnem namespace-u
         nodes = root.findall(".//e:S_NAD", NS)
-        # 2) če ni nič našel, poišči vse <S_NAD> glede na local-name
         if not nodes:
             nodes = [el for el in root.iter() if el.tag.split("}")[-1] == "S_NAD"]
 
@@ -140,7 +138,7 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
         for sg39 in sg26.findall(".//e:G_SG39", NS):
             if _text(sg39.find("./e:S_ALC/e:D_5463", NS)) != "A":
                 continue
-            pct = _decimal(sg39.find(".//e:S_PCD/e:C_C501/e:D_5482", NS))
+            pct = _decimal(sg39.find("./e:S_PCD/e:C_C501/e:D_5482", NS))
             if pct != 0:
                 explicit_pct = pct.quantize(Decimal("0.01"))
             for moa in sg39.findall(".//e:G_SG42/e:S_MOA", NS):
@@ -209,7 +207,6 @@ def parse_invoice(source: str | Path):
       • header_total: Decimal(glava minus dokumentarni popust)
     Ta funkcija je poklicana iz CLI (wsm/cli.py).
     """
-    # Najprej dobimo XML-root
     if isinstance(source, (str, Path)) and Path(source).exists():
         tree = ET.parse(source)
         root = tree.getroot()
@@ -219,7 +216,6 @@ def parse_invoice(source: str | Path):
     # header_total z upoštevanim dokumentarnim popustom
     header_total = extract_total_amount(root)
 
-    # Naredimo DataFrame iz <LineItems/...>
     rows = []
     for li in root.findall("LineItems/LineItem"):
         price_str = li.findtext("PriceNet") or "0.00"
@@ -251,6 +247,5 @@ def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:
     Preveri, ali se vsota vseh izračunanih vrstičnih vrednosti ujema z header_total
     (upoštevano že obdelano vrednost z extract_total_amount). Toleranca 0.05 €.
     """
-    # Pretvorimo nazaj v Decimal in izračunamo vsoto
     df["izracunana_vrednost"] = df["izracunana_vrednost"].apply(lambda x: Decimal(str(x)))
     return validate_line_values(df, header_total)
