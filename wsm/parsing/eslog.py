@@ -205,7 +205,7 @@ def parse_invoice(source: str | Path):
     """
     Parsira e-račun (ESLOG INVOIC) iz XML ali PDF (če je implementirano).
     Vrne (DataFrame, header_total):
-      • DataFrame: ['cena_netto','kolicina','rabata_pct','izračunana_vrednost']
+      • DataFrame: ['cena_netto','kolicina','rabata_pct','izracunana_vrednost']
       • header_total: Decimal(glava minus dokumentarni popust)
     Ta funkcija je poklicana iz CLI (wsm/cli.py).
     """
@@ -240,7 +240,7 @@ def parse_invoice(source: str | Path):
             "cena_netto": float(cena),
             "kolicina": float(kolic),
             "rabata_pct": float(rabata_pct),
-            "izračunana_vrednost": float(izracun_val),
+            "izracunana_vrednost": float(izracun_val),
         })
 
     df = pd.DataFrame(rows)
@@ -252,5 +252,5 @@ def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:
     (upoštevano že obdelano vrednost z extract_total_amount). Toleranca 0.05 €.
     """
     # Pretvorimo nazaj v Decimal in izračunamo vsoto
-    df["izračunana_vrednost"] = df["izračunana_vrednost"].apply(lambda x: Decimal(str(x)))
+    df["izracunana_vrednost"] = df["izracunana_vrednost"].apply(lambda x: Decimal(str(x)))
     return validate_line_values(df, header_total)
