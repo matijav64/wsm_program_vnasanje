@@ -1,45 +1,42 @@
-from decimal import Decimal
 import xml.etree.ElementTree as ET
+from decimal import Decimal
+import pandas as pd
+from pathlib import Path
 
+# Uvozimo funkcije iz money.py
+from wsm.parsing.money import extract_total_amount, validate_invoice as validate_line_values
 
-def extract_total_amount(xml_root: ET.Element) -> Decimal:
+def parse_invoice(source):
     """
-    Prebere osnovno glavo (InvoiceTotal) in, če obstaja,
-    odšteje vrednost iz <DocumentDiscount>. Če <InvoiceTotal> ali
-    <DocumentDiscount> manjkata, privzame 0.00.
+    Parsira e-račun iz XML-poteka ali iz niza XML-besedila.
+    Vrne (DataFrame, header_total), kjer DataFrame vsebuje
+    stolpce: ['cena_netto', 'kolicina', 'rabata_pct', 'izracunana_vrednost'].
+    header_total je Decimal z bruto glavo minus dokumentarni popust.
     """
-    # Preberemo tekst iz <InvoiceTotal>; če ga ni, vzamemo "0.00"
-    base_str = xml_root.findtext("InvoiceTotal") or "0.00"
-    # Preverimo, ali obstaja <DocumentDiscount>
-    discount_str = xml_root.findtext("DocumentDiscount") or "0.00"
+    # Če source ni pot, poskusimo interpretirati kot XML niz
+    if isinstance(source, (str, Path)) and Path(source).exists():
+        tree = ET.parse(source)
+        root = tree.getroot()
+    else:
+        # Predpostavimo, da je source niz XML-besedila
+        root = ET.fromstring(source)
 
-    # Pretvorimo čez Decimal (upoštevamo tudi vejice, če so bile v XML)
-    base = Decimal(base_str.replace(",", "."))
-    discount = Decimal(discount_str.replace(",", "."))
+    # Header: preberemo glavo z upoštevanim dokumentarnim popustom
+    header_total = extract_total_amount(root)
 
-    return (base - discount).quantize(Decimal("0.01"))
-
-
-def extract_line_items(xml_root: ET.Element):
-    """
-    Iz <LineItems> izriše DataFrame z naslednjimi stolpci:
-      - cena_netto (Decimal)
-      - kolicina (Decimal)
-      - rabata_pct (Decimal)
-    in izračuna 'izracunana_vrednost' = cena_netto * kolicina * (1 - rabata_pct/100).
-    """
-    import pandas as pd
-
+    # Parsamo vse vrstične elemente
     rows = []
-    for li in xml_root.findall("LineItems/LineItem"):
+    for li in root.findall("LineItems/LineItem"):
         price_str = li.findtext("PriceNet") or "0.00"
         qty_str = li.findtext("Quantity") or "0.00"
         discount_pct_str = li.findtext("DiscountPct") or "0.00"
 
+        # Pretvorimo v Decimal (upoštevamo možne vejice namesto pik)
         cena = Decimal(price_str.replace(",", "."))
         kolic = Decimal(qty_str.replace(",", "."))
         rabata_pct = Decimal(discount_pct_str.replace(",", "."))
 
+        # Izračunana vrstična vrednost
         izracun_val = (cena * kolic * (Decimal("1") - rabata_pct / Decimal("100"))).quantize(
             Decimal("0.01")
         )
@@ -54,21 +51,14 @@ def extract_line_items(xml_root: ET.Element):
         )
 
     df = pd.DataFrame(rows)
-    return df
+    return df, header_total
 
 
-def validate_invoice(df, header_total: Decimal) -> bool:
+def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:
     """
-    Preveri, ali se vsota vseh izračunanih vrstičnih vrednosti ujema s header_total
-    (upoštevena že obdelana vrednost iz extract_total_amount). Toleranca 0.05 €.
+    Preveri, ali se vsota vseh izračunanih vrstičnih vrednosti ujema z header_total
+    znotraj tolerance 0.05 €.
     """
-    from decimal import Decimal
-
-    # Privzeti tolerance vrednosti
-    tolerance = Decimal("0.05")
-
-    # Pretvorimo nazaj v Decimal in izračunamo vsoto
+    # Pretvorimo stolpec iz float nazaj v Decimal
     df["izracunana_vrednost"] = df["izracunana_vrednost"].apply(lambda x: Decimal(str(x)))
-    line_sum = df["izracunana_vrednost"].sum().quantize(Decimal("0.01"))
-
-    return abs(line_sum - header_total) < tolerance
+    return validate_line_values(df, header_total)
