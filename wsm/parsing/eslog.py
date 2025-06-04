@@ -192,11 +192,11 @@ def parse_eslog_invoic(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
 
 from pathlib import Path
 from decimal import Decimal
-from wsm.parsing.money import parse_invoice_total
+from wsm.parsing.money import parse_invoice_total, parse_invoice_currency
 
 def parse_invoice(xml_path: Path):
     """
-    Parsanje XML e-računa v DataFrame in pridobitev vsote (header total).
+    Parsanje XML e-računa v DataFrame in pridobitev vsote (header total) ter valute.
     """
     # Parse line items
     df = parse_eslog_invoic(xml_path, {})
@@ -205,9 +205,14 @@ def parse_invoice(xml_path: Path):
         header_total = parse_invoice_total(xml_path)
     except Exception:
         header_total = Decimal("0")
-    return df, header_total
+    # Parse invoice currency
+    try:
+        currency = parse_invoice_currency(xml_path)
+    except Exception:
+        currency = "EUR"
+    return df, header_total, currency
 
-def validate_invoice(df, header_total: Decimal) -> bool:
+def validate_invoice(df, header_total: Decimal, currency: str | None = None) -> bool:
     """
     Preveri, ali se vsota stolpca 'vrednost' ujema s header_total (tolerance 0.05).
     """
@@ -222,4 +227,8 @@ def validate_invoice(df, header_total: Decimal) -> bool:
     else:
         line_sum = df['vrednost'].sum()
 
-    return abs(line_sum - header_total) < Decimal("0.05")
+    if abs(line_sum - header_total) >= Decimal("0.05"):
+        return False
+    if currency is not None and currency.upper() != "EUR":
+        return False
+    return True

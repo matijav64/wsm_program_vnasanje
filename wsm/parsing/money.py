@@ -49,3 +49,15 @@ def parse_invoice_total(xml_path: str | Path) -> Decimal:
             return _dec(_text(moa.find("./e:C_C516/e:D_5004", _eNS)))
 
     return Decimal("0")
+
+
+def parse_invoice_currency(xml_path: str | Path) -> str:
+    """Return the invoice currency (D_6345) if present, otherwise 'EUR'."""
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        cur = root.find(".//e:D_6345", _eNS)
+        code = _text(cur)
+        return code if code else "EUR"
+    except Exception:
+        return "EUR"

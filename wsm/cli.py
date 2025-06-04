@@ -70,22 +70,28 @@ def validate_folder(input_folder):
             continue
 
         try:
-            df, header_total = parse_invoice(file)
+            df, header_total, currency = parse_invoice(file)
         except Exception as e:
             click.secho(f"[NAPAKA PARSANJA] {file.name}: {e}", fg="red")
             had_errors = True
             continue
 
-        is_valid = validate_invoice(df, header_total)
+        is_valid = validate_invoice(df, header_total, currency)
         if not is_valid:
-            click.secho(f"[NESKLADJE] {file.name}: vrsticna_vsota != glava({header_total})", fg="yellow")
+            click.secho(
+                f"[NESKLADJE] {file.name}: vrsticna_vsota != glava({header_total})",
+                fg="yellow",
+            )
             # (opcijsko) shranite DataFrame za debug:
             debug_folder = folder / "debug"
             debug_folder.mkdir(exist_ok=True)
             df.to_csv(debug_folder / f"{file.stem}_DEBUG.csv", index=False)
             had_errors = True
         else:
-            click.secho(f"[OK]      {file.name}: vse se ujema ({header_total} €)", fg="green")
+            click.secho(
+                f"[OK]      {file.name}: vse se ujema ({header_total} {currency})",
+                fg="green",
+            )
 
     if had_errors:
         sys.exit(1)
