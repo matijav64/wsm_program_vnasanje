@@ -9,8 +9,9 @@ def extract_total_amount(xml_root: ET.Element) -> Decimal:
     odšteje vrednost iz <DocumentDiscount>. Če <InvoiceTotal> ali
     <DocumentDiscount> manjkata, privzame 0.00.
     """
-    base_str = xml_root.findtext("InvoiceTotal") or "0.00"
-    discount_str = xml_root.findtext("DocumentDiscount") or "0.00"
+    # Poiščemo elementa kjer koli v drevesu, ne le neposredno pod korenom
+    base_str = xml_root.findtext(".//InvoiceTotal") or "0.00"
+    discount_str = xml_root.findtext(".//DocumentDiscount") or "0.00"
 
     # Pretvorimo iz niza z vejico v Decimal
     base = Decimal(base_str.replace(",", "."))

@@ -213,8 +213,12 @@ def parse_invoice(source: str | Path):
     else:
         root = ET.fromstring(source)
 
-    # header_total z upoštevanim dokumentarnim popustom
-    header_total = extract_total_amount(root)
+    # InvoiceTotal brez upoštevanja dokumentarnega popusta
+    total_str = root.findtext("InvoiceTotal") or "0.00"
+    header_total = Decimal(total_str.replace(",", ".")).quantize(Decimal("0.01"))
+    # Za interno preverjanje lahko še vedno izračunamo končni znesek
+    # (InvoiceTotal - DocumentDiscount) – ne vračamo ga, a ostane na volji
+    _ = extract_total_amount(root)
 
     rows = []
     for li in root.findall("LineItems/LineItem"):
