@@ -5,27 +5,29 @@ import pandas as pd
 
 def extract_total_amount(xml_root: ET.Element) -> Decimal:
     """
-    Prebere osnovno glavo (InvoiceTotal) in, če obstaja,
-    odšteje vrednost iz <DocumentDiscount>. Če <InvoiceTotal> ali
-    <DocumentDiscount> manjkata, privzame 0.00.
+    Prebere osnovno glavo (<InvoiceTotal>) in, če obstaja, odšteje vrednost iz
+    <DocumentDiscount>. Če katerikoli manjka, privzame 0.00.
     """
-    # Poiščemo elementa kjer koli v drevesu, ne le neposredno pod korenom
-    base_str = xml_root.findtext(".//InvoiceTotal") or "0.00"
-    discount_str = xml_root.findtext(".//DocumentDiscount") or "0.00"
+    # Preberemo <InvoiceTotal> in <DocumentDiscount> (če obstaja)
+    base_str = xml_root.findtext("InvoiceTotal") or "0.00"
+    discount_str = xml_root.findtext("DocumentDiscount") or "0.00"
 
-    # Pretvorimo iz niza z vejico v Decimal
+    # Pretvorimo v Decimal (zamenjava vejice z decimalno piko)
     base = Decimal(base_str.replace(",", "."))
     discount = Decimal(discount_str.replace(",", "."))
 
+    # Vrne (base - discount), zaokroženo na 2 decimalki
     return (base - discount).quantize(Decimal("0.01"))
 
 def extract_line_items(xml_root: ET.Element) -> pd.DataFrame:
     """
-    Iz <LineItems> izriše DataFrame z naslednjimi stolpci:
+    Iz <LineItems> vsak <LineItem> prebere 'PriceNet', 'Quantity', 'DiscountPct'
+    in izračuna izracunana_vrednost = price_net * quantity * (1 - discount_pct/100).
+    Vrne DataFrame s stolpci:
       - cena_netto (float)
-      - kolicina (float)
+      - kolicina   (float)
       - rabata_pct (float)
-      - izračunana_vrednost (float)
+      - izracunana_vrednost (float)
     """
     rows = []
     for li in xml_root.findall("LineItems/LineItem"):
@@ -33,15 +35,15 @@ def extract_line_items(xml_root: ET.Element) -> pd.DataFrame:
         qty_str = li.findtext("Quantity") or "0.00"
         discount_pct_str = li.findtext("DiscountPct") or "0.00"
 
-        # Pretvorimo v Decimal (upoštevamo morebitne vejice)
+        # Decimal pretvorba (zamenjava vejice z ".")
         cena = Decimal(price_str.replace(",", "."))
         kolic = Decimal(qty_str.replace(",", "."))
         rabata_pct = Decimal(discount_pct_str.replace(",", "."))
 
-        # Izračun vrednosti vrstice
-        izracun_val = (cena * kolic * (Decimal("1") - rabata_pct / Decimal("100"))).quantize(
-            Decimal("0.01")
-        )
+        # Izracun vrednosti vrstice
+        izracun_val = (
+            cena * kolic * (Decimal("1") - rabata_pct / Decimal("100"))
+        ).quantize(Decimal("0.01"))
 
         rows.append({
             "cena_netto": float(cena),
@@ -54,11 +56,10 @@ def extract_line_items(xml_root: ET.Element) -> pd.DataFrame:
 
 def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:
     """
-    Preveri, ali se vsota vseh izračunanih vrstičnih vrednosti ujema z header_total
-    (že upoštevana glava – popust). Toleranca je 0.05 €.
+    Preveri, ali se vsota vseh izracunana_vrednost (Decimal) ujema z header_total
+    znotraj tolerance 0.05 €.
     """
-    # Pretvorimo stolpec nazaj v Decimal za natančnost
+    # Pretvorimo stolpec iz float v Decimal
     df["izracunana_vrednost"] = df["izracunana_vrednost"].apply(lambda x: Decimal(str(x)))
     line_sum = df["izracunana_vrednost"].sum().quantize(Decimal("0.01"))
-
     return abs(line_sum - header_total) < Decimal("0.05")

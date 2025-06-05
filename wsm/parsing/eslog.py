@@ -3,12 +3,10 @@
 """
 ESLOG 2.0 (INVOIC) parser
 =========================
-• get_supplier_info()  → (šifra, ime) dobavitelja  
-  – najprej NAD+SU (Supplier)
-  – če SU ni, uporabimo NAD+SE (Seller)
-• parse_eslog_invoice() → DataFrame postavk + popusti
-• parse_invoice()        → DataFrame postavk + header_total (za CLI)
-• validate_invoice()     → preveri vsoto vrstičnih vrednosti proti header_total
+• get_supplier_info()      → (sifra, ime)_dobavitelja
+• parse_eslog_invoice()    → DataFrame vseh postavk (vključno z _DOC_ vrstico)
+• parse_invoice()          → (DataFrame vrstic, header_total) za CLI
+• validate_invoice()       → preveri vsoto vrstic proti header_total
 """
 
 from __future__ import annotations
@@ -17,15 +15,14 @@ from decimal import Decimal
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from typing import List, Dict, Optional, Tuple
-
 import pandas as pd
 
-# Funkcija iz money.py, ki vrne glavo (InvoiceTotal – DocumentDiscount)
+# Uvoz iz money.py: funkcija za glavo računa in validator vrstic
 from wsm.parsing.money import extract_total_amount, validate_invoice as validate_line_values
 
-decimal.getcontext().prec = 12  # cent-natančno računanje
+decimal.getcontext().prec = 12  # cent-natančno
 
-# ───────────────────────── help funkcije ─────────────────────────
+# Helper funkciji
 def _text(el: ET.Element | None) -> str:
     return el.text.strip() if el is not None and el.text else ""
 
@@ -36,21 +33,19 @@ def _decimal(el: ET.Element | None) -> Decimal:
     except Exception:
         return Decimal("0")
 
+# Namespace za ESLOG (če je prisoten)
 NS = {"e": "urn:eslog:2.00"}
 
-# ───────────────────── dobavitelj: koda + ime ───────────────────────
+# ────────────────────── Dobavitelj: koda + ime ──────────────────────
 def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
     """
-    Vrne (šifra, ime) dobavitelja:
-    • najprej NAD+SU (Supplier)
-    • če SU ni, uporabi NAD+SE (Seller)
-    Iskanje po local-name, če namespace ni točen.
+    Vrne (sifra, ime) dobavitelja iz elementov <S_NAD> tipa 'SU' ali 'SE'.
+    Če ni nobenega, vrne prazen niz.
     """
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
         seller_code = seller_name = ""
-
         nodes = root.findall(".//e:S_NAD", NS)
         if not nodes:
             nodes = [el for el in root.iter() if el.tag.split("}")[-1] == "S_NAD"]
@@ -79,20 +74,19 @@ def get_supplier_name(xml_path: str | Path) -> Optional[str]:
     _, name = get_supplier_info(xml_path)
     return name or None
 
-# ───────────────────────── glavni parser za ESLOG (INVOIC) ────────────────────────────
+# ─────────────────── GLAVNI PARSER ZA ESLOG (INVOIC) ───────────────────
 def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
     """
-    Parsira ESLOG INVOIC XML in vrne DataFrame z vsemi postavkami, vključno
-    z morebitnim dokumentarnim popustom (_DOC_ vrstica).
+    Parsira ESLOG INVOIC XML in vrne DataFrame vseh postavk, vključno
+    z morebitnim dokumentarnim popustom (_DOC_ vrstico).
     """
     supplier_code, _ = get_supplier_info(xml_path)
     override_H87 = sup_map.get(supplier_code, {}).get("override_H87_to_kg", False)
-
     tree = ET.parse(xml_path)
     root = tree.getroot()
     items: List[Dict] = []
 
-    # ---------------------- LINE ITEMS ----------------------
+    # ───── LINE ITEMS ─────
     for sg26 in root.findall(".//e:G_SG26", NS):
         qty = _decimal(sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
         if qty == 0:
@@ -101,7 +95,7 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
         if override_H87 and unit == "H87":
             unit = "kg"
 
-        # opcijska šifra artikla
+        # Šifra artikla (če obstaja)
         art_code = ""
         for pia in sg26.findall(".//e:S_PIA", NS):
             if _text(pia.find("./e:C_C212/e:D_7143", NS)) == "SA":
@@ -113,7 +107,7 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
 
         desc = _text(sg26.find(".//e:S_IMD/e:C_C273/e:D_7008", NS))
 
-        # cene AAA/AAB
+        # Cene AAA/AAB
         price_net = price_gross = Decimal("0")
         for pri in sg26.findall(".//e:S_PRI", NS):
             qual = _text(pri.find("./e:C_C509/e:D_5125", NS))
@@ -125,14 +119,14 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
         if price_gross == 0:
             price_gross = price_net
 
-        # neto znesek vrstice (MOA 203)
+        # Neto znesek vrstice (MOA 203)
         net_amount = Decimal("0")
         for moa in sg26.findall(".//e:S_MOA", NS):
             if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "203":
                 net_amount = _decimal(moa.find("./e:C_C516/e:D_5004", NS))
                 break
 
-        # rabat na ravni vrstice
+        # Rabat na vrsti
         rebate = Decimal("0")
         explicit_pct: Decimal | None = None
         for sg39 in sg26.findall(".//e:G_SG39", NS):
@@ -145,7 +139,7 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
                 if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "204":
                     rebate += _decimal(moa.find("./e:C_C516/e:D_5004", NS))
 
-        # izračun cen pred in po rabatu, odstotek rabata
+        # Izračun cen pred/po rabatu
         if qty:
             cena_pred = ((net_amount + rebate) / qty).quantize(Decimal("0.0001"))
             cena_post = (net_amount / qty).quantize(Decimal("0.0001"))
@@ -162,18 +156,18 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
 
         items.append({
             "sifra_dobavitelja": supplier_code,
-            "naziv":            desc,
-            "kolicina":         qty,
-            "enota":            unit,
-            "cena_bruto":       cena_pred,
-            "cena_netto":       cena_post,
-            "rabata":           rebate,
-            "rabata_pct":       rabata_pct,
-            "vrednost":         net_amount,
-            "sifra_artikla":    art_code,
+            "naziv": desc,
+            "kolicina": qty,
+            "enota": unit,
+            "cena_bruto": cena_pred,
+            "cena_netto": cena_post,
+            "rabata": rebate,
+            "rabata_pct": rabata_pct,
+            "vrednost": net_amount,
+            "sifra_artikla": art_code,
         })
 
-    # ------------------- DOCUMENT REBATE (če obstaja) -------------------
+    # ── DOCUMENT DISCOUNT, če obstaja ──
     doc_discount = Decimal("0")
     for seg in root.findall(".//e:G_SG50", NS) + root.findall(".//e:G_SG20", NS):
         for moa in seg.findall(".//e:S_MOA", NS):
@@ -183,14 +177,14 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
     if doc_discount != 0:
         items.append({
             "sifra_dobavitelja": "_DOC_",
-            "naziv":            "Popust na ravni računa",
-            "kolicina":         Decimal("1"),
-            "enota":            "",
-            "cena_bruto":       doc_discount,
-            "cena_netto":       Decimal("0"),
-            "rabata":           doc_discount,
-            "rabata_pct":       Decimal("100.00"),
-            "vrednost":         -doc_discount,
+            "naziv": "Popust na ravni računa",
+            "kolicina": Decimal("1"),
+            "enota": "",
+            "cena_bruto": doc_discount,
+            "cena_netto": Decimal("0"),
+            "rabata": doc_discount,
+            "rabata_pct": Decimal("100.00"),
+            "vrednost": -doc_discount,
         })
 
     df = pd.DataFrame(items)
@@ -198,14 +192,14 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
         df.sort_values(["sifra_dobavitelja", "naziv"], inplace=True, ignore_index=True)
     return df
 
-# ───────────────────────── PRILAGOJENA funkcija za CLI ────────────────────────────
+# ───────────────────────── CLI‐PRILAGOJENA funkcija ─────────────────────────
 def parse_invoice(source: str | Path):
     """
     Parsira e-račun (ESLOG INVOIC) iz XML ali PDF (če je implementirano).
-    Vrne (DataFrame, header_total):
+    Vrne (DataFrame vrstic, header_total):
       • DataFrame: ['cena_netto','kolicina','rabata_pct','izracunana_vrednost']
       • header_total: Decimal(glava minus dokumentarni popust)
-    Ta funkcija je poklicana iz CLI (wsm/cli.py).
+    Uporablja se v CLI (wsm/cli.py).
     """
     if isinstance(source, (str, Path)) and Path(source).exists():
         tree = ET.parse(source)
@@ -213,12 +207,8 @@ def parse_invoice(source: str | Path):
     else:
         root = ET.fromstring(source)
 
-    # InvoiceTotal brez upoštevanja dokumentarnega popusta
-    total_str = root.findtext("InvoiceTotal") or "0.00"
-    header_total = Decimal(total_str.replace(",", ".")).quantize(Decimal("0.01"))
-    # Za interno preverjanje lahko še vedno izračunamo končni znesek
-    # (InvoiceTotal - DocumentDiscount) – ne vračamo ga, a ostane na volji
-    _ = extract_total_amount(root)
+    # Header s popustom
+    header_total = extract_total_amount(root)
 
     rows = []
     for li in root.findall("LineItems/LineItem"):
@@ -251,5 +241,6 @@ def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:
     Preveri, ali se vsota vseh izračunanih vrstičnih vrednosti ujema z header_total
     (upoštevano že obdelano vrednost z extract_total_amount). Toleranca 0.05 €.
     """
+    # PRETVORI nazaj v Decimal
     df["izracunana_vrednost"] = df["izracunana_vrednost"].apply(lambda x: Decimal(str(x)))
     return validate_line_values(df, header_total)
