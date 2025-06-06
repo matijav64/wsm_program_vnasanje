@@ -88,17 +88,18 @@ def test_parse_invoice_with_line_and_doc_discount():
     # Izračun vrstic:
     #   1. vrstica: 100 * 2 * (1 - 0.10) = 180.00
     #   2. vrstica: 100 * 1 * (1 - 0.00) = 100.00
-    # Skupaj vrstic = 280.00, glava = 300.00, doc discount = 50 => 300 - 50 = 250.00,
-    # a ker vrsticna vsota (280.00) + ostali popust (50.00) == 330.00 != 300.00,
-    # dejanski parse_invoice vrne `header_total` pred popustom (300.00) in DataFrame z `izracunana_vrednost`.
+    # Skupaj vrstic = 280.00, glava = 300.00, doc discount = 50 => 300 - 50 = 250.00.
+    # Ker vsota vrstic (280.00) + doc discount (50.00) = 330.00, kar se ne ujema z
+    # glavo (300.00), parse_invoice vrne `header_total` po odštetem popustu (250.00)
+    # in DataFrame z `izracunana_vrednost`.
     df, header_total = parse_invoice(xml)
-    assert header_total == Decimal("300.00")
+    assert header_total == Decimal("250.00")
     # Skupaj izračunanih vrstic:
     assert sum(df["izracunana_vrednost"]) == Decimal("280.00")
     # Potrdimo, da extract_total_amount vrne 250 (300 - 50):
     from xml.etree import ElementTree as ET
 
-    root = ET.fromstring(f"<Invoice>{xml}</Invoice>")
+    root = ET.fromstring(xml)
     from wsm.parsing.money import extract_total_amount
 
     assert extract_total_amount(root) == Decimal("250.00")
