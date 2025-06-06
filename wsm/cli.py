@@ -4,6 +4,7 @@ from pathlib import Path
 from decimal import Decimal
 
 from wsm.parsing.eslog import parse_invoice, validate_invoice
+from wsm.analyze import analyze_invoice
 
 @click.group()
 def main():
@@ -55,6 +56,17 @@ def _validate_file(file_path: Path):
         click.echo(f"[OK]      {filename}: vse se ujema ({header_total:.2f} €)")
     else:
         click.echo(f"[NESKLADJE] {filename}: vrsticna_vsota != glava({header_total:.2f} €)")
+
+
+@main.command()
+@click.argument("invoice", type=click.Path(exists=True))
+@click.option("--suppliers", type=click.Path(exists=True), default=None, help="Pot do suppliers.xlsx")
+def analyze(invoice, suppliers):
+    """Prikaži združene postavke in preveri seštevek."""
+    df, total, ok = analyze_invoice(invoice, suppliers)
+    click.echo(df.to_string(index=False))
+    status = "OK" if ok else "NESKLADJE"
+    click.echo(f"{status}: vsota vrstic {total:.2f} €")
 
 @main.command()
 @click.argument("supplier_file", type=click.Path(exists=True))
