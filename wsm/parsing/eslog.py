@@ -198,11 +198,14 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
         })
 
     # ───────── DOCUMENT DISCOUNT (če obstaja) ─────────
-    doc_discount = Decimal("0")
+    discounts = {"204": Decimal("0"), "260": Decimal("0")}
     for seg in root.findall(".//e:G_SG50", NS) + root.findall(".//e:G_SG20", NS):
         for moa in seg.findall(".//e:S_MOA", NS):
-            if _text(moa.find("./e:C_C516/e:D_5025", NS)) in {"204", "260"}:
-                doc_discount += _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+            code = _text(moa.find("./e:C_C516/e:D_5025", NS))
+            if code in discounts:
+                discounts[code] += _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+
+    doc_discount = discounts["204"] if discounts["204"] != 0 else discounts["260"]
 
     if doc_discount != 0:
         items.append({
