@@ -1,0 +1,46 @@
+from __future__ import annotations
+from pathlib import Path
+from decimal import Decimal
+import pandas as pd
+
+from wsm.parsing.eslog import parse_eslog_invoice
+from wsm.ui.review_links import _norm_unit, _load_supplier_map
+from wsm.parsing.eslog import extract_header_net
+
+
+def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[pd.DataFrame, Decimal, bool]:
+    """Parse, normalize and group an eSLOG invoice."""
+    sup_map = _load_supplier_map(Path(suppliers_file)) if suppliers_file else {}
+    df = parse_eslog_invoice(xml_path, sup_map)
+    supplier_code = df['sifra_dobavitelja'].iloc[0] if not df.empty else ''
+    override = sup_map.get(supplier_code, {}).get('override_H87_to_kg', False)
+
+    # normalize units
+    df[['kolicina', 'enota']] = [
+        _norm_unit(row['kolicina'], row['enota'], row['naziv'], override)
+        for _, row in df.iterrows()
+    ]
+
+    # group by code and discount, keep doc discount separate
+    doc_mask = df['sifra_dobavitelja'] == '_DOC_'
+    df_main = df[~doc_mask].copy()
+    df_doc = df[doc_mask].copy()
+
+    grouped = (df_main
+        .groupby(['sifra_artikla', 'rabata_pct'], dropna=False, as_index=False)
+        .agg({
+            'sifra_dobavitelja': 'first',
+            'naziv': 'first',
+            'kolicina': 'sum',
+            'enota': 'first',
+            'cena_netto': 'first',
+            'vrednost': 'sum',
+        })
+    )
+
+    result = pd.concat([grouped, df_doc], ignore_index=True)
+
+    header_total = extract_header_net(Path(xml_path))
+    line_sum = Decimal(str(result['vrednost'].sum())).quantize(Decimal('0.01'))
+    ok = abs(line_sum - header_total) < Decimal('0.05')
+    return result, header_total, ok

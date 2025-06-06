@@ -78,6 +78,19 @@ def get_supplier_name(xml_path: str | Path) -> Optional[str]:
     _, name = get_supplier_info(xml_path)
     return name or None
 
+# ─────────────────────── vsota iz glave ───────────────────────
+def extract_header_net(xml_path: Path | str) -> Decimal:
+    """Vrne znesek iz MOA 389 (neto brez DDV)."""
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        for moa in root.findall('.//e:G_SG50/e:S_MOA', NS):
+            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == '389':
+                return _decimal(moa.find('./e:C_C516/e:D_5004', NS))
+    except Exception:
+        pass
+    return Decimal('0')
+
 # ──────────────────── glavni parser za ESLOG INVOIC ────────────────────
 def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
     """
@@ -224,6 +237,18 @@ def parse_invoice(source: str | Path):
         root = tree.getroot()
     else:
         root = ET.fromstring(source)
+
+    # Ali je pravi eSLOG (urn:eslog:2.00)?
+    if root.tag.endswith('Invoice') and root.find('.//e:M_INVOIC', NS) is not None:
+        df_items = parse_eslog_invoice(source, {})
+        header_total = extract_header_net(Path(source) if isinstance(source, (str, Path)) else source)
+        df = pd.DataFrame({
+            'cena_netto': df_items['cena_netto'].astype(float),
+            'kolicina': df_items['kolicina'].astype(float),
+            'rabata_pct': df_items['rabata_pct'].astype(float),
+            'izracunana_vrednost': df_items['vrednost'].astype(float),
+        })
+        return df, header_total
 
     # izvzamemo glavo (InvoiceTotal – DocumentDiscount)
     header_total = extract_total_amount(root)
