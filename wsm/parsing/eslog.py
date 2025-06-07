@@ -13,6 +13,7 @@ from __future__ import annotations
 import decimal
 from decimal import Decimal
 from pathlib import Path
+import re
 import xml.etree.ElementTree as ET
 from typing import List, Dict, Optional, Tuple
 
@@ -125,15 +126,24 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
         if override_H87 and unit == "H87":
             unit = "kg"
 
-        # poiščemo šifro artikla (SA ali lokalno)
+        # poiščemo šifro artikla
         art_code = ""
-        for pia in sg26.findall(".//e:S_PIA", NS):
-            if _text(pia.find("./e:C_C212/e:D_7143", NS)) == "SA":
-                art_code = _text(pia.find("./e:C_C212/e:D_7140", NS))
-                break
-        if not art_code:
-            fb = _text(sg26.find(".//e:S_LIN/e:C_C212/e:D_7140", NS))
-            art_code = fb if fb.isdigit() else ""
+        lin_code = _text(sg26.find(".//e:S_LIN/e:C_C212/e:D_7140", NS))
+        lin_digits = re.sub(r"\D+", "", lin_code)
+        if len(lin_digits) >= 12:
+            art_code = lin_digits
+        else:
+            for pia in sg26.findall(".//e:S_PIA", NS):
+                qual = _text(pia.find("./e:C_C212/e:D_7143", NS))
+                code = _text(pia.find("./e:C_C212/e:D_7140", NS))
+                digits = re.sub(r"\D+", "", code)
+                if qual == "SA" and digits:
+                    art_code = digits
+                    break
+                if not art_code and digits:
+                    art_code = digits
+            if not art_code:
+                art_code = lin_digits
 
         desc = _text(sg26.find(".//e:S_IMD/e:C_C273/e:D_7008", NS))
 
