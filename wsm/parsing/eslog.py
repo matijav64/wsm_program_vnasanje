@@ -22,7 +22,8 @@ import pandas as pd
 # Uvoz pomožnih funkcij iz money.py:
 from wsm.parsing.money import extract_total_amount, validate_invoice as validate_line_values
 
-decimal.getcontext().prec = 12  # natančnost do centa
+# Use higher precision to avoid premature rounding when summing values.
+decimal.getcontext().prec = 28  # Python's default precision
 
 # ────────────────────────── pomožne funkcije ──────────────────────────
 def _text(el: ET.Element | None) -> str:
