@@ -9,7 +9,12 @@ from wsm.parsing.eslog import extract_header_net
 
 
 def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[pd.DataFrame, Decimal, bool]:
-    """Parse, normalize and group an eSLOG invoice."""
+    """Parse, normalize and group an eSLOG invoice.
+
+    Lines with the same product code (``sifra_artikla``) and equal discount
+    percentage (``rabata_pct``) are merged together. The product name is kept
+    from the first occurrence.
+    """
     sup_map = _load_supplier_map(Path(suppliers_file)) if suppliers_file else {}
     df = parse_eslog_invoice(xml_path, sup_map)
     supplier_code = df['sifra_dobavitelja'].iloc[0] if not df.empty else ''
@@ -21,15 +26,16 @@ def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[p
         for _, row in df.iterrows()
     ]
 
-    # group by product code, name and discount
+    # group by product code and discount
     doc_mask = df['sifra_dobavitelja'] == '_DOC_'
     df_main = df[~doc_mask].copy()
     df_doc = df[doc_mask].copy()
 
     grouped = (
         df_main
-        .groupby(['sifra_artikla', 'naziv', 'rabata_pct'], dropna=False, as_index=False)
+        .groupby(['sifra_artikla', 'rabata_pct'], dropna=False, as_index=False)
         .agg({
+            'naziv': 'first',
             'sifra_dobavitelja': 'first',
             'kolicina': 'sum',
             'enota': 'first',
