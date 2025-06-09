@@ -263,6 +263,7 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
     log.debug(f"df po inicializaciji: {df.head().to_dict()}")
     
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"]
+    doc_discount_total = df_doc["vrednost"].sum()
     df = df[df["sifra_dobavitelja"] != "_DOC_"]
     df["cena_pred_rabatom"] = (df["vrednost"] + df["rabata"]) / df["kolicina"]
     df["cena_po_rabatu"] = df["vrednost"] / df["kolicina"]
@@ -364,7 +365,7 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
     total_frame.pack(fill="x", pady=5)
 
     linked_total = df[df['wsm_sifra'].notna()]['total_net'].sum()
-    unlinked_total = df[df['wsm_sifra'].isna()]['total_net'].sum()
+    unlinked_total = df[df['wsm_sifra'].isna()]['total_net'].sum() + doc_discount_total
     total_sum = linked_total + unlinked_total
     match_symbol = "✓" if abs(total_sum - invoice_total) < Decimal("0.01") else "✗"
     
@@ -373,7 +374,7 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
 
     def _update_totals():
         linked_total = df[df['wsm_sifra'].notna()]['total_net'].sum()
-        unlinked_total = df[df['wsm_sifra'].isna()]['total_net'].sum()
+        unlinked_total = df[df['wsm_sifra'].isna()]['total_net'].sum() + doc_discount_total
         total_sum = linked_total + unlinked_total
         match_symbol = "✓" if abs(total_sum - invoice_total) < Decimal("0.01") else "✗"
         total_frame.children['total_sum'].config(text=f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(invoice_total)} € {match_symbol}")
