@@ -163,7 +163,11 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
         net_amount = Decimal("0")
         for moa in sg26.findall(".//e:S_MOA", NS):
             if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "203":
-net_amount = _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+                net_amount = (
+                    _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                    .quantize(Decimal("0.01"), ROUND_HALF_UP)
+                )
 
                 break
 
@@ -175,11 +179,18 @@ net_amount = _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(Decimal("0.0
                 continue
             pct = _decimal(sg39.find("./e:S_PCD/e:C_C501/e:D_5482", NS))
             if pct != 0:
-                explicit_pct = pct.quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+                explicit_pct = pct.quantize(
+                    Decimal("0.01"), ROUND_HALF_UP
+                )
             for moa in sg39.findall(".//e:G_SG42/e:S_MOA", NS):
                 if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "204":
-rebate += _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(Decimal("0.01"), ROUND_HALF_UP)
-rebate = rebate.quantize(Decimal("0.01"), ROUND_HALF_UP)
+                    rebate += (
+                        _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                        .quantize(Decimal("0.01"), ROUND_HALF_UP)
+                    )
+
+        rebate = rebate.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 
         # izračun cen pred in po rabatu
@@ -193,7 +204,11 @@ rebate = rebate.quantize(Decimal("0.01"), ROUND_HALF_UP)
             rabata_pct = explicit_pct
         else:
             if rebate > 0 and qty and cena_pred > 0:
-                rabata_pct = ((rebate / qty) / cena_pred * Decimal("100")).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+                rabata_pct = (
+                    (rebate / qty) / cena_pred * Decimal("100")
+                ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
             else:
                 rabata_pct = Decimal("0.00")
 
@@ -216,9 +231,14 @@ rebate = rebate.quantize(Decimal("0.01"), ROUND_HALF_UP)
         for moa in seg.findall(".//e:S_MOA", NS):
             code = _text(moa.find("./e:C_C516/e:D_5025", NS))
             if code in discounts:
-discounts[code] += _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(Decimal("0.01"), ROUND_HALF_UP)
-doc_discount = discounts["204"] if discounts["204"] != 0 else discounts["260"]
-doc_discount = doc_discount.quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+                discounts[code] += (
+                    _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                    .quantize(Decimal("0.01"), ROUND_HALF_UP)
+                )
+
+    doc_discount = discounts["204"] if discounts["204"] != 0 else discounts["260"]
+    doc_discount = doc_discount.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 
     if doc_discount != 0:
