@@ -163,7 +163,7 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
         net_amount = Decimal("0")
         for moa in sg26.findall(".//e:S_MOA", NS):
             if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "203":
-                net_amount = _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                net_amount = _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(Decimal("0.01"))
                 break
 
         # rabat na ravni vrstice
@@ -177,7 +177,9 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
                 explicit_pct = pct.quantize(Decimal("0.01"))
             for moa in sg39.findall(".//e:G_SG42/e:S_MOA", NS):
                 if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "204":
-                    rebate += _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                    rebate += _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(Decimal("0.01"))
+
+        rebate = rebate.quantize(Decimal("0.01"))
 
         # izračun cen pred in po rabatu
         if qty:
@@ -213,9 +215,10 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
         for moa in seg.findall(".//e:S_MOA", NS):
             code = _text(moa.find("./e:C_C516/e:D_5025", NS))
             if code in discounts:
-                discounts[code] += _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                discounts[code] += _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(Decimal("0.01"))
 
     doc_discount = discounts["204"] if discounts["204"] != 0 else discounts["260"]
+    doc_discount = doc_discount.quantize(Decimal("0.01"))
 
     if doc_discount != 0:
         items.append({
