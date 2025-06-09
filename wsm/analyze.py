@@ -21,21 +21,24 @@ def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[p
         for _, row in df.iterrows()
     ]
 
-    # group by code and discount, keep doc discount separate
+    # group by product code, name and discount
     doc_mask = df['sifra_dobavitelja'] == '_DOC_'
     df_main = df[~doc_mask].copy()
     df_doc = df[doc_mask].copy()
 
-    grouped = (df_main
-        .groupby(['sifra_artikla', 'rabata_pct'], dropna=False, as_index=False)
+    grouped = (
+        df_main
+        .groupby(['sifra_artikla', 'naziv', 'rabata_pct'], dropna=False, as_index=False)
         .agg({
             'sifra_dobavitelja': 'first',
-            'naziv': 'first',
             'kolicina': 'sum',
             'enota': 'first',
-            'cena_netto': 'first',
             'vrednost': 'sum',
         })
+    )
+    grouped['cena_netto'] = grouped.apply(
+        lambda r: r['vrednost'] / r['kolicina'] if r['kolicina'] else Decimal('0'),
+        axis=1,
     )
 
     result = pd.concat([grouped, df_doc], ignore_index=True)
