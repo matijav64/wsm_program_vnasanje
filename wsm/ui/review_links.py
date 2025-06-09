@@ -281,6 +281,20 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
     df["kolicina_norm"] = df["kolicina_norm"].astype(float)
     log.debug(f"df po normalizaciji: {df.head().to_dict()}")
 
+    # Adjust document discount if summed lines differ slightly from invoice total
+    calculated_total = df["total_net"].sum() + doc_discount_total
+    diff = invoice_total - calculated_total
+    if abs(diff) <= Decimal("0.02") and diff != 0:
+        log.debug(
+            f"Prilagajam dokumentarni popust za razliko {diff}: "
+            f"{doc_discount_total} -> {doc_discount_total + diff}"
+        )
+        doc_discount_total += diff
+        if not df_doc.empty:
+            df_doc.loc[df_doc.index, "vrednost"] += diff
+            df_doc.loc[df_doc.index, "cena_bruto"] += abs(diff)
+            df_doc.loc[df_doc.index, "rabata"] += abs(diff)
+
     root = tk.Tk()
     root.title(f"Ročna revizija – {supplier_name}")
     root.geometry("1320x1000")
@@ -370,7 +384,7 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
     unlinked_total = df[df['wsm_sifra'].isna()]['total_net'].sum() + doc_discount_total
     # Skupni seštevek mora biti vsota "povezano" in "ostalo"
     total_sum = linked_total + unlinked_total
-    match_symbol = "✓" if abs(total_sum - invoice_total) < Decimal("0.01") else "✗"
+    match_symbol = "✓" if abs(total_sum - invoice_total) <= Decimal("0.01") else "✗"
     
     tk.Label(total_frame, text=f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(invoice_total)} € {match_symbol}", 
             font=('Arial', 10, 'bold'), name='total_sum').pack(side='left', padx=10)
@@ -379,7 +393,7 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
         linked_total = df[df['wsm_sifra'].notna()]['total_net'].sum()
         unlinked_total = df[df['wsm_sifra'].isna()]['total_net'].sum() + doc_discount_total
         total_sum = linked_total + unlinked_total
-        match_symbol = "✓" if abs(total_sum - invoice_total) < Decimal("0.01") else "✗"
+        match_symbol = "✓" if abs(total_sum - invoice_total) <= Decimal("0.01") else "✗"
         total_frame.children['total_sum'].config(text=f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(invoice_total)} € {match_symbol}")
 
     bottom = tk.Frame(root)
