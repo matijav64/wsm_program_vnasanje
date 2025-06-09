@@ -21,10 +21,10 @@ def extract_line_items(xml_root: ET.Element) -> pd.DataFrame:
     Iz <LineItems> vsak <LineItem> prebere 'PriceNet', 'Quantity', 'DiscountPct'
     in izračuna izracunana_vrednost = price_net * quantity * (1 - discount_pct/100).
     Vrne DataFrame s stolpci:
-      - cena_netto (float)
-      - kolicina   (float)
-      - rabata_pct (float)
-      - izracunana_vrednost (float)
+      - cena_netto (Decimal)
+      - kolicina   (Decimal)
+      - rabata_pct (Decimal)
+      - izracunana_vrednost (Decimal)
     """
     rows = []
     for li in xml_root.findall("LineItems/LineItem"):
@@ -41,13 +41,13 @@ def extract_line_items(xml_root: ET.Element) -> pd.DataFrame:
         ).quantize(Decimal("0.01"))
 
         rows.append({
-            "cena_netto": float(cena),
-            "kolicina": float(kolic),
-            "rabata_pct": float(rabata_pct),
-            "izracunana_vrednost": float(izracun_val),
+            "cena_netto": cena,
+            "kolicina": kolic,
+            "rabata_pct": rabata_pct,
+            "izracunana_vrednost": izracun_val,
         })
 
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, dtype=object)
 
 def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:
     """

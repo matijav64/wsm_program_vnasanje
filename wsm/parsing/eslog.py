@@ -264,7 +264,8 @@ def parse_invoice(source: str | Path):
     """
     Parsira e-račun (ESLOG INVOIC) iz XML ali PDF (če je implementirano).
     Vrne:
-      • df: DataFrame s vrsticami in stolpci ['cena_netto','kolicina','rabata_pct','izracunana_vrednost']
+      • df: DataFrame s stolpci ['cena_netto','kolicina','rabata_pct','izracunana_vrednost']
+        (vrednosti so Decimal v object stolpcih)
       • header_total: Decimal (InvoiceTotal – DocumentDiscount)
     Uporablja se v CLI (wsm/cli.py).
     """
@@ -280,11 +281,11 @@ def parse_invoice(source: str | Path):
         df_items = parse_eslog_invoice(source, {})
         header_total = extract_header_net(Path(source) if isinstance(source, (str, Path)) else source)
         df = pd.DataFrame({
-            'cena_netto': df_items['cena_netto'].astype(float),
-            'kolicina': df_items['kolicina'].astype(float),
-            'rabata_pct': df_items['rabata_pct'].astype(float),
-            'izracunana_vrednost': df_items['vrednost'].astype(float),
-        })
+            'cena_netto': df_items['cena_netto'],
+            'kolicina': df_items['kolicina'],
+            'rabata_pct': df_items['rabata_pct'],
+            'izracunana_vrednost': df_items['vrednost'],
+        }, dtype=object)
         return df, header_total
 
     # izvzamemo glavo (InvoiceTotal – DocumentDiscount)
@@ -308,10 +309,10 @@ def parse_invoice(source: str | Path):
         ).quantize(Decimal("0.01"), ROUND_HALF_UP)
 
         rows.append({
-            "cena_netto":           float(cena),
-            "kolicina":             float(kolic),
-            "rabata_pct":           float(rabata_pct),
-            "izracunana_vrednost":  float(izracun_val),
+            "cena_netto":           cena,
+            "kolicina":             kolic,
+            "rabata_pct":           rabata_pct,
+            "izracunana_vrednost":  izracun_val,
         })
 
     # Če ni nobenih vrstic, naredimo prazen DataFrame z ustreznimi stolpci
@@ -320,7 +321,7 @@ def parse_invoice(source: str | Path):
             "cena_netto", "kolicina", "rabata_pct", "izracunana_vrednost"
         ])
     else:
-        df = pd.DataFrame(rows)
+        df = pd.DataFrame(rows, dtype=object)
 
     return df, header_total
 
