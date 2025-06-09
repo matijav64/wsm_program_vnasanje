@@ -163,12 +163,25 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
         net_amount = Decimal("0")
         for moa in sg26.findall(".//e:S_MOA", NS):
             if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "203":
-net_amount = _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+                net_amount = (
+                    _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                    .quantize(Decimal("0.01"), ROUND_HALF_UP)
+                )
 
-                break
-
-        # rabat na ravni vrstice
-        rebate = Decimal("0")
+                explicit_pct = pct.quantize(
+                    Decimal("0.01"), ROUND_HALF_UP
+                )
+                    rebate += (
+                        _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                        .quantize(Decimal("0.01"), ROUND_HALF_UP)
+                    )
+                rabata_pct = (
+                    (rebate / qty) / cena_pred * Decimal("100")
+                ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+                discounts[code] += (
+                    _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                    .quantize(Decimal("0.01"), ROUND_HALF_UP)
+                )
         explicit_pct: Decimal | None = None
         for sg39 in sg26.findall(".//e:G_SG39", NS):
             if _text(sg39.find("./e:S_ALC/e:D_5463", NS)) != "A":
