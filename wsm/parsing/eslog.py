@@ -163,10 +163,12 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
         net_amount = Decimal("0")
         for moa in sg26.findall(".//e:S_MOA", NS):
             if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "203":
+
                 net_amount = (
                     _decimal(moa.find("./e:C_C516/e:D_5004", NS))
                     .quantize(Decimal("0.01"), ROUND_HALF_UP)
                 )
+
                 break
 
         # rabat na ravni vrstice
@@ -177,6 +179,7 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
                 continue
             pct = _decimal(sg39.find("./e:S_PCD/e:C_C501/e:D_5482", NS))
             if pct != 0:
+
                 explicit_pct = pct.quantize(
                     Decimal("0.01"), ROUND_HALF_UP
                 )
@@ -189,6 +192,7 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
 
         rebate = rebate.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
+
         # izračun cen pred in po rabatu
         if qty:
             cena_pred = ((net_amount + rebate) / qty).quantize(Decimal("0.0001"))
@@ -200,9 +204,11 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
             rabata_pct = explicit_pct
         else:
             if rebate > 0 and qty and cena_pred > 0:
+
                 rabata_pct = (
                     (rebate / qty) / cena_pred * Decimal("100")
                 ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
             else:
                 rabata_pct = Decimal("0.00")
 
@@ -225,6 +231,7 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
         for moa in seg.findall(".//e:S_MOA", NS):
             code = _text(moa.find("./e:C_C516/e:D_5025", NS))
             if code in discounts:
+
                 discounts[code] += (
                     _decimal(moa.find("./e:C_C516/e:D_5004", NS))
                     .quantize(Decimal("0.01"), ROUND_HALF_UP)
@@ -232,6 +239,7 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
 
     doc_discount = discounts["204"] if discounts["204"] != 0 else discounts["260"]
     doc_discount = doc_discount.quantize(Decimal("0.01"), ROUND_HALF_UP)
+
 
     if doc_discount != 0:
         items.append({
