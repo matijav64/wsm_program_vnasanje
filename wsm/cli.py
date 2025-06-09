@@ -76,13 +76,13 @@ def review(supplier_file):
     supplier_file mora biti pot do suppliers.xlsx.
     """
     try:
-        from wsm.ui.review_links import preveri_in_povezi
+        from wsm.ui.review_links import review_links
     except ImportError as ie:
-        click.echo(f"[NAPAKA] Ne morem uvoziti funkcije preveri_in_povezi: {ie}")
+        click.echo(f"[NAPAKA] Ne morem uvoziti funkcije review_links: {ie}")
         return
 
     try:
-        preveri_in_povezi(supplier_file)
+        review_links(supplier_file)
     except Exception as e:
         click.echo(f"[NAPAKA GUI] {e}")
 
