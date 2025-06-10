@@ -4,8 +4,9 @@ import pandas as pd
 from pathlib import Path
 from decimal import Decimal
 
-from wsm.parsing.eslog import parse_invoice, validate_invoice
-from wsm.parsing.pdf import parse_pdf
+from wsm.parsing.eslog import parse_invoice, validate_invoice, get_supplier_name
+from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
+from wsm.utils import sanitize_folder_name
 from wsm.analyze import analyze_invoice
 
 @click.group()
@@ -103,9 +104,16 @@ def review(invoice, wsm_codes):
         return
 
     supplier_code = df["sifra_dobavitelja"].iloc[0] if not df.empty else "unknown"
-    links_dir = Path("links")
-    links_dir.mkdir(exist_ok=True)
-    links_file = links_dir / f"{supplier_code}_povezave.xlsx"
+    if invoice_path.suffix.lower() == ".xml":
+        name = get_supplier_name(invoice_path) or supplier_code
+    elif invoice_path.suffix.lower() == ".pdf":
+        name = get_supplier_name_from_pdf(invoice_path) or supplier_code
+    else:
+        name = supplier_code
+    safe_name = sanitize_folder_name(name)
+    links_dir = Path("links") / safe_name
+    links_dir.mkdir(parents=True, exist_ok=True)
+    links_file = links_dir / f"{supplier_code}_{safe_name}_povezane.xlsx"
 
     sifre_path = Path(wsm_codes) if wsm_codes else Path("sifre_wsm.xlsx")
     if sifre_path.exists():

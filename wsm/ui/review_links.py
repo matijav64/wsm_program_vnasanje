@@ -230,11 +230,28 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
     suppliers_file = Path("links") / "suppliers.xlsx"
     log.debug(f"Pot do suppliers.xlsx: {suppliers_file}")
     sup_map = _load_supplier_map(suppliers_file)
-    
+
     log.info(f"Supplier code extracted: {supplier_code}")
     supplier_info = sup_map.get(supplier_code, {})
     default_name = supplier_info.get('ime', supplier_code)
     override_h87_to_kg = supplier_info.get('override_H87_to_kg', False)
+
+    inv_name = None
+    if invoice_path and invoice_path.suffix.lower() == ".xml":
+        try:
+            from wsm.parsing.eslog import get_supplier_name
+            inv_name = get_supplier_name(invoice_path)
+        except Exception:
+            inv_name = None
+    elif invoice_path and invoice_path.suffix.lower() == ".pdf":
+        try:
+            from wsm.parsing.pdf import get_supplier_name_from_pdf
+            inv_name = get_supplier_name_from_pdf(invoice_path)
+        except Exception:
+            inv_name = None
+    if inv_name:
+        default_name = inv_name
+
     log.info(f"Default name retrieved: {default_name}")
     log.debug(f"Supplier info: {supplier_info}")
     log.info(f"Override H87 to kg: {override_h87_to_kg}")
@@ -317,6 +334,8 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
 
     root = tk.Tk()
     root.title(f"Ročna revizija – {supplier_name}")
+    tk.Label(root, text=f"Dobavitelj: {supplier_name}",
+             font=("Arial", 14, "bold")).pack(pady=4)
     # Start in fullscreen; press Esc to exit
     root.attributes("-fullscreen", True)
     root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
