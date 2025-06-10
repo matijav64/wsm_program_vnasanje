@@ -258,12 +258,10 @@ def parse_eslog_invoice(
                     .quantize(Decimal("0.01"), ROUND_HALF_UP)
                 )
 
-    doc_discount = Decimal("0")
-    for code in discount_codes:
-        if discounts.get(code):
-            doc_discount = discounts[code]
-            break
-    doc_discount = doc_discount.quantize(Decimal("0.01"), ROUND_HALF_UP)
+    # Sum all discount code amounts instead of only the first
+    doc_discount = sum(
+        (discounts.get(code) or Decimal("0")) for code in discount_codes
+    ).quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 
     if doc_discount != 0:
