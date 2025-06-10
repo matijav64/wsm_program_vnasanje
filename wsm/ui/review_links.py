@@ -147,7 +147,8 @@ def _write_supplier_map(sup_map: dict, sup_file: Path):
     log.info(f"Datoteka uspešno zapisana: {sup_file}")
 
 # Save and close function
-def _save_and_close(df, manual_old, wsm_df, links_file, root, supplier_name, supplier_code, sup_map, sup_file, invoice_path=None):
+def _save_and_close(df, manual_old, wsm_df, links_file, root, supplier_name, supplier_code, sup_map, sup_file,
+                    invoice_path=None, unit_file: Path | None = None, remember: bool = False, unit_value: str = ""):
     log.debug(f"Shranjevanje: supplier_name={supplier_name}, supplier_code={supplier_code}")
     
     # Preverimo prazne sifra_dobavitelja
@@ -220,7 +221,14 @@ def _save_and_close(df, manual_old, wsm_df, links_file, root, supplier_name, sup
         log_price_history(df, links_file, service_date=service_date)
     except Exception as exc:
         log.warning(f"Napaka pri beleženju zgodovine cen: {exc}")
-    
+
+    if remember and unit_file:
+        try:
+            unit_file.parent.mkdir(parents=True, exist_ok=True)
+            unit_file.write_text(unit_value)
+        except Exception as exc:
+            log.warning(f"Napaka pri zapisu {unit_file}: {exc}")
+
     root.quit()
 
 # Main GUI function
@@ -481,9 +489,17 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
 
     # --- Unit change widgets ---
     unit_options = ["kos", "kg", "L"]
-    unit_var = tk.StringVar(value=unit_options[0])
-    unit_menu = ttk.Combobox(custom, values=unit_options, textvariable=unit_var, state="readonly", width=5)
-    unit_menu.pack(side="right", padx=(6,0))
+    # Preberi zadnjo uporabljeno enoto, privzeto "kg"
+    last_unit_file = Path("links") / "last_unit.txt"
+    _last_unit = "kg"
+    try:
+        if last_unit_file.exists():
+            _last_unit = last_unit_file.read_text().strip() or _last_unit
+    except Exception as exc:
+        log.debug(f"Napaka pri branju {last_unit_file}: {exc}")
+
+    unit_var = tk.StringVar(value=_last_unit if _last_unit in unit_options else unit_options[0])
+    unit_menu = ttk.Combobox(bottom, values=unit_options, textvariable=unit_var, state="readonly", width=5)
     def _set_all_units():
         new_u = unit_var.get()
         df['enota_norm'] = new_u
@@ -491,28 +507,60 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
             tree.set(item, 'enota_norm', new_u)
         _update_summary()
         _update_totals()
-    tk.Button(custom, text="Nastavi vse enote", command=_set_all_units).pack(side="right")
+    tk.Button(bottom, text="Nastavi vse enote", command=_set_all_units).pack(side="right", padx=(0,20))
+    unit_menu.pack(side="right", padx=(6,0))
+
+    remember_var = tk.BooleanVar(value=False)
+    tk.Checkbutton(bottom, text="Zapomni enoto", variable=remember_var, onvalue=True, offvalue=False).pack(side="right", padx=(0,20))
 
     save_btn = tk.Button(
         bottom, text="Shrani & zapri", width=14,
         command=lambda e=None: _save_and_close(
             df, manual_old, wsm_df, links_file, root,
             supplier_name, supplier_code, sup_map, suppliers_file,
-            invoice_path=invoice_path
+            invoice_path=invoice_path,
+            unit_file=last_unit_file,
+            remember=remember_var.get(),
+            unit_value=unit_var.get()
         )
     )
     save_btn.pack(side="right", padx=(6,0))
     
+    def _exit():
+        if remember_var.get():
+            try:
+                last_unit_file.parent.mkdir(parents=True, exist_ok=True)
+                last_unit_file.write_text(unit_var.get())
+            except Exception as exc:
+                log.warning(f"Napaka pri zapisu {last_unit_file}: {exc}")
+        root.quit()
+
     exit_btn = tk.Button(
-        bottom, text="Izhod", width=14,
-        command=root.quit
+        bottom,
+        text="Izhod",
+        width=14,
+        command=_exit,
     )
     exit_btn.pack(side="right", padx=(6,0))
     
-    root.bind("<F10>", lambda e: _save_and_close(df, manual_old, wsm_df, links_file, root,
-                                              supplier_name, supplier_code,
-                                              sup_map, suppliers_file,
-                                              invoice_path=invoice_path))
+    root.bind(
+        "<F10>",
+        lambda e: _save_and_close(
+            df,
+            manual_old,
+            wsm_df,
+            links_file,
+            root,
+            supplier_name,
+            supplier_code,
+            sup_map,
+            suppliers_file,
+            invoice_path=invoice_path,
+            unit_file=last_unit_file,
+            remember=remember_var.get(),
+            unit_value=unit_var.get(),
+        ),
+    )
 
     nazivi = wsm_df["wsm_naziv"].dropna().tolist()
     n2s = dict(zip(wsm_df["wsm_naziv"], wsm_df["wsm_sifra"]))
