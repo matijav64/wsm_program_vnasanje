@@ -479,6 +479,20 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
     entry.pack(side="left", fill="x", expand=True, padx=(4,0))
     lb = tk.Listbox(custom, height=6)
 
+    # --- Unit change widgets ---
+    unit_options = ["kos", "kg", "L"]
+    unit_var = tk.StringVar(value=unit_options[0])
+    unit_menu = ttk.Combobox(custom, values=unit_options, textvariable=unit_var, state="readonly", width=5)
+    unit_menu.pack(side="right", padx=(6,0))
+    def _set_all_units():
+        new_u = unit_var.get()
+        df['enota_norm'] = new_u
+        for item in tree.get_children():
+            tree.set(item, 'enota_norm', new_u)
+        _update_summary()
+        _update_totals()
+    tk.Button(custom, text="Nastavi vse enote", command=_set_all_units).pack(side="right")
+
     save_btn = tk.Button(
         bottom, text="Shrani & zapri", width=14,
         command=lambda e=None: _save_and_close(
@@ -552,6 +566,29 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
         lb.see(nxt)
         return "break"
 
+    def _edit_unit(evt):
+        col = tree.identify_column(evt.x)
+        row_id = tree.identify_row(evt.y)
+        if col != '#3' or not row_id:
+            return
+        idx = int(row_id)
+        top = tk.Toplevel(root)
+        top.title('Spremeni enoto')
+        var = tk.StringVar(value=df.at[idx, 'enota_norm'])
+        cb = ttk.Combobox(top, values=unit_options, textvariable=var, state='readonly')
+        cb.pack(padx=10, pady=10)
+        def _apply(_=None):
+            new_u = var.get()
+            df.at[idx, 'enota_norm'] = new_u
+            tree.set(row_id, 'enota_norm', new_u)
+            _update_summary()
+            _update_totals()
+            top.destroy()
+        tk.Button(top, text='OK', command=_apply).pack(pady=(0,10))
+        cb.bind('<Return>', _apply)
+        cb.focus_set()
+        return 'break'
+
     def _confirm(_=None):
         sel_i = tree.focus()
         if not sel_i:
@@ -618,6 +655,7 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
     tree.bind("<BackSpace>", _clear_wsm_connection)
     tree.bind("<Up>", _tree_nav_up)
     tree.bind("<Down>", _tree_nav_down)
+    tree.bind("<Double-Button-1>", _edit_unit)
 
     # Vezave za entry in lb
     entry.bind("<KeyRelease>", _suggest)
