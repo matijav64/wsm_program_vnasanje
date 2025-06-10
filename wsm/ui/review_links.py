@@ -489,12 +489,16 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
         else:
             lb.pack_forget()
 
-    def _init_listbox(_=None):
+    def _init_listbox(evt=None):
+        """Give focus to the listbox and handle initial navigation."""
         if lb.winfo_ismapped():
             lb.focus_set()
-            lb.selection_set(0)
-            lb.activate(0)
-            lb.see(0)
+            if not lb.curselection():
+                lb.selection_set(0)
+                lb.activate(0)
+                lb.see(0)
+            if evt and evt.keysym == "Down":
+                _nav_list(evt)
         return "break"
 
     def _nav_list(evt):
