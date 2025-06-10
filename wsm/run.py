@@ -12,7 +12,9 @@ from tkinter import filedialog, messagebox
 
 from wsm.cli import main as cli_main
 from wsm.analyze import analyze_invoice
-from wsm.parsing.pdf import parse_pdf
+from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
+from wsm.parsing.eslog import get_supplier_name
+from wsm.utils import sanitize_folder_name
 from wsm.ui.review_links import review_links
 
 logging.basicConfig(level=logging.INFO)
@@ -54,9 +56,16 @@ def _open_gui(invoice_path: Path) -> None:
         return
 
     supplier_code = df["sifra_dobavitelja"].iloc[0] if not df.empty else "unknown"
-    links_dir = Path("links")
-    links_dir.mkdir(exist_ok=True)
-    links_file = links_dir / f"{supplier_code}_povezave.xlsx"
+    if invoice_path.suffix.lower() == ".xml":
+        name = get_supplier_name(invoice_path) or supplier_code
+    elif invoice_path.suffix.lower() == ".pdf":
+        name = get_supplier_name_from_pdf(invoice_path) or supplier_code
+    else:
+        name = supplier_code
+    safe_name = sanitize_folder_name(name)
+    links_dir = Path("links") / safe_name
+    links_dir.mkdir(parents=True, exist_ok=True)
+    links_file = links_dir / f"{supplier_code}_{safe_name}_povezane.xlsx"
 
     # WSM codes are optional; try to load them from sifre_wsm.xlsx
     sifre_file = Path("sifre_wsm.xlsx")
