@@ -10,6 +10,7 @@ def _compute_doc_discount(xml_path: Path) -> Decimal:
     NS = {"e": "urn:eslog:2.00"}
     root = ET.parse(xml_path).getroot()
     discounts = {code: Decimal("0") for code in DEFAULT_DOC_DISCOUNT_CODES}
+    seen_values = set()
 
     for seg in root.findall(".//e:G_SG50", NS) + root.findall(".//e:G_SG20", NS):
         for moa in seg.findall(".//e:S_MOA", NS):
@@ -20,7 +21,11 @@ def _compute_doc_discount(xml_path: Path) -> Decimal:
             if code in discounts:
                 val_el = moa.find("./e:C_C516/e:D_5004", NS)
                 amt = Decimal((val_el.text or "0").replace(",", "."))
-                discounts[code] += amt.quantize(Decimal("0.01"), ROUND_HALF_UP)
+                amt = amt.quantize(Decimal("0.01"), ROUND_HALF_UP)
+                if amt in seen_values:
+                    continue
+                seen_values.add(amt)
+                discounts[code] += amt
 
     # Sum all matching discount codes
     doc_discount = sum(

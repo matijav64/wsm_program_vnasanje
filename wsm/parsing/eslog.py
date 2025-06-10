@@ -268,15 +268,19 @@ def parse_eslog_invoice(
     # ───────── DOCUMENT DISCOUNT (če obstaja) ─────────
     discount_codes = list(discount_codes or DEFAULT_DOC_DISCOUNT_CODES)
     discounts = {code: Decimal("0") for code in discount_codes}
+    seen_values: set[Decimal] = set()
     for seg in root.findall(".//e:G_SG50", NS) + root.findall(".//e:G_SG20", NS):
         for moa in seg.findall(".//e:S_MOA", NS):
             code = _text(moa.find("./e:C_C516/e:D_5025", NS))
             if code in discounts:
-
-                discounts[code] += (
+                amt = (
                     _decimal(moa.find("./e:C_C516/e:D_5004", NS))
                     .quantize(Decimal("0.01"), ROUND_HALF_UP)
                 )
+                if amt in seen_values:
+                    continue
+                seen_values.add(amt)
+                discounts[code] += amt
 
     # Sum all discount code amounts instead of only the first
     doc_discount = sum(
