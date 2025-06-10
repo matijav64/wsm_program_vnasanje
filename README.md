@@ -43,7 +43,12 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    ```
    Program odpre grafični vmesnik, kjer povezave shranjujete v podmapo
    `links/<ime_dobavitelja>/`. Posodobljene tabele najdete v datotekah
-   `<koda>_<ime>_povezane.xlsx` in `price_history.xlsx`.
+  `<koda>_<ime>_povezane.xlsx` in `price_history.xlsx`.
+
+Pri samodejnem povezovanju lahko program iz teh ročno
+shranjenih datotek sam izdela datoteko `keywords.xlsx`.
+Če ta datoteka ne obstaja, jo funkcija `povezi_z_wsm`
+samodejno napolni z najpogostejšimi izrazi iz `*_povezane.xlsx`.
 
 5. Analizo in združevanje postavk lahko izvedete z:
    ```bash
