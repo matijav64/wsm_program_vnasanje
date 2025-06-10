@@ -326,8 +326,26 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
     summary_frame.pack(fill="both", expand=True, pady=10)
     tk.Label(summary_frame, text="Povzetek po WSM šifrah", font=("Arial", 12, "bold")).pack()
     
-    summary_cols = ["wsm_sifra", "wsm_naziv", "total_net_sum", "total_kolicina", "enota", "avg_price_per_unit"]
-    summary_heads = ["WSM Šifra", "WSM Naziv", "Skupna neto cena", "Skupna količina", "Enota", "Povp. cena/enoto"]
+    summary_cols = [
+        "wsm_sifra",
+        "wsm_naziv",
+        "neto_brez_popusta",
+        "rabata",
+        "vrednost",
+        "kolicina_norm",
+        "enota_norm",
+        "avg_price_per_unit",
+    ]
+    summary_heads = [
+        "WSM Šifra",
+        "WSM Naziv",
+        "Neto brez popusta",
+        "Rabat",
+        "Neto po rabatu",
+        "Skupna količina",
+        "Enota",
+        "Povp. cena/enoto",
+    ]
     summary_tree = ttk.Treeview(summary_frame, columns=summary_cols, show="headings", height=5)
     vsb_summary = ttk.Scrollbar(summary_frame, orient="vertical", command=summary_tree.yview)
     summary_tree.configure(yscrollcommand=vsb_summary.set)
@@ -341,35 +359,48 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
     def _update_summary():
         for item in summary_tree.get_children():
             summary_tree.delete(item)
-        if 'wsm_sifra' in df.columns and 'total_net' in df.columns and 'kolicina_norm' in df.columns and 'enota_norm' in df.columns:
-            summary_df = df[df['wsm_sifra'].notna()].groupby('wsm_sifra').agg({
-                'total_net': 'sum',
-                'kolicina_norm': 'sum',
-                'enota_norm': 'first'  # Predpostavimo, da je enota enaka za isto WSM šifro
-            }).reset_index()
-            summary_df['wsm_naziv'] = summary_df['wsm_sifra'].map(wsm_df.set_index('wsm_sifra')['wsm_naziv'])
-            
+        required = {'wsm_sifra', 'vrednost', 'rabata', 'kolicina_norm', 'enota_norm'}
+        if required.issubset(df.columns):
+            summary_df = (
+                df[df['wsm_sifra'].notna()]
+                .groupby('wsm_sifra')
+                .agg({
+                    'vrednost': 'sum',
+                    'rabata': 'sum',
+                    'kolicina_norm': 'sum',
+                    'enota_norm': 'first',
+                })
+                .reset_index()
+            )
+
+            summary_df['neto_brez_popusta'] = summary_df['vrednost'] + summary_df['rabata']
+            summary_df['wsm_naziv'] = summary_df['wsm_sifra'].map(
+                wsm_df.set_index('wsm_sifra')['wsm_naziv']
+            )
+
             def calculate_avg_price(row):
                 try:
-                    total_net = Decimal(str(row['total_net']))
-                    kolicina_norm = Decimal(str(row['kolicina_norm']))
-                    if pd.isna(total_net) or pd.isna(kolicina_norm) or kolicina_norm == 0:
+                    total = Decimal(str(row['vrednost']))
+                    qty = Decimal(str(row['kolicina_norm']))
+                    if pd.isna(total) or pd.isna(qty) or qty == 0:
                         return Decimal('0')
-                    return (total_net / kolicina_norm).quantize(Decimal("0.0001"))
+                    return (total / qty).quantize(Decimal('0.0001'))
                 except Exception as e:
                     log.error(f"Napaka pri izračunu povprečne cene za vrstico {row}: {e}")
                     return Decimal('0')
-            
+
             summary_df['avg_price_per_unit'] = summary_df.apply(calculate_avg_price, axis=1)
-            
+
             for _, row in summary_df.iterrows():
                 vals = [
                     row['wsm_sifra'],
                     row['wsm_naziv'],
-                    _fmt(row['total_net']),
+                    _fmt(row['neto_brez_popusta']),
+                    _fmt(row['rabata']),
+                    _fmt(row['vrednost']),
                     _fmt(row['kolicina_norm']),
                     row['enota_norm'],
-                    _fmt(row['avg_price_per_unit'])
+                    _fmt(row['avg_price_per_unit']),
                 ]
                 summary_tree.insert("", "end", values=vals)
             log.debug(f"Povzetek posodobljen: {len(summary_df)} WSM šifer")
