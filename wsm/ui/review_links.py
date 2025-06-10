@@ -507,11 +507,8 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
             tree.set(item, 'enota_norm', new_u)
         _update_summary()
         _update_totals()
-    tk.Button(bottom, text="Nastavi vse enote", command=_set_all_units).pack(side="right", padx=(0,20))
-    unit_menu.pack(side="right", padx=(6,0))
 
     remember_var = tk.BooleanVar(value=False)
-    tk.Checkbutton(bottom, text="Zapomni enoto", variable=remember_var, onvalue=True, offvalue=False).pack(side="right", padx=(0,20))
 
     save_btn = tk.Button(
         bottom, text="Shrani & zapri", width=14,
@@ -524,8 +521,6 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
             unit_value=unit_var.get()
         )
     )
-    save_btn.pack(side="right", padx=(6,0))
-    
     def _exit():
         if remember_var.get():
             try:
@@ -542,6 +537,10 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
         command=_exit,
     )
     exit_btn.pack(side="right", padx=(6,0))
+    save_btn.pack(side="right", padx=(6,0))
+    tk.Checkbutton(bottom, text="Zapomni enoto", variable=remember_var, onvalue=True, offvalue=False).pack(side="right", padx=(0,20))
+    unit_menu.pack(side="right", padx=(6,0))
+    tk.Button(bottom, text="Nastavi vse enote", command=_set_all_units).pack(side="right", padx=(0,20))
     
     root.bind(
         "<F10>",
