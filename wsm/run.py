@@ -58,8 +58,17 @@ def _open_gui(invoice_path: Path) -> None:
     links_dir.mkdir(exist_ok=True)
     links_file = links_dir / f"{supplier_code}_povezave.xlsx"
 
-    # WSM codes are optional; start with an empty table
-    wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
+    # WSM codes are optional; try to load them from sifre_wsm.xlsx
+    sifre_file = Path("sifre_wsm.xlsx")
+    if sifre_file.exists():
+        try:
+            wsm_df = pd.read_excel(sifre_file, dtype=str)
+        except Exception as exc:
+            logging.warning(f"Napaka pri branju {sifre_file}: {exc}")
+            wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
+    else:
+        wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
+
     review_links(df, wsm_df, links_file, total)
 
 
