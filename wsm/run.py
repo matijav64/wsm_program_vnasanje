@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+from decimal import Decimal
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
@@ -34,8 +35,16 @@ def _open_gui(invoice_path: Path) -> None:
     try:
         if invoice_path.suffix.lower() == ".xml":
             df, total, _ = analyze_invoice(str(invoice_path))
+
+            if "rabata" in df.columns:
+                df["rabata"] = df["rabata"].fillna(Decimal("0"))
+            else:
+                df["rabata"] = Decimal("0")
+
         elif invoice_path.suffix.lower() == ".pdf":
             df = parse_pdf(str(invoice_path))
+            if "rabata" not in df.columns:
+                df["rabata"] = Decimal("0")
             total = df["vrednost"].sum()
         else:
             messagebox.showerror("Napaka", f"Nepodprta datoteka: {invoice_path}")
