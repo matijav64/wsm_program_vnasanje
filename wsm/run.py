@@ -35,10 +35,12 @@ def _open_gui(invoice_path: Path) -> None:
     try:
         if invoice_path.suffix.lower() == ".xml":
             df, total, _ = analyze_invoice(str(invoice_path))
+
             if "rabata" in df.columns:
                 df["rabata"] = df["rabata"].fillna(Decimal("0"))
             else:
                 df["rabata"] = Decimal("0")
+
         elif invoice_path.suffix.lower() == ".pdf":
             df = parse_pdf(str(invoice_path))
             if "rabata" not in df.columns:
