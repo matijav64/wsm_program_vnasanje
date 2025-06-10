@@ -37,16 +37,17 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    ```
    kjer `<mapa_z_racuni>` vsebuje XML ali PDF datoteke z e‑računi.
 
-4. Za ročno povezovanje WSM šifer uporabite ukaz:
+4. Za ročno povezovanje WSM šifer podajte pot do računa:
    ```bash
-   python -m wsm.cli review links/suppliers.xlsx
+   python -m wsm.cli review <invoice.xml>
    ```
+   (po želji dodajte `--wsm-codes pot/do/sifre_wsm.xlsx`)
    Program odpre grafični vmesnik, kjer povezave shranjujete v podmapo
    `links/<ime_dobavitelja>/`. Posodobljene tabele najdete v datotekah
   `<koda>_<ime>_povezane.xlsx` in `price_history.xlsx`.
 
-Datoteka `sifre_wsm.xlsx` z vsemi WSM šiframi naj bo v korenu projekta,
-da jo GUI ob zagonu samodejno prebere.
+Če `--wsm-codes` ni podan, program poskuša prebrati `sifre_wsm.xlsx` v
+korenu projekta.
 
 Pri samodejnem povezovanju lahko program iz teh ročno
 shranjenih datotek sam izdela datoteko `keywords.xlsx`.
