@@ -58,6 +58,10 @@ def test_grouping_by_code_and_discount(monkeypatch):
     assert merged['kolicina'] == Decimal('5')
     assert merged['vrednost'] == Decimal('25')
     assert merged['naziv'] == 'Artikel A'
+    assert merged['rabata'] == Decimal('0')
+
+    assert 'rabata' in df.columns
+    assert df['rabata'].isna().sum() == 0
 
     # Row with different discount should remain separate
     assert (df['rabata_pct'] == Decimal('10')).sum() == 1

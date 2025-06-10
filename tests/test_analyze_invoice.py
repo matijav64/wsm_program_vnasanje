@@ -19,5 +19,9 @@ def test_analyze_invoice_merges_duplicates():
     assert row2["kolicina"] == Decimal("3.200")
     assert row2["vrednost"] == Decimal("23.76")
 
+    # Ensure rebate column exists and is filled
+    assert "rabata" in df.columns
+    assert df["rabata"].isna().sum() == 0
+
     assert total == extract_header_net(path)
     assert ok

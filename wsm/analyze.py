@@ -40,10 +40,15 @@ def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[p
             'kolicina': 'sum',
             'enota': 'first',
             'vrednost': 'sum',
+            'rabata': 'sum',
         })
     )
     grouped['cena_netto'] = grouped.apply(
         lambda r: r['vrednost'] / r['kolicina'] if r['kolicina'] else Decimal('0'),
+        axis=1,
+    )
+    grouped['cena_bruto'] = grouped.apply(
+        lambda r: (r['vrednost'] + r['rabata']) / r['kolicina'] if r['kolicina'] else Decimal('0'),
         axis=1,
     )
 
