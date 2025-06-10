@@ -13,7 +13,7 @@ The :func:`calculate_discounts` function returns a tuple of ``Decimal`` values:
 from decimal import Decimal
 
 
-def calculate_discounts(items):
+def calculate_discounts(items, doc_discount: Decimal = Decimal("0")):
     """Compute totals from invoice line items.
 
     Parameters
@@ -21,6 +21,9 @@ def calculate_discounts(items):
     items : Iterable[Mapping]
         Collection of line items.  Each mapping must provide ``cena`` and
         ``kolicina`` values and may provide ``rabata`` for the line discount.
+    doc_discount : Decimal, optional
+        Discount applied on the whole document level.  It is subtracted from
+        the final total and added to ``total_discount``.  Defaults to ``0``.
 
     Returns
     -------
@@ -31,6 +34,7 @@ def calculate_discounts(items):
     """
     total = Decimal("0")
     total_discount = Decimal("0")
+    doc_discount = Decimal(str(doc_discount))
 
     for item in items:
         price = Decimal(str(item['cena']))
@@ -40,6 +44,9 @@ def calculate_discounts(items):
         total_item_value = (price * qty) - discount
         total += total_item_value
         total_discount += discount
+
+    total -= doc_discount
+    total_discount += doc_discount
 
     return total, total_discount
 
