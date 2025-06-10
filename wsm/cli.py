@@ -120,7 +120,7 @@ def review(invoice, wsm_codes):
         wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
 
     try:
-        review_links(df, wsm_df, links_file, total)
+        review_links(df, wsm_df, links_file, total, Path(invoice))
     except Exception as e:
         click.echo(f"[NAPAKA GUI] {e}")
 

@@ -98,6 +98,26 @@ def extract_header_net(xml_path: Path | str) -> Decimal:
         pass
     return Decimal('0')
 
+# ───────────────────── datum opravljene storitve ─────────────────────
+def extract_service_date(xml_path: Path | str) -> str | None:
+    """Vrne datum opravljene storitve (DTM 35) ali datum računa (DTM 137)."""
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        for dtm in root.findall('.//e:S_DTM', NS):
+            if _text(dtm.find('./e:C_C507/e:D_2005', NS)) == '35':
+                date = _text(dtm.find('./e:C_C507/e:D_2380', NS))
+                if date:
+                    return date
+        for dtm in root.findall('.//e:S_DTM', NS):
+            if _text(dtm.find('./e:C_C507/e:D_2005', NS)) == '137':
+                date = _text(dtm.find('./e:C_C507/e:D_2380', NS))
+                if date:
+                    return date
+    except Exception:
+        pass
+    return None
+
 # ──────────────────── glavni parser za ESLOG INVOIC ────────────────────
 def parse_eslog_invoice(
     xml_path: str | Path,

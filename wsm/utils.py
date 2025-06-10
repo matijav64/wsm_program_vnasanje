@@ -225,11 +225,13 @@ def log_price_history(
     df: pd.DataFrame,
     history_file: Union[str, Path],
     *,
+    service_date: str | None = None,
     max_entries_per_code: int = 50
 ) -> None:
     """
-    Zapiše zgodovino cen v links/<ime_dobavitelja>/price_history.xlsx.
-    Shrani edinstven identifikator artikla (sifra_dobavitelja + naziv), ceno in čas.
+    Zapiše zgodovino cen v ``links/<ime_dobavitelja>/price_history.xlsx``.
+    Shranjeni so identifikator artikla (``sifra_dobavitelja + naziv``), cena,
+    trenutni čas in opcijsko datum opravljene storitve.
     """
     suppliers_file = Path("links") / "suppliers.xlsx"
     sup_map = _load_supplier_map(suppliers_file)
@@ -248,6 +250,7 @@ def log_price_history(
     df_hist = df_hist[["key", "cena_bruto"]].copy()
     df_hist.columns = ["key", "cena"]
     df_hist["time"] = pd.Timestamp.now()
+    df_hist["service_date"] = service_date
 
     # Preveri, ali so podatki pravilni
     if df_hist["key"].isna().any() or df_hist["key"].str.strip().eq("").any():
