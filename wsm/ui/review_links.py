@@ -297,8 +297,9 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
 
     root = tk.Tk()
     root.title(f"Ročna revizija – {supplier_name}")
-    # Slightly smaller default window size
-    root.geometry("1080x800")
+    # Start in fullscreen; press Esc to exit
+    root.attributes("-fullscreen", True)
+    root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
 
     frame = tk.Frame(root)
     frame.pack(fill="both", expand=True)
