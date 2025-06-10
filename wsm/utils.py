@@ -1,4 +1,4 @@
-﻿# File: wsm/utils.py
+# File: wsm/utils.py
 # -*- coding: utf-8 -*-
 """
 WSM helper module – združevanje postavk, samodejno povezovanje z WSM kodami,

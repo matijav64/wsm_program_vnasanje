@@ -1,4 +1,4 @@
-﻿# File: wsm/parsing/pdf.py
+# File: wsm/parsing/pdf.py
 # -*- coding: utf-8 -*-
 """
 PDF parser + util za ekstrakcijo imena dobavitelja.
