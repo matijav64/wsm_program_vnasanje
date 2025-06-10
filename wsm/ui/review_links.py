@@ -182,8 +182,8 @@ def _save_and_close(df, manual_old, wsm_df, links_file, root, supplier_name, sup
     # Ustvari df_links z istim indeksom
     df_links = df.set_index(["sifra_dobavitelja"])[["naziv", "wsm_sifra", "dobavitelj"]]
     
-    # Posodobi obstoječe elemente
-    manual_new.update(df_links)
+    # Posodobi obstoječe elemente (dovoli tudi brisanje povezav)
+    manual_new.loc[df_links.index, ["naziv", "wsm_sifra", "dobavitelj"]] = df_links
     
     # Dodaj nove elemente, ki niso v manual_new
     new_items = df_links[~df_links.index.isin(manual_new.index)]
