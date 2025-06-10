@@ -10,7 +10,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from wsm.cli import main as cli_main
-from wsm.parsing.eslog import parse_eslog_invoice, extract_header_net
+from wsm.analyze import analyze_invoice
 from wsm.parsing.pdf import parse_pdf
 from wsm.ui.review_links import review_links
 
@@ -33,8 +33,7 @@ def _open_gui(invoice_path: Path) -> None:
     """Parse invoice and launch the review GUI."""
     try:
         if invoice_path.suffix.lower() == ".xml":
-            df = parse_eslog_invoice(str(invoice_path), {})
-            total = extract_header_net(invoice_path)
+            df, total, _ = analyze_invoice(str(invoice_path))
         elif invoice_path.suffix.lower() == ".pdf":
             df = parse_pdf(str(invoice_path))
             total = df["vrednost"].sum()
