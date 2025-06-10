@@ -313,7 +313,8 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
     
     for c,h in zip(cols, heads):
         tree.heading(c, text=h)
-        tree.column(c, width=(300 if c=="naziv" else 120), anchor="w")
+        width = 300 if c == "naziv" else (80 if c == "enota_norm" else 120)
+        tree.column(c, width=width, anchor="w")
     for i, row in df.iterrows():
         vals = [_fmt(row[c]) if isinstance(row[c], (Decimal,float,int)) else ("" if pd.isna(row[c]) else str(row[c]))
                 for c in cols]
@@ -354,7 +355,8 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
     
     for c, h in zip(summary_cols, summary_heads):
         summary_tree.heading(c, text=h)
-        summary_tree.column(c, width=150, anchor="w")  # Prilagodite širino po potrebi
+        width = 80 if c == "enota_norm" else 150
+        summary_tree.column(c, width=width, anchor="w")
 
     def _update_summary():
         for item in summary_tree.get_children():
