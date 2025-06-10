@@ -259,7 +259,7 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
         axis=1
     )
     df["wsm_naziv"] = df["wsm_sifra"].map(wsm_df.set_index("wsm_sifra")["wsm_naziv"])
-    df["status"] = df["wsm_sifra"].notna().map({True:"POVEZANO", False:""})
+    df["status"] = df["wsm_sifra"].notna().map({True:"POVEZANO", False: pd.NA})
     log.debug(f"df po inicializaciji: {df.head().to_dict()}")
     
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"]
@@ -542,7 +542,7 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
         idx = int(sel_i)
         df.at[idx, "wsm_naziv"] = pd.NA
         df.at[idx, "wsm_sifra"] = pd.NA
-        df.at[idx, "status"] = ""
+        df.at[idx, "status"] = pd.NA
         new_vals = [_fmt(df.at[idx, c]) if isinstance(df.at[idx, c], (Decimal,float,int)) else
                     ("" if pd.isna(df.at[idx, c]) else str(df.at[idx, c])) for c in cols]
         tree.item(sel_i, values=new_vals)
