@@ -95,3 +95,19 @@ def test_parse_eslog_invoice_sums_multiple_discount_codes(tmp_path):
     assert doc_row["vrednost"] == Decimal("-3.50")
     assert doc_row["rabata_pct"] == Decimal("100.00")
 
+
+from wsm.parsing.eslog import extract_header_net
+
+
+def test_line_and_doc_discount_total_matches_header():
+    xml_path = Path("tests/minimal_doc_discount.xml")
+    df = parse_eslog_invoice(xml_path, {})
+
+    doc_rows = df[df["sifra_dobavitelja"] == "_DOC_"]
+    assert not doc_rows.empty
+    doc_value = doc_rows.iloc[0]["vrednost"]
+
+    line_total = df[df["sifra_dobavitelja"] != "_DOC_"]["vrednost"].sum()
+    header_total = extract_header_net(xml_path)
+
+    assert (line_total + doc_value).quantize(Decimal("0.01")) == header_total
