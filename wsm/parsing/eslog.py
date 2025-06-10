@@ -39,6 +39,11 @@ def _decimal(el: ET.Element | None) -> Decimal:
 # Namespace za ESLOG (če je prisoten)
 NS = {"e": "urn:eslog:2.00"}
 
+# Common document discount codes.  Extend this list or pass a custom
+# sequence to ``parse_eslog_invoice`` if your suppliers use different
+# identifiers.
+DEFAULT_DOC_DISCOUNT_CODES = ["204", "260", "131", "128"]
+
 # ────────────────────── dobavitelj: koda + ime ──────────────────────
 def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
     """
@@ -94,7 +99,11 @@ def extract_header_net(xml_path: Path | str) -> Decimal:
     return Decimal('0')
 
 # ──────────────────── glavni parser za ESLOG INVOIC ────────────────────
-def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
+def parse_eslog_invoice(
+    xml_path: str | Path,
+    sup_map: dict,
+    discount_codes: List[str] | None = None,
+) -> pd.DataFrame:
     """
     Parsira ESLOG INVOIC XML in vrne DataFrame vseh postavk:
       • glavne postavke <G_SG26>
@@ -110,6 +119,16 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
       - rabata_pct       (Decimal)
       - vrednost         (Decimal)
       - sifra_artikla    (string)
+
+    Parameters
+    ----------
+    xml_path : str | Path
+        Pot do eSLOG XML datoteke.
+    sup_map : dict
+        Mapa dobaviteljev za prilagoditve.
+    discount_codes : list[str] | None, optional
+        Seznam kod za dokumentarni popust.  Privzeto je
+        ``DEFAULT_DOC_DISCOUNT_CODES``.
     """
     supplier_code, _ = get_supplier_info(xml_path)
     override_H87 = sup_map.get(supplier_code, {}).get("override_H87_to_kg", False)
@@ -227,7 +246,8 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
         })
 
     # ───────── DOCUMENT DISCOUNT (če obstaja) ─────────
-    discounts = {"204": Decimal("0"), "260": Decimal("0")}
+    discount_codes = list(discount_codes or DEFAULT_DOC_DISCOUNT_CODES)
+    discounts = {code: Decimal("0") for code in discount_codes}
     for seg in root.findall(".//e:G_SG50", NS) + root.findall(".//e:G_SG20", NS):
         for moa in seg.findall(".//e:S_MOA", NS):
             code = _text(moa.find("./e:C_C516/e:D_5025", NS))
@@ -238,7 +258,11 @@ def parse_eslog_invoice(xml_path: str | Path, sup_map: dict) -> pd.DataFrame:
                     .quantize(Decimal("0.01"), ROUND_HALF_UP)
                 )
 
-    doc_discount = discounts["204"] if discounts["204"] != 0 else discounts["260"]
+    doc_discount = Decimal("0")
+    for code in discount_codes:
+        if discounts.get(code):
+            doc_discount = discounts[code]
+            break
     doc_discount = doc_discount.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 
