@@ -297,7 +297,8 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
 
     root = tk.Tk()
     root.title(f"Ročna revizija – {supplier_name}")
-    root.geometry("1320x1000")
+    # Slightly smaller default window size
+    root.geometry("1080x800")
 
     frame = tk.Frame(root)
     frame.pack(fill="both", expand=True)
@@ -530,6 +531,7 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
         if next_i:
             tree.selection_set(next_i)
             tree.focus(next_i)
+            tree.see(next_i)
         return "break"
 
     def _clear_wsm_connection(_=None):
@@ -549,11 +551,27 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
         tree.focus_set()
         return "break"
 
+    def _tree_nav_up(_=None):
+        """Select previous row and ensure it is visible."""
+        prev_item = tree.prev(tree.focus()) or tree.focus()
+        tree.selection_set(prev_item)
+        tree.focus(prev_item)
+        tree.see(prev_item)
+        return "break"
+
+    def _tree_nav_down(_=None):
+        """Select next row and ensure it is visible."""
+        next_item = tree.next(tree.focus()) or tree.focus()
+        tree.selection_set(next_item)
+        tree.focus(next_item)
+        tree.see(next_item)
+        return "break"
+
     # Vezave za tipke na tree
     tree.bind("<Return>", _start_edit)
     tree.bind("<BackSpace>", _clear_wsm_connection)
-    tree.bind("<Up>", lambda e: tree.selection_set(tree.prev(tree.focus()) or tree.focus()))
-    tree.bind("<Down>", lambda e: tree.selection_set(tree.next(tree.focus()) or tree.focus()))
+    tree.bind("<Up>", _tree_nav_up)
+    tree.bind("<Down>", _tree_nav_down)
 
     # Vezave za entry in lb
     entry.bind("<KeyRelease>", _suggest)
