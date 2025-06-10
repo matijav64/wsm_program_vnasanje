@@ -62,6 +62,51 @@ def _coerce_keyword_column(df: pd.DataFrame) -> pd.DataFrame:
             return df.rename(columns={col: "keyword"})
     return df
 
+def extract_keywords(links_dir: Path, keywords_path: Path) -> pd.DataFrame:
+    """Prebere ročne povezave in iz njih izdela seznam ključnih besed."""
+    rows: List[Dict[str, str]] = []
+    token_rx = re.compile(r"\b\w+\b")
+
+    for path in links_dir.glob("*/*_povezane.xlsx"):
+        try:
+            df = pd.read_excel(path, dtype=str)
+        except Exception as exc:
+            log.warning(f"Ne morem prebrati {path}: {exc}")
+            continue
+        if "wsm_sifra" not in df.columns or "naziv" not in df.columns:
+            continue
+
+        for code, names in df.dropna(subset=["wsm_sifra", "naziv"]).groupby("wsm_sifra")[
+            "naziv"
+        ]:
+            cnt: Dict[str, int] = {}
+            for n in names:
+                for t in token_rx.findall(str(n).lower()):
+                    if len(t) < 3:
+                        continue
+                    cnt[t] = cnt.get(t, 0) + 1
+            for token, c in cnt.items():
+                if c >= 2:
+                    rows.append({"wsm_sifra": code, "keyword": token})
+
+    kw_df = pd.DataFrame(rows)
+    if not kw_df.empty:
+        kw_df.drop_duplicates(inplace=True)
+        kw_df.sort_values(["wsm_sifra", "keyword"], inplace=True)
+
+    keywords_path.parent.mkdir(parents=True, exist_ok=True)
+    if keywords_path.exists():
+        try:
+            old = pd.read_excel(keywords_path, dtype=str)
+            old = _coerce_keyword_column(old)
+            kw_df = pd.concat([old[["wsm_sifra", "keyword"]], kw_df], ignore_index=True)
+            kw_df.drop_duplicates(inplace=True)
+        except Exception as exc:
+            log.warning(f"Napaka pri branju obstoječih ključnih besed: {exc}")
+
+    kw_df.to_excel(keywords_path, index=False)
+    return kw_df
+
 def load_wsm_data(
     sifre_path   : str,
     keywords_path: str,
@@ -113,9 +158,16 @@ def povezi_z_wsm(
       3) sicer status NaN (prazno)
     Nove zadetke po ključnih besedah doda v datoteko povezav.
     """
+    kw_path = Path(keywords_path)
+    if not kw_path.exists():
+        extract_keywords(links_dir, kw_path)
+
     _, kw_df, manual_links = load_wsm_data(
-        sifre_path, keywords_path, links_dir, supplier_code
+        sifre_path, str(kw_path), links_dir, supplier_code
     )
+
+    if kw_df.empty:
+        kw_df = extract_keywords(links_dir, kw_path)
 
     df_items = df_items.copy()
     df_items["naziv_ckey"]     = df_items["naziv"].map(_clean)
