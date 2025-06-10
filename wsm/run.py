@@ -6,11 +6,12 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+from decimal import Decimal
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from wsm.cli import main as cli_main
-from wsm.parsing.eslog import parse_eslog_invoice, extract_header_net
+from wsm.analyze import analyze_invoice
 from wsm.parsing.pdf import parse_pdf
 from wsm.ui.review_links import review_links
 
@@ -33,10 +34,15 @@ def _open_gui(invoice_path: Path) -> None:
     """Parse invoice and launch the review GUI."""
     try:
         if invoice_path.suffix.lower() == ".xml":
-            df = parse_eslog_invoice(str(invoice_path), {})
-            total = extract_header_net(invoice_path)
+            df, total, _ = analyze_invoice(str(invoice_path))
+            if "rabata" in df.columns:
+                df["rabata"] = df["rabata"].fillna(Decimal("0"))
+            else:
+                df["rabata"] = Decimal("0")
         elif invoice_path.suffix.lower() == ".pdf":
             df = parse_pdf(str(invoice_path))
+            if "rabata" not in df.columns:
+                df["rabata"] = Decimal("0")
             total = df["vrednost"].sum()
         else:
             messagebox.showerror("Napaka", f"Nepodprta datoteka: {invoice_path}")
