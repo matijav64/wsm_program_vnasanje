@@ -1,1 +1,1 @@
-﻿from .eslog import parse_eslog_invoice
+from .eslog import parse_eslog_invoice
