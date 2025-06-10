@@ -147,7 +147,7 @@ def _write_supplier_map(sup_map: dict, sup_file: Path):
     log.info(f"Datoteka uspešno zapisana: {sup_file}")
 
 # Save and close function
-def _save_and_close(df, manual_old, wsm_df, links_file, root, supplier_name, supplier_code, sup_map, sup_file):
+def _save_and_close(df, manual_old, wsm_df, links_file, root, supplier_name, supplier_code, sup_map, sup_file, invoice_path=None):
     log.debug(f"Shranjevanje: supplier_name={supplier_name}, supplier_code={supplier_code}")
     
     # Preverimo prazne sifra_dobavitelja
@@ -200,11 +200,27 @@ def _save_and_close(df, manual_old, wsm_df, links_file, root, supplier_name, sup
         log.info(f"Uspešno shranjeno v {links_file}")
     except Exception as e:
         log.error(f"Napaka pri shranjevanju v {links_file}: {e}")
+
+    if invoice_path and invoice_path.suffix.lower() == ".xml":
+        try:
+            from wsm.parsing.eslog import extract_service_date
+            service_date = extract_service_date(invoice_path)
+        except Exception as exc:
+            log.warning(f"Napaka pri branju datuma storitve: {exc}")
+            service_date = None
+    else:
+        service_date = None
+
+    try:
+        from wsm.utils import log_price_history
+        log_price_history(df, links_file, service_date=service_date)
+    except Exception as exc:
+        log.warning(f"Napaka pri beleženju zgodovine cen: {exc}")
     
     root.quit()
 
 # Main GUI function
-def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoice_total: Decimal) -> pd.DataFrame:
+def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoice_total: Decimal, invoice_path: Path | None = None) -> pd.DataFrame:
     df = df.copy()
     supplier_code = links_file.stem.split("_")[0]
     suppliers_file = Path("links") / "suppliers.xlsx"
@@ -444,7 +460,8 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
         bottom, text="Shrani & zapri", width=14,
         command=lambda e=None: _save_and_close(
             df, manual_old, wsm_df, links_file, root,
-            supplier_name, supplier_code, sup_map, suppliers_file
+            supplier_name, supplier_code, sup_map, suppliers_file,
+            invoice_path=invoice_path
         )
     )
     save_btn.pack(side="right", padx=(6,0))
@@ -457,7 +474,8 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
     
     root.bind("<F10>", lambda e: _save_and_close(df, manual_old, wsm_df, links_file, root,
                                               supplier_name, supplier_code,
-                                              sup_map, suppliers_file))
+                                              sup_map, suppliers_file,
+                                              invoice_path=invoice_path))
 
     nazivi = wsm_df["wsm_naziv"].dropna().tolist()
     n2s = dict(zip(wsm_df["wsm_naziv"], wsm_df["wsm_sifra"]))

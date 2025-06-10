@@ -69,7 +69,7 @@ def _open_gui(invoice_path: Path) -> None:
     else:
         wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
 
-    review_links(df, wsm_df, links_file, total)
+    review_links(df, wsm_df, links_file, total, invoice_path)
 
 
 def main() -> None:
