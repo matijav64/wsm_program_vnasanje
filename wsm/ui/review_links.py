@@ -1,7 +1,7 @@
 # File: wsm/ui/review_links.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-import math, re, logging, hashlib
+import math, re, logging, hashlib, json
 from decimal import Decimal
 from pathlib import Path
 from typing import Tuple
@@ -112,39 +112,91 @@ def _norm_unit(q: Decimal, u: str, name: str, override_h87_to_kg: bool = False) 
 
 # File handling functions
 def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
-    """Load supplier map from suppliers.xlsx with improved error handling."""
-    log.debug(f"Branje datoteke: {sup_file}")
-    if not sup_file.exists():
-        log.warning(f"Datoteka {sup_file} ne obstaja.")
-        return {}
-    try:
-        df_sup = pd.read_excel(sup_file, dtype=str)
-        log.info(f"Število prebranih dobaviteljev iz {sup_file}: {len(df_sup)}")
-        log.debug(f"Stolpci v df_sup: {df_sup.columns.tolist()}")
-        log.debug(f"Primer dobaviteljev: {df_sup.head().to_dict(orient='records')}")
-        sup_map = {}
-        for _, row in df_sup.iterrows():
-            sifra = str(row['sifra']).strip()
-            ime = str(row['ime']).strip()
-            override_value = str(row.get('override_H87_to_kg', 'False')).strip().lower()
-            override = override_value in ['true', '1', 'yes']
-            sup_map[sifra] = {'ime': ime, 'override_H87_to_kg': override}
-            log.debug(f"Dodan v sup_map: sifra={sifra}, ime={ime}, override_value={override_value}, override={override}")
-        log.info(f"Uspešno prebran suppliers.xlsx: {list(sup_map.keys())}")
-        return sup_map
-    except Exception as e:
-        log.error(f"Napaka pri branju suppliers.xlsx: {e}")
-        return {}
+    """Load supplier info from per-supplier JSON files or a legacy Excel."""
+    log.debug(f"Branje datoteke ali mape dobaviteljev: {sup_file}")
+    sup_map: dict[str, dict] = {}
+
+    if sup_file.is_file():
+        try:
+            df_sup = pd.read_excel(sup_file, dtype=str)
+            log.info(f"Število prebranih dobaviteljev iz {sup_file}: {len(df_sup)}")
+            for _, row in df_sup.iterrows():
+                sifra = str(row['sifra']).strip()
+                ime = str(row['ime']).strip()
+                override_value = str(row.get('override_H87_to_kg', 'False')).strip().lower()
+                override = override_value in ['true', '1', 'yes']
+                sup_map[sifra] = {
+                    'ime': ime or sifra,
+                    'override_H87_to_kg': override,
+                }
+                log.debug(
+                    f"Dodan v sup_map: sifra={sifra}, ime={ime}, override_value={override_value}, override={override}"
+                )
+            return sup_map
+        except Exception as e:
+            log.error(f"Napaka pri branju suppliers.xlsx: {e}")
+            return {}
+
+    links_dir = sup_file if sup_file.is_dir() else sup_file.parent
+    for folder in links_dir.iterdir():
+        info_path = folder / "supplier.json"
+        if info_path.exists():
+            try:
+                data = json.loads(info_path.read_text())
+                sifra = str(data.get('sifra', '')).strip()
+                ime = str(data.get('ime', '')).strip()
+                override = bool(data.get('override_H87_to_kg', False))
+                if sifra:
+                    sup_map[sifra] = {
+                        'ime': ime or sifra,
+                        'override_H87_to_kg': override,
+                    }
+                    log.debug(
+                        f"Dodan iz JSON: sifra={sifra}, ime={ime}, override={override}"
+                    )
+            except Exception as e:
+                log.error(f"Napaka pri branju {info_path}: {e}")
+
+    log.info(f"Najdeni dobavitelji: {list(sup_map.keys())}")
+    return sup_map
 
 def _write_supplier_map(sup_map: dict, sup_file: Path):
-    log.debug(f"Pisanje v datoteko: {sup_file}, vsebina: {sup_map}")
-    sup_file.parent.mkdir(parents=True, exist_ok=True)
-    df = pd.DataFrame([
-        {"sifra": k, "ime": v['ime'], "override_H87_to_kg": v['override_H87_to_kg']}
-        for k, v in sup_map.items()
-    ])
-    df.to_excel(sup_file, index=False)
-    log.info(f"Datoteka uspešno zapisana: {sup_file}")
+    """Write supplier info to JSON files or legacy Excel."""
+    log.debug(f"Pisanje podatkov dobaviteljev v {sup_file}")
+    if sup_file.suffix == ".xlsx" or sup_file.is_file():
+        sup_file.parent.mkdir(parents=True, exist_ok=True)
+        df = pd.DataFrame([
+            {
+                "sifra": k,
+                "ime": v['ime'],
+                "override_H87_to_kg": v['override_H87_to_kg'],
+            }
+            for k, v in sup_map.items()
+        ])
+        df.to_excel(sup_file, index=False)
+        log.info(f"Datoteka uspešno zapisana: {sup_file}")
+        return
+
+    links_dir = sup_file if sup_file.is_dir() else sup_file.parent
+    for code, info in sup_map.items():
+        from wsm.utils import sanitize_folder_name
+        folder = links_dir / sanitize_folder_name(info['ime'])
+        folder.mkdir(parents=True, exist_ok=True)
+        info_path = folder / "supplier.json"
+        try:
+            info_path.write_text(
+                json.dumps(
+                    {
+                        "sifra": code,
+                        "ime": info['ime'],
+                        "override_H87_to_kg": info['override_H87_to_kg'],
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            log.debug(f"Zapisano {info_path}")
+        except Exception as exc:
+            log.error(f"Napaka pri zapisu {info_path}: {exc}")
 
 # Save and close function
 def _save_and_close(df, manual_old, wsm_df, links_file, root, supplier_name, supplier_code, sup_map, sup_file,
@@ -235,8 +287,8 @@ def _save_and_close(df, manual_old, wsm_df, links_file, root, supplier_name, sup
 def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoice_total: Decimal, invoice_path: Path | None = None) -> pd.DataFrame:
     df = df.copy()
     supplier_code = links_file.stem.split("_")[0]
-    suppliers_file = Path("links") / "suppliers.xlsx"
-    log.debug(f"Pot do suppliers.xlsx: {suppliers_file}")
+    suppliers_file = Path("links")
+    log.debug(f"Pot do mape links: {suppliers_file}")
     sup_map = _load_supplier_map(suppliers_file)
 
     log.info(f"Supplier code extracted: {supplier_code}")
