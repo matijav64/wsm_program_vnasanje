@@ -342,6 +342,7 @@ def _save_and_close(
     except Exception as e:
         log.error(f"Napaka pri shranjevanju v {links_file}: {e}")
 
+    invoice_hash = None
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
             from wsm.parsing.eslog import extract_service_date
@@ -350,13 +351,22 @@ def _save_and_close(
         except Exception as exc:
             log.warning(f"Napaka pri branju datuma storitve: {exc}")
             service_date = None
+        try:
+            invoice_hash = hashlib.md5(invoice_path.read_bytes()).hexdigest()
+        except Exception as exc:
+            log.warning(f"Napaka pri izračunu hash: {exc}")
     else:
         service_date = None
+        if invoice_path and invoice_path.exists():
+            try:
+                invoice_hash = hashlib.md5(invoice_path.read_bytes()).hexdigest()
+            except Exception as exc:
+                log.warning(f"Napaka pri izračunu hash: {exc}")
 
     try:
         from wsm.utils import log_price_history
 
-        log_price_history(df, links_file, service_date=service_date)
+        log_price_history(df, links_file, service_date=service_date, invoice_id=invoice_hash)
     except Exception as exc:
         log.warning(f"Napaka pri beleženju zgodovine cen: {exc}")
 
