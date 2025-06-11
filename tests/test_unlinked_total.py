@@ -1,7 +1,6 @@
 from decimal import Decimal
 from pathlib import Path
 
-import pandas as pd
 from wsm.parsing.eslog import parse_eslog_invoice, extract_header_net
 
 
@@ -22,21 +21,6 @@ def _calc_unlinked_total(xml_path: Path) -> Decimal:
             df_doc.loc[df_doc.index, "cena_bruto"] += abs(diff)
             df_doc.loc[df_doc.index, "rabata"] += abs(diff)
         else:
-            df_doc = pd.DataFrame(
-                [
-                    {
-                        "sifra_dobavitelja": "_DOC_",
-                        "naziv": "Samodejni popravek",
-                        "kolicina": Decimal("1"),
-                        "enota": "",
-                        "cena_bruto": abs(diff),
-                        "cena_netto": Decimal("0"),
-                        "rabata": abs(diff),
-                        "rabata_pct": Decimal("100.00"),
-                        "vrednost": diff,
-                    }
-                ]
-            )
             doc_discount_total += diff
 
     # all lines linked
