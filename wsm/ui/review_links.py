@@ -67,11 +67,12 @@ def _norm_unit(
             base_unit = "kos"
             q_norm = q
         elif u_norm in _mass:
-            factor = (
-                Decimal("1")
-                if u_norm.startswith("kg")
-                else Decimal("1") / Decimal("1000")
-            )
+            if u_norm.startswith("kg"):
+                factor = Decimal("1")
+            elif u_norm.startswith("mg") or u_norm.startswith("milligram"):
+                factor = Decimal("1") / Decimal("1000000")
+            else:
+                factor = Decimal("1") / Decimal("1000")
             q_norm = q * factor
             base_unit = "kg"
         elif u_norm in _vol:
@@ -96,7 +97,12 @@ def _norm_unit(
                 m_mass = _rx_mass.search(name_l)
                 if m_mass:
                     val, typ = _dec(m_mass[1]), m_mass[2].lower()
-                    conv = val / 1000 if typ.startswith(("g", "mg")) else val
+                    if typ.startswith("kg"):
+                        conv = val
+                    elif typ.startswith("mg") or typ.startswith("milligram"):
+                        conv = val / 1000000
+                    else:
+                        conv = val / 1000
                     q_norm = q * conv
                     base_unit = "kg"
                 else:
@@ -108,14 +114,16 @@ def _norm_unit(
 
     if base_unit == "kos":
         m_weight = re.search(
-            r"(?:teža|masa|weight)?\s*[:\s]?\s*(\d+(?:[.,]\d+)?)\s*(g|dag|kg)\b",
+            r"(?:teža|masa|weight)?\s*[:\s]?\s*(\d+(?:[.,]\d+)?)\s*(mg|g|dag|kg)\b",
             name,
             re.I,
         )
         if m_weight:
             val = Decimal(m_weight.group(1).replace(",", "."))
             unit = m_weight.group(2).lower()
-            if unit == "g":
+            if unit == "mg":
+                weight_kg = val / 1000000
+            elif unit == "g":
                 weight_kg = val / 1000
             elif unit == "dag":
                 weight_kg = val / 100
