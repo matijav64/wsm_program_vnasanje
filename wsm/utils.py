@@ -128,7 +128,7 @@ def load_wsm_data(
     else:
         kw_df = kw_all[["wsm_sifra", "keyword"]] if "keyword" in kw_all.columns else pd.DataFrame(columns=["wsm_sifra", "keyword"])
 
-    suppliers_file = links_dir / "suppliers.xlsx"
+    suppliers_file = links_dir
     sup_map = _load_supplier_map(suppliers_file)
     
     supplier_info = sup_map.get(supplier_code, {})
@@ -198,7 +198,7 @@ def povezi_z_wsm(
 
     # če so novosti → posodobi datoteko povezav
     if new_links:
-        suppliers_file = links_dir / "suppliers.xlsx"
+        suppliers_file = links_dir
         sup_map = _load_supplier_map(suppliers_file)
         supplier_info = sup_map.get(supplier_code, {})
         supplier_name = supplier_info.get('ime', supplier_code) if isinstance(supplier_info, dict) else supplier_code
@@ -233,7 +233,7 @@ def log_price_history(
     Shranjeni so identifikator artikla (``sifra_dobavitelja + naziv``), cena,
     trenutni čas in opcijsko datum opravljene storitve.
     """
-    suppliers_file = Path("links") / "suppliers.xlsx"
+    suppliers_file = Path("links")
     sup_map = _load_supplier_map(suppliers_file)
 
     df["supplier_name"] = df["sifra_dobavitelja"].apply(

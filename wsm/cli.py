@@ -63,7 +63,7 @@ def _validate_file(file_path: Path):
 
 @main.command()
 @click.argument("invoice", type=click.Path(exists=True))
-@click.option("--suppliers", type=click.Path(exists=True), default=None, help="Pot do suppliers.xlsx")
+@click.option("--suppliers", type=click.Path(exists=True), default=None, help="Mapa z dobavitelji ali legacy suppliers.xlsx")
 def analyze(invoice, suppliers):
     """Prikaži združene postavke in preveri seštevek."""
     df, total, ok = analyze_invoice(invoice, suppliers)

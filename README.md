@@ -42,9 +42,11 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    python -m wsm.cli review <invoice.xml>
    ```
    (po želji dodajte `--wsm-codes pot/do/sifre_wsm.xlsx`)
-   Program odpre grafični vmesnik, kjer povezave shranjujete v podmapo
-   `links/<ime_dobavitelja>/`. Posodobljene tabele najdete v datotekah
-  `<koda>_<ime>_povezane.xlsx` in `price_history.xlsx`.
+  Program odpre grafični vmesnik, kjer povezave shranjujete v podmapo
+  `links/<ime_dobavitelja>/`. Posodobljene tabele najdete v datotekah
+ `<koda>_<ime>_povezane.xlsx` in `price_history.xlsx`.
+  V isti mapi je tudi datoteka `supplier.json`, ki vsebuje ime
+  dobavitelja in nastavitev `override_H87_to_kg`.
 
 Če `--wsm-codes` ni podan, program poskuša prebrati `sifre_wsm.xlsx` v
 korenu projekta.
@@ -56,7 +58,7 @@ samodejno napolni z najpogostejšimi izrazi iz `*_povezane.xlsx`.
 
 5. Analizo in združevanje postavk lahko izvedete z:
    ```bash
-   python -m wsm.cli analyze <invoice.xml> --suppliers links/suppliers.xlsx
+   python -m wsm.cli analyze <invoice.xml> --suppliers links
    ```
    Ukaz izpiše povzetek po WSM šifrah in preveri, ali se vsota ujema z
    vrednostjo na računu.
