@@ -1,5 +1,11 @@
 # File: wsm/parsing/money.py
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
+
+
+def quantize_like(value: Decimal, reference: Decimal, rounding=ROUND_HALF_UP) -> Decimal:
+    """Quantize ``value`` with the same precision as ``reference``."""
+    quant = Decimal('1').scaleb(reference.as_tuple().exponent)
+    return value.quantize(quant, rounding=rounding)
 import xml.etree.ElementTree as ET
 import pandas as pd
 
@@ -65,7 +71,7 @@ def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:
     # Če sum vrne int ali float, ga pretvorimo v Decimal; če je že Decimal, OK
     if not isinstance(total_sum, Decimal):
         total_sum = Decimal(str(total_sum))
-    line_sum = total_sum.quantize(Decimal("0.01"))
+    line_sum = quantize_like(total_sum, header_total)
 
     # 3) Primerjamo z header_total
     return abs(line_sum - header_total) < Decimal("0.05")
