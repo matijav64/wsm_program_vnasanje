@@ -2,6 +2,24 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 
+def round_to_step(value: Decimal, step: Decimal, rounding=ROUND_HALF_UP) -> Decimal:
+    """Round ``value`` to the nearest ``step`` (e.g. 0.01 or 0.05)."""
+    if step == 0:
+        return value
+    quant = (value / step).quantize(Decimal('1'), rounding=rounding)
+    return (quant * step).quantize(step)
+
+
+def detect_round_step(reference: Decimal, candidate: Decimal) -> Decimal:
+    """Return the rounding step (0.01 or 0.05) that makes ``candidate`` match
+    ``reference`` if possible.  If neither matches exactly, return 0.05 as a
+    safe default."""
+    for step in (Decimal('0.01'), Decimal('0.05')):
+        if round_to_step(candidate, step) == reference:
+            return step
+    return Decimal('0.05')
+
+
 def quantize_like(value: Decimal, reference: Decimal, rounding=ROUND_HALF_UP) -> Decimal:
     """Quantize ``value`` with the same precision as ``reference``."""
     quant = Decimal('1').scaleb(reference.as_tuple().exponent)
@@ -56,10 +74,8 @@ def extract_line_items(xml_root: ET.Element) -> pd.DataFrame:
     return pd.DataFrame(rows, dtype=object)
 
 def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:
-    """
-    Preveri, ali se vsota vseh izracunana_vrednost (Decimal) ujema z header_total
-    znotraj tolerance 0.05 €.
-    """
+    """Validate that the sum of line values matches ``header_total`` using
+    the rounding step that best fits the invoice."""
     # 1) Pretvorimo stolpec iz float v Decimal (če obstaja)
     if "izracunana_vrednost" not in df.columns:
         return False
@@ -71,7 +87,9 @@ def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:
     # Če sum vrne int ali float, ga pretvorimo v Decimal; če je že Decimal, OK
     if not isinstance(total_sum, Decimal):
         total_sum = Decimal(str(total_sum))
-    line_sum = quantize_like(total_sum, header_total)
+    line_sum = Decimal(total_sum)
+    step = detect_round_step(header_total, line_sum)
+    rounded = round_to_step(line_sum, step)
 
-    # 3) Primerjamo z header_total
-    return abs(line_sum - header_total) < Decimal("0.05")
+    # 3) Primerjamo z header_total s toleranco izbranega koraka
+    return abs(rounded - header_total) <= step
