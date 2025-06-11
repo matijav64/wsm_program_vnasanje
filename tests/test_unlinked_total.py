@@ -14,19 +14,19 @@ def _calc_unlinked_total(xml_path: Path) -> Decimal:
 
     calculated_total = df["total_net"].sum() + doc_discount_total
     diff = invoice_total - calculated_total
-    if abs(diff) <= Decimal("0.02") and diff != 0:
+    if abs(diff) <= Decimal("0.05") and diff != 0:
         if not df_doc.empty:
             doc_discount_total += diff
             df_doc.loc[df_doc.index, "vrednost"] += diff
             df_doc.loc[df_doc.index, "cena_bruto"] += abs(diff)
             df_doc.loc[df_doc.index, "rabata"] += abs(diff)
         else:
-            # difference ignored
-            pass
+            doc_discount_total += diff
 
     # all lines linked
     df["wsm_sifra"] = "X"
-    unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum() + doc_discount_total
+    linked_total = df[df["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
+    unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum()
     return unlinked_total
 
 
