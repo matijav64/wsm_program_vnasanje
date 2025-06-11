@@ -510,8 +510,16 @@ def review_links(
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"]
     doc_discount_total = df_doc["vrednost"].sum()
     df = df[df["sifra_dobavitelja"] != "_DOC_"]
-    df["cena_pred_rabatom"] = (df["vrednost"] + df["rabata"]) / df["kolicina"]
-    df["cena_po_rabatu"] = df["vrednost"] / df["kolicina"]
+    df["cena_pred_rabatom"] = df.apply(
+        lambda r: (r["vrednost"] + r["rabata"]) / r["kolicina"]
+        if r["kolicina"]
+        else Decimal("0"),
+        axis=1,
+    )
+    df["cena_po_rabatu"] = df.apply(
+        lambda r: r["vrednost"] / r["kolicina"] if r["kolicina"] else Decimal("0"),
+        axis=1,
+    )
     df["rabata_pct"] = df.apply(
         lambda r: (
             ((r["rabata"] / (r["vrednost"] + r["rabata"])) * Decimal("100")).quantize(
