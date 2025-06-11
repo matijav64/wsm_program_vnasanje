@@ -6,7 +6,7 @@ import pandas as pd
 from wsm.parsing.eslog import parse_eslog_invoice
 from wsm.ui.review_links import _norm_unit, _load_supplier_map
 from wsm.parsing.eslog import extract_header_net
-from wsm.parsing.money import quantize_like
+from wsm.parsing.money import quantize_like, detect_round_step, round_to_step
 
 
 def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[pd.DataFrame, Decimal, bool]:
@@ -56,6 +56,8 @@ def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[p
     result = pd.concat([grouped, df_doc], ignore_index=True)
 
     header_total = extract_header_net(Path(xml_path))
-    line_sum = quantize_like(Decimal(str(result['vrednost'].sum())), header_total)
-    ok = abs(line_sum - header_total) <= Decimal('0.05')
+    raw_sum = Decimal(str(result['vrednost'].sum()))
+    step = detect_round_step(header_total, raw_sum)
+    line_sum = round_to_step(raw_sum, step)
+    ok = abs(line_sum - header_total) <= step
     return result, header_total, ok

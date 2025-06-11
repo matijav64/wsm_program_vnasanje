@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 from wsm.parsing.eslog import parse_eslog_invoice, extract_header_net
+from wsm.parsing.money import detect_round_step
 
 
 def _calc_unlinked_total(xml_path: Path) -> Decimal:
@@ -15,7 +16,8 @@ def _calc_unlinked_total(xml_path: Path) -> Decimal:
 
     calculated_total = df["total_net"].sum() + doc_discount_total
     diff = invoice_total - calculated_total
-    if abs(diff) <= Decimal("0.05") and diff != 0:
+    step = detect_round_step(invoice_total, calculated_total)
+    if abs(diff) <= step and diff != 0:
         if not df_doc.empty:
             doc_discount_total += diff
             df_doc.loc[df_doc.index, "vrednost"] += diff
@@ -50,4 +52,4 @@ def _calc_unlinked_total(xml_path: Path) -> Decimal:
 
 def test_unlinked_total_zero_when_all_lines_linked():
     xml = Path("tests/PR5707-Slika2.XML")
-    assert _calc_unlinked_total(xml) == Decimal("0.01")
+    assert _calc_unlinked_total(xml) == Decimal("0")
