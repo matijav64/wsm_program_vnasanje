@@ -628,7 +628,7 @@ def review_links(
         "wsm_naziv",
         "kolicina_norm",
         "neto_brez_popusta",
-        "rabata",
+        "rabata_pct",
         "vrednost",
     ]
     summary_heads = [
@@ -636,7 +636,7 @@ def review_links(
         "WSM Naziv",
         "Količina",
         "Znesek",
-        "Rabat",
+        "Rabat (%)",
         "Neto po rabatu",
     ]
     summary_tree = ttk.Treeview(
@@ -656,11 +656,11 @@ def review_links(
     def _update_summary():
         for item in summary_tree.get_children():
             summary_tree.delete(item)
-        required = {"wsm_sifra", "vrednost", "rabata", "kolicina_norm"}
+        required = {"wsm_sifra", "vrednost", "rabata", "kolicina_norm", "rabata_pct"}
         if required.issubset(df.columns):
             summary_df = (
                 df[df["wsm_sifra"].notna()]
-                .groupby("wsm_sifra")
+                .groupby(["wsm_sifra", "rabata_pct"], dropna=False)
                 .agg(
                     {
                         "vrednost": "sum",
@@ -671,11 +671,17 @@ def review_links(
                 .reset_index()
             )
 
-            summary_df["neto_brez_popusta"] = (
-                summary_df["vrednost"] + summary_df["rabata"]
-            )
+            summary_df["neto_brez_popusta"] = summary_df["vrednost"] + summary_df["rabata"]
             summary_df["wsm_naziv"] = summary_df["wsm_sifra"].map(
                 wsm_df.set_index("wsm_sifra")["wsm_naziv"]
+            )
+            summary_df["rabata_pct"] = summary_df.apply(
+                lambda r: (
+                    (r["rabata"] / r["neto_brez_popusta"] * Decimal("100")).quantize(Decimal("0.01"))
+                    if r["neto_brez_popusta"]
+                    else Decimal("0.00")
+                ),
+                axis=1,
             )
 
             for _, row in summary_df.iterrows():
@@ -684,7 +690,7 @@ def review_links(
                     row["wsm_naziv"],
                     _fmt(row["kolicina_norm"]),
                     _fmt(row["neto_brez_popusta"]),
-                    _fmt(row["rabata"]),
+                    _fmt(row["rabata_pct"]),
                     _fmt(row["vrednost"]),
                 ]
                 summary_tree.insert("", "end", values=vals)
