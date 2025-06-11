@@ -626,22 +626,18 @@ def review_links(
     summary_cols = [
         "wsm_sifra",
         "wsm_naziv",
+        "kolicina_norm",
         "neto_brez_popusta",
         "rabata",
         "vrednost",
-        "kolicina_norm",
-        "enota_norm",
-        "avg_price_per_unit",
     ]
     summary_heads = [
         "WSM Šifra",
         "WSM Naziv",
-        "Neto brez popusta",
+        "Količina",
+        "Znesek",
         "Rabat",
         "Neto po rabatu",
-        "Skupna količina",
-        "Enota",
-        "Povp. cena/enoto",
     ]
     summary_tree = ttk.Treeview(
         summary_frame, columns=summary_cols, show="headings", height=5
@@ -655,13 +651,12 @@ def review_links(
 
     for c, h in zip(summary_cols, summary_heads):
         summary_tree.heading(c, text=h)
-        width = 80 if c == "enota_norm" else 150
-        summary_tree.column(c, width=width, anchor="w")
+        summary_tree.column(c, width=150, anchor="w")
 
     def _update_summary():
         for item in summary_tree.get_children():
             summary_tree.delete(item)
-        required = {"wsm_sifra", "vrednost", "rabata", "kolicina_norm", "enota_norm"}
+        required = {"wsm_sifra", "vrednost", "rabata", "kolicina_norm"}
         if required.issubset(df.columns):
             summary_df = (
                 df[df["wsm_sifra"].notna()]
@@ -671,7 +666,6 @@ def review_links(
                         "vrednost": "sum",
                         "rabata": "sum",
                         "kolicina_norm": "sum",
-                        "enota_norm": "first",
                     }
                 )
                 .reset_index()
@@ -684,33 +678,14 @@ def review_links(
                 wsm_df.set_index("wsm_sifra")["wsm_naziv"]
             )
 
-            def calculate_avg_price(row):
-                try:
-                    total = Decimal(str(row["vrednost"]))
-                    qty = Decimal(str(row["kolicina_norm"]))
-                    if pd.isna(total) or pd.isna(qty) or qty == 0:
-                        return Decimal("0")
-                    return (total / qty).quantize(Decimal("0.0001"))
-                except Exception as e:
-                    log.error(
-                        f"Napaka pri izračunu povprečne cene za vrstico {row}: {e}"
-                    )
-                    return Decimal("0")
-
-            summary_df["avg_price_per_unit"] = summary_df.apply(
-                calculate_avg_price, axis=1
-            )
-
             for _, row in summary_df.iterrows():
                 vals = [
                     row["wsm_sifra"],
                     row["wsm_naziv"],
+                    _fmt(row["kolicina_norm"]),
                     _fmt(row["neto_brez_popusta"]),
                     _fmt(row["rabata"]),
                     _fmt(row["vrednost"]),
-                    _fmt(row["kolicina_norm"]),
-                    row["enota_norm"],
-                    _fmt(row["avg_price_per_unit"]),
                 ]
                 summary_tree.insert("", "end", values=vals)
             log.debug(f"Povzetek posodobljen: {len(summary_df)} WSM šifer")
