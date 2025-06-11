@@ -20,10 +20,14 @@ def launch_price_watch() -> None:
 
     suppliers = _load_supplier_map(Path("links"))
     supplier_codes = sorted(suppliers)
-    supplier_names = [suppliers[c]["ime"] for c in supplier_codes]
 
-    selected_code = tk.StringVar()
-    combo = ttk.Combobox(root, values=[f"{c} - {suppliers[c]['ime']}" for c in supplier_codes], width=40)
+    combo_values = [f"{c} - {suppliers[c]['ime']}" for c in supplier_codes]
+    if combo_values:
+        combo_state = "readonly"
+    else:
+        combo_values = ["Ni dobaviteljev"]
+        combo_state = "disabled"
+    combo = ttk.Combobox(root, values=combo_values, width=40, state=combo_state)
     combo.pack(pady=10)
 
     listbox = tk.Listbox(root, width=60)
@@ -85,5 +89,7 @@ def launch_price_watch() -> None:
 
     combo.bind("<<ComboboxSelected>>", on_supplier_selected)
     listbox.bind("<<ListboxSelect>>", on_item_selected)
+
+    tk.Button(root, text="Nazaj", command=root.destroy).pack(pady=5)
 
     root.mainloop()
