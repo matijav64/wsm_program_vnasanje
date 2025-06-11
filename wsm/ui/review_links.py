@@ -160,6 +160,10 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
     log.debug(f"Branje datoteke ali mape dobaviteljev: {sup_file}")
     sup_map: dict[str, dict] = {}
 
+    if not sup_file.exists():
+        log.info(f"Mapa ali datoteka dobaviteljev {sup_file} ne obstaja")
+        return sup_map
+
     if sup_file.is_file():
         try:
             df_sup = pd.read_excel(sup_file, dtype=str)
