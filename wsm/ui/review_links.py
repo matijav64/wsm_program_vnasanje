@@ -724,10 +724,13 @@ def review_links(
     total_frame = tk.Frame(root)
     total_frame.pack(fill="x", pady=5)
 
-    linked_total = df[df["wsm_sifra"].notna()]["total_net"].sum()
-    # "Skupaj ostalo" naj zajema tudi morebitni dokumentarni popust,
-    # ki je izločen iz df in shranjen kot ``doc_discount_total``.
-    unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum() + doc_discount_total
+    # Dokumentarni popust obravnavamo kot povezan znesek, saj ne potrebuje
+    # dodatne ročne obdelave. Zato ga prištejemo k "Skupaj povezano" in ga
+    # ne štejemo med "Skupaj ostalo".
+    linked_total = (
+        df[df["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
+    )
+    unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum()
     # Skupni seštevek mora biti vsota "povezano" in "ostalo"
     total_sum = linked_total + unlinked_total
     match_symbol = "✓" if abs(total_sum - invoice_total) <= Decimal("0.01") else "✗"
@@ -740,10 +743,10 @@ def review_links(
     ).pack(side="left", padx=10)
 
     def _update_totals():
-        linked_total = df[df["wsm_sifra"].notna()]["total_net"].sum()
-        unlinked_total = (
-            df[df["wsm_sifra"].isna()]["total_net"].sum() + doc_discount_total
+        linked_total = (
+            df[df["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
         )
+        unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum()
         total_sum = linked_total + unlinked_total
         match_symbol = "✓" if abs(total_sum - invoice_total) <= Decimal("0.01") else "✗"
         total_frame.children["total_sum"].config(
