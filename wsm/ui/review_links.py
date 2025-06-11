@@ -489,14 +489,19 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
 
     # --- Unit change widgets ---
     unit_options = ["kos", "kg", "L"]
-    # Preberi zadnjo uporabljeno enoto, privzeto "kg"
     last_unit_file = Path("links") / "last_unit.txt"
-    _last_unit = "kg"
-    try:
-        if last_unit_file.exists():
-            _last_unit = last_unit_file.read_text().strip() or _last_unit
-    except Exception as exc:
-        log.debug(f"Napaka pri branju {last_unit_file}: {exc}")
+
+    unit_from_xml = df["enota_norm"].mode().iat[0] if not df.empty else "kg"
+    remember_default = False
+    _last_unit = unit_from_xml
+    if last_unit_file.exists():
+        remember_default = True
+        try:
+            val = last_unit_file.read_text().strip()
+            if val:
+                _last_unit = val
+        except Exception as exc:
+            log.debug(f"Napaka pri branju {last_unit_file}: {exc}")
 
     unit_var = tk.StringVar(value=_last_unit if _last_unit in unit_options else unit_options[0])
     unit_menu = ttk.Combobox(bottom, values=unit_options, textvariable=unit_var, state="readonly", width=5)
@@ -508,7 +513,7 @@ def review_links(df: pd.DataFrame, wsm_df: pd.DataFrame, links_file: Path, invoi
         _update_summary()
         _update_totals()
 
-    remember_var = tk.BooleanVar(value=False)
+    remember_var = tk.BooleanVar(value=remember_default)
 
     save_btn = tk.Button(
         bottom, text="Shrani & zapri", width=14,
