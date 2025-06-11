@@ -550,7 +550,7 @@ def review_links(
     # correction.
     calculated_total = df["total_net"].sum() + doc_discount_total
     diff = invoice_total - calculated_total
-    if abs(diff) <= Decimal("0.02") and diff != 0:
+    if abs(diff) <= Decimal("0.05") and diff != 0:
         if not df_doc.empty:
             log.debug(
                 f"Prilagajam dokumentarni popust za razliko {diff}: "
