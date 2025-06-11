@@ -22,6 +22,7 @@ def _calc_unlinked_total(xml_path: Path) -> Decimal:
             df_doc.loc[df_doc.index, "cena_bruto"] += abs(diff)
             df_doc.loc[df_doc.index, "rabata"] += abs(diff)
         else:
+
             df_doc = pd.DataFrame(
                 [
                     {
@@ -37,6 +38,7 @@ def _calc_unlinked_total(xml_path: Path) -> Decimal:
                     }
                 ]
             )
+
             doc_discount_total += diff
 
     # all lines linked

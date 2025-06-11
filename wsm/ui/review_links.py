@@ -545,9 +545,9 @@ def review_links(
     df["kolicina_norm"] = df["kolicina_norm"].astype(float)
     log.debug(f"df po normalizaciji: {df.head().to_dict()}")
 
-    # If totals differ slightly (<2 cent), adjust the document discount when
-    # its line exists. Otherwise the minor difference is ignored for manual
-    # correction.
+    # If totals differ slightly (<=5 cent), adjust the document discount when
+    # its line exists. Otherwise record the difference separately so that totals
+    # still match the invoice without showing an extra row.
     calculated_total = df["total_net"].sum() + doc_discount_total
     diff = invoice_total - calculated_total
     if abs(diff) <= Decimal("0.05") and diff != 0:
@@ -562,6 +562,7 @@ def review_links(
             df_doc.loc[df_doc.index, "rabata"] += abs(diff)
         else:
             log.debug(
+
                 f"Dodajam _DOC_ vrstico za razliko {diff} med vrsticami in računom"
             )
             df_doc = pd.DataFrame(
@@ -578,6 +579,7 @@ def review_links(
                         "vrednost": diff,
                     }
                 ]
+
             )
             doc_discount_total += diff
 
