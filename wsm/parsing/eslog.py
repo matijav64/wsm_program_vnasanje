@@ -138,6 +138,7 @@ def parse_eslog_invoice(
       - rabata           (Decimal)
       - rabata_pct       (Decimal)
       - vrednost         (Decimal)
+      - ddv_stopnja      (Decimal)
       - sifra_artikla    (string)
 
     Parameters
@@ -209,6 +210,14 @@ def parse_eslog_invoice(
 
                 break
 
+        # stopnja DDV (npr. 9.5 ali 22)
+        vat_rate = Decimal("0")
+        for tax in sg26.findall(".//e:G_SG34/e:S_TAX", NS):
+            rate = _decimal(tax.find("./e:C_C243/e:D_5278", NS))
+            if rate != 0:
+                vat_rate = rate
+                break
+
         # rabat na ravni vrstice
         rebate = Decimal("0")
         explicit_pct: Decimal | None = None
@@ -260,6 +269,7 @@ def parse_eslog_invoice(
             "rabata":           rebate,
             "rabata_pct":       rabata_pct,
             "vrednost":         net_amount,
+            "ddv_stopnja":      vat_rate,
             "sifra_artikla":    art_code,
         })
 
