@@ -510,8 +510,16 @@ def review_links(
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"]
     doc_discount_total = df_doc["vrednost"].sum()
     df = df[df["sifra_dobavitelja"] != "_DOC_"]
-    df["cena_pred_rabatom"] = (df["vrednost"] + df["rabata"]) / df["kolicina"]
-    df["cena_po_rabatu"] = df["vrednost"] / df["kolicina"]
+    df["cena_pred_rabatom"] = df.apply(
+        lambda r: (r["vrednost"] + r["rabata"]) / r["kolicina"]
+        if r["kolicina"]
+        else Decimal("0"),
+        axis=1,
+    )
+    df["cena_po_rabatu"] = df.apply(
+        lambda r: r["vrednost"] / r["kolicina"] if r["kolicina"] else Decimal("0"),
+        axis=1,
+    )
     df["rabata_pct"] = df.apply(
         lambda r: (
             ((r["rabata"] / (r["vrednost"] + r["rabata"])) * Decimal("100")).quantize(
@@ -542,7 +550,7 @@ def review_links(
     # correction.
     calculated_total = df["total_net"].sum() + doc_discount_total
     diff = invoice_total - calculated_total
-    if abs(diff) <= Decimal("0.02") and diff != 0:
+    if abs(diff) <= Decimal("0.05") and diff != 0:
         if not df_doc.empty:
             log.debug(
                 f"Prilagajam dokumentarni popust za razliko {diff}: "
@@ -554,8 +562,24 @@ def review_links(
             df_doc.loc[df_doc.index, "rabata"] += abs(diff)
         else:
             log.debug(
-                f"Razlika {diff} med seštevkom vrstic in računom prezrta (brez _DOC_ vrstice)"
+                f"Dodajam _DOC_ vrstico za razliko {diff} med vrsticami in računom"
             )
+            df_doc = pd.DataFrame(
+                [
+                    {
+                        "sifra_dobavitelja": "_DOC_",
+                        "naziv": "Samodejni popravek",
+                        "kolicina": Decimal("1"),
+                        "enota": "",
+                        "cena_bruto": abs(diff),
+                        "cena_netto": Decimal("0"),
+                        "rabata": abs(diff),
+                        "rabata_pct": Decimal("100.00"),
+                        "vrednost": diff,
+                    }
+                ]
+            )
+            doc_discount_total += diff
 
     root = tk.Tk()
     root.title(f"Ročna revizija – {supplier_name}")
