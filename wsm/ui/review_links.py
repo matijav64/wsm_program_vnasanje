@@ -562,8 +562,24 @@ def review_links(
             df_doc.loc[df_doc.index, "rabata"] += abs(diff)
         else:
             log.debug(
-                f"Razlika {diff} med seštevkom vrstic in računom prezrta (brez _DOC_ vrstice)"
+                f"Dodajam _DOC_ vrstico za razliko {diff} med vrsticami in računom"
             )
+            df_doc = pd.DataFrame(
+                [
+                    {
+                        "sifra_dobavitelja": "_DOC_",
+                        "naziv": "Samodejni popravek",
+                        "kolicina": Decimal("1"),
+                        "enota": "",
+                        "cena_bruto": abs(diff),
+                        "cena_netto": Decimal("0"),
+                        "rabata": abs(diff),
+                        "rabata_pct": Decimal("100.00"),
+                        "vrednost": diff,
+                    }
+                ]
+            )
+            doc_discount_total += diff
 
     root = tk.Tk()
     root.title(f"Ročna revizija – {supplier_name}")
