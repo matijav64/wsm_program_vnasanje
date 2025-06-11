@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from wsm.parsing.eslog import parse_invoice, validate_invoice, get_supplier_name
 from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
+from wsm.parsing.money import detect_round_step, round_to_step
 from wsm.utils import sanitize_folder_name
 from wsm.analyze import analyze_invoice
 
@@ -158,6 +159,22 @@ def override_cmd(supplier_code, suppliers, override):
     sup_map[supplier_code] = info
     _write_supplier_map(sup_map, sup_file)
     click.echo(f"{supplier_code}: override_H87_to_kg = {override}")
+
+
+@main.command(name="round-debug")
+@click.argument("invoice", type=click.Path(exists=True))
+def round_debug(invoice):
+    """Prikaži podrobnosti o seštevanju vrstic in zaokroževanju."""
+    df, header_total = parse_invoice(invoice)
+    col = "izracunana_vrednost" if "izracunana_vrednost" in df.columns else "vrednost"
+    line_sum_dec = Decimal(str(df.get(col, pd.Series(dtype=float)).sum()))
+    step = detect_round_step(header_total, line_sum_dec)
+    rounded = round_to_step(line_sum_dec, step)
+    click.echo(f"Glava računa: {header_total} €")
+    click.echo(f"Vsota vrstic: {line_sum_dec} €")
+    click.echo(f"Zaznan korak zaokroževanja: {step}")
+    click.echo(f"Vsota po zaokrožitvi: {rounded} €")
+    click.echo(f"Razlika po zaokrožitvi: {header_total - rounded} €")
 
 if __name__ == "__main__":
     main()
