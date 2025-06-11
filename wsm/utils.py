@@ -226,7 +226,8 @@ def log_price_history(
     history_file: Union[str, Path],
     *,
     service_date: str | None = None,
-    max_entries_per_code: int = 50
+    max_entries_per_code: int = 50,
+    invoice_id: str | None = None,
 ) -> None:
     """
     Zapiše zgodovino cen v ``links/<ime_dobavitelja>/price_history.xlsx``.
@@ -251,6 +252,7 @@ def log_price_history(
     df_hist.columns = ["key", "cena"]
     df_hist["time"] = pd.Timestamp.now()
     df_hist["service_date"] = service_date
+    df_hist["invoice_id"] = invoice_id
 
     # Preveri, ali so podatki pravilni
     if df_hist["key"].isna().any() or df_hist["key"].str.strip().eq("").any():
@@ -259,6 +261,11 @@ def log_price_history(
 
     if history_path.exists():
         old = pd.read_excel(history_path, dtype={"key": str})
+        if "invoice_id" not in old.columns:
+            old["invoice_id"] = pd.NA
+        if invoice_id is not None:
+            mask = (old["invoice_id"] == invoice_id) & (old["key"].isin(df_hist["key"]))
+            old = old[~mask]
         df_hist = pd.concat([old, df_hist], ignore_index=True)
 
     df_hist = (
