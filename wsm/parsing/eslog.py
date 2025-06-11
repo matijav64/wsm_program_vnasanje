@@ -145,13 +145,13 @@ def parse_eslog_invoice(
     xml_path : str | Path
         Pot do eSLOG XML datoteke.
     sup_map : dict
-        Mapa dobaviteljev za prilagoditve.
+        Mapa dobaviteljev za prilagoditve. Trenutno se uporablja
+        predvsem pri normalizaciji enot (funkcija ``_norm_unit``).
     discount_codes : list[str] | None, optional
         Seznam kod za dokumentarni popust.  Privzeto je
         ``DEFAULT_DOC_DISCOUNT_CODES``.
     """
     supplier_code, _ = get_supplier_info(xml_path)
-    override_H87 = sup_map.get(supplier_code, {}).get("override_H87_to_kg", False)
 
     tree = ET.parse(xml_path)
     root = tree.getroot()
@@ -163,8 +163,6 @@ def parse_eslog_invoice(
         if qty == 0:
             continue
         unit = _text(sg26.find(".//e:S_QTY/e:C_C186/e:D_6411", NS))
-        if override_H87 and unit == "H87":
-            unit = "kg"
 
         # poiščemo šifro artikla
         art_code = ""
