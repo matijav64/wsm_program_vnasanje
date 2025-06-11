@@ -56,5 +56,5 @@ def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[p
 
     header_total = extract_header_net(Path(xml_path))
     line_sum = Decimal(str(result['vrednost'].sum())).quantize(Decimal('0.01'))
-    ok = abs(line_sum - header_total) < Decimal('0.05')
+    ok = abs(line_sum - header_total) <= Decimal('0.05')
     return result, header_total, ok
