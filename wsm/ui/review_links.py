@@ -504,19 +504,25 @@ def review_links(
     df["kolicina_norm"] = df["kolicina_norm"].astype(float)
     log.debug(f"df po normalizaciji: {df.head().to_dict()}")
 
-    # Adjust document discount if summed lines differ slightly from invoice total
+    # If totals differ slightly (<2 cent), adjust the document discount when
+    # its line exists. Otherwise the minor difference is ignored for manual
+    # correction.
     calculated_total = df["total_net"].sum() + doc_discount_total
     diff = invoice_total - calculated_total
     if abs(diff) <= Decimal("0.02") and diff != 0:
-        log.debug(
-            f"Prilagajam dokumentarni popust za razliko {diff}: "
-            f"{doc_discount_total} -> {doc_discount_total + diff}"
-        )
-        doc_discount_total += diff
         if not df_doc.empty:
+            log.debug(
+                f"Prilagajam dokumentarni popust za razliko {diff}: "
+                f"{doc_discount_total} -> {doc_discount_total + diff}"
+            )
+            doc_discount_total += diff
             df_doc.loc[df_doc.index, "vrednost"] += diff
             df_doc.loc[df_doc.index, "cena_bruto"] += abs(diff)
             df_doc.loc[df_doc.index, "rabata"] += abs(diff)
+        else:
+            log.debug(
+                f"Razlika {diff} med seštevkom vrstic in računom prezrta (brez _DOC_ vrstice)"
+            )
 
     root = tk.Tk()
     root.title(f"Ročna revizija – {supplier_name}")
