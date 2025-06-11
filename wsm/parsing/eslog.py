@@ -118,6 +118,30 @@ def extract_service_date(xml_path: Path | str) -> str | None:
         pass
     return None
 
+# ───────────────────── številka računa ─────────────────────
+def extract_invoice_number(xml_path: Path | str) -> str | None:
+    """Vrne številko računa iz segmenta BGM (D_1004)."""
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        bgm = root.find('.//e:S_BGM', NS)
+        if bgm is None:
+            for node in root.iter():
+                if node.tag.split('}')[-1] == 'S_BGM':
+                    bgm = node
+                    break
+        if bgm is not None:
+            num_el = bgm.find('.//e:C_C106/e:D_1004', NS)
+            if num_el is None:
+                num_el = next((el for el in bgm.iter() if el.tag.split('}')[-1] == 'D_1004'), None)
+            if num_el is not None:
+                num = _text(num_el)
+                if num:
+                    return num
+    except Exception:
+        pass
+    return None
+
 # ──────────────────── glavni parser za ESLOG INVOIC ────────────────────
 def parse_eslog_invoice(
     xml_path: str | Path,

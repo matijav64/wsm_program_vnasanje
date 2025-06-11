@@ -411,6 +411,17 @@ def review_links(
     default_name = supplier_info.get("ime", supplier_code)
     override_h87_to_kg = supplier_info.get("override_H87_to_kg", False)
 
+    service_date = None
+    invoice_number = None
+    if invoice_path and invoice_path.suffix.lower() == ".xml":
+        try:
+            from wsm.parsing.eslog import extract_service_date, extract_invoice_number
+
+            service_date = extract_service_date(invoice_path)
+            invoice_number = extract_invoice_number(invoice_path)
+        except Exception as exc:
+            log.warning(f"Napaka pri branju glave računa: {exc}")
+
     inv_name = None
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
@@ -548,9 +559,12 @@ def review_links(
 
     root = tk.Tk()
     root.title(f"Ročna revizija – {supplier_name}")
-    tk.Label(
-        root, text=f"Dobavitelj: {supplier_name}", font=("Arial", 14, "bold")
-    ).pack(pady=4)
+    header = f"Dobavitelj: {supplier_name}"
+    if service_date:
+        header += f" | Datum storitve: {service_date}"
+    if invoice_number:
+        header += f" | Račun: {invoice_number}"
+    tk.Label(root, text=header, font=("Arial", 14, "bold")).pack(pady=4)
     # Start in fullscreen; press Esc to exit
     root.attributes("-fullscreen", True)
     root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
