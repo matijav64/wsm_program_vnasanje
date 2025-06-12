@@ -581,7 +581,9 @@ def review_links(
             for q, u, n in zip(df["kolicina"], df["enota"], df["naziv"])
         ]
     )
+
     df = _apply_saved_units(df, old_unit_dict, override_h87_to_kg)
+
     df["kolicina_norm"] = df["kolicina_norm"].astype(float)
     log.debug(f"df po normalizaciji: {df.head().to_dict()}")
 

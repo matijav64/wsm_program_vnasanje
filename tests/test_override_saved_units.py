@@ -1,6 +1,8 @@
 import pandas as pd
 from decimal import Decimal
+
 from wsm.ui.review_links import _norm_unit, _apply_saved_units
+
 
 
 def test_override_h87_ignores_old_units():
@@ -24,6 +26,8 @@ def test_override_h87_ignores_old_units():
         ]
     )
 
+
     df = _apply_saved_units(df, old_unit_dict, True)
+
 
     assert df.loc[0, "enota_norm"] == "kg"
