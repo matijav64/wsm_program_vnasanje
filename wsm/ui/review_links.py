@@ -198,7 +198,11 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
                 data = json.loads(info_path.read_text())
                 sifra = str(data.get("sifra", "")).strip()
                 ime = str(data.get("ime", "")).strip() or folder.name
-                override = bool(data.get("override_H87_to_kg", False))
+                raw_override = data.get("override_H87_to_kg", False)
+                if isinstance(raw_override, str):
+                    override = raw_override.strip().lower() in ["true", "1", "yes"]
+                else:
+                    override = bool(raw_override)
                 if sifra:
                     sup_map[sifra] = {
                         "ime": ime,
