@@ -297,9 +297,11 @@ def _save_and_close(
     log.debug(
         f"Shranjevanje: supplier_name={supplier_name}, supplier_code={supplier_code}"
     )
+
     log.info(
         f"Shranjujem {len(df)} vrstic z enotami: {df['enota_norm'].value_counts().to_dict()}"
     )
+
     if unit_value:
         log.info(f"Enota izbirnika: {unit_value}")
 
@@ -386,8 +388,10 @@ def _save_and_close(
     log.debug(f"Primer shranjenih povezav: {manual_new.head().to_dict()}")
     if "enota_norm" in manual_new.columns:
         log.debug(
+
             "Units written to file: %s",
             manual_new["enota_norm"].value_counts().to_dict(),
+
         )
     try:
         manual_new.to_excel(links_file, index=False)
@@ -596,10 +600,12 @@ def review_links(
         df["enota_norm"] = df.apply(_restore_unit, axis=1)
         changed = (before != df["enota_norm"]).sum()
         log.debug(f"Units restored from old map: {changed} rows updated")
+
         log.debug(
             "Units after applying saved mapping: %s",
             df["enota_norm"].value_counts().to_dict(),
         )
+
     df["kolicina_norm"] = df["kolicina_norm"].astype(float)
     log.debug(f"df po normalizaciji: {df.head().to_dict()}")
 
@@ -887,8 +893,26 @@ def review_links(
     unit_menu.bind("<<ComboboxSelected>>", _on_unit_select)
     unit_var.trace_add("write", _on_unit_write)
 
+    def _on_unit_select(event=None):
+
+        val = unit_var.get()
+        log.info(f"Combobox selected: {val}")
+        log.debug(
+            "Units before any override: %s",
+            df["enota_norm"].value_counts().to_dict(),
+        )
+
+
+    def _on_unit_write(*_):
+        log.info(f"unit_var changed: {unit_var.get()}")
+
+    unit_menu.bind("<<ComboboxSelected>>", _on_unit_select)
+    unit_var.trace_add("write", _on_unit_write)
+
+
     def _set_all_units():
         new_u = unit_var.get()
+
         log.debug(
             "_set_all_units invoked with unit_var=%s unit_menu=%s",
             new_u,
@@ -896,22 +920,27 @@ def review_links(
         )
         before = df["enota_norm"].copy()
         log.info(f"Nastavljam vse enote na {new_u}")
+
         log.debug(
             "Units distribution pre-override: %s",
             before.value_counts().to_dict(),
         )
+
         df["enota_norm"] = new_u
         df["enota"] = new_u
         for item in tree.get_children():
             tree.set(item, "enota_norm", new_u)
+
         changed = (before != df["enota_norm"]).sum()
         if changed:
             log.info(f"Spremenjenih vrstic: {changed}")
         else:
             log.warning("Nobena vrstica ni bila spremenjena pri nastavitvi enote")
+
         log.info(
             "Units after override: %s",
             df["enota_norm"].value_counts().to_dict(),
+
         )
         root.update()  # refresh UI so the combobox selection is respected
         log.debug(
@@ -919,7 +948,7 @@ def review_links(
             df["enota_norm"].value_counts().to_dict(),
             unit_var.get(),
         )
-        log.debug("Combobox actual value after update: %s", unit_menu.get())
+
         _update_summary()
         _update_totals()
 
@@ -1062,7 +1091,9 @@ def review_links(
         if col != "#3" or not row_id:
             return
         idx = int(row_id)
+
         log.debug("Editing row %s current unit=%s", idx, df.at[idx, "enota_norm"])
+
         top = tk.Toplevel(root)
         top.title("Spremeni enoto")
         var = tk.StringVar(value=df.at[idx, "enota_norm"])
@@ -1075,8 +1106,10 @@ def review_links(
             before = df.at[idx, "enota_norm"]
             df.at[idx, "enota_norm"] = new_u
             tree.set(row_id, "enota_norm", new_u)
+
             log.info("Updated row %s unit from %s to %s", idx, before, new_u)
             log.debug("Combobox in edit dialog value: %s", cb.get())
+
             _update_summary()
             _update_totals()
             top.destroy()
