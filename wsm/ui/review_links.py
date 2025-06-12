@@ -835,7 +835,7 @@ def review_links(
         df["enota"] = new_u
         for item in tree.get_children():
             tree.set(item, "enota_norm", new_u)
-        root.update_idletasks()
+        root.update()  # refresh UI so the combobox selection is respected
         _update_summary()
         _update_totals()
 
