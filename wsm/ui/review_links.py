@@ -297,7 +297,11 @@ def _save_and_close(
     log.debug(
         f"Shranjevanje: supplier_name={supplier_name}, supplier_code={supplier_code}"
     )
-    log.info(f"Shranjujem {len(df)} vrstic z enotami: {df['enota_norm'].value_counts().to_dict()}")
+
+    log.info(
+        f"Shranjujem {len(df)} vrstic z enotami: {df['enota_norm'].value_counts().to_dict()}"
+    )
+
     if unit_value:
         log.info(f"Enota izbirnika: {unit_value}")
 
@@ -384,7 +388,10 @@ def _save_and_close(
     log.debug(f"Primer shranjenih povezav: {manual_new.head().to_dict()}")
     if "enota_norm" in manual_new.columns:
         log.debug(
-            "Units written to file: %s", manual_new["enota_norm"].value_counts().to_dict()
+
+            "Units written to file: %s",
+            manual_new["enota_norm"].value_counts().to_dict(),
+
         )
     try:
         manual_new.to_excel(links_file, index=False)
@@ -416,7 +423,9 @@ def _save_and_close(
     try:
         from wsm.utils import log_price_history
 
-        log_price_history(df, links_file, service_date=service_date, invoice_id=invoice_hash)
+        log_price_history(
+            df, links_file, service_date=service_date, invoice_id=invoice_hash
+        )
     except Exception as exc:
         log.warning(f"Napaka pri beleženju zgodovine cen: {exc}")
 
@@ -551,9 +560,11 @@ def review_links(
     # Ensure a clean sequential index so Treeview item IDs are predictable
     df = df.reset_index(drop=True)
     df["cena_pred_rabatom"] = df.apply(
-        lambda r: (r["vrednost"] + r["rabata"]) / r["kolicina"]
-        if r["kolicina"]
-        else Decimal("0"),
+        lambda r: (
+            (r["vrednost"] + r["rabata"]) / r["kolicina"]
+            if r["kolicina"]
+            else Decimal("0")
+        ),
         axis=1,
     )
     df["cena_po_rabatu"] = df.apply(
@@ -579,6 +590,7 @@ def review_links(
     )
     if old_unit_dict:
         log.debug(f"Old unit mapping loaded: {old_unit_dict}")
+
         def _restore_unit(r):
             if override_h87_to_kg and str(r["enota"]).upper() == "H87":
                 return r["enota_norm"]
@@ -615,7 +627,6 @@ def review_links(
             df_doc.loc[df_doc.index, "rabata"] += abs(diff)
         else:
             log.debug(
-
                 f"Dodajam _DOC_ vrstico za razliko {diff} med vrsticami in računom"
             )
             df_doc = pd.DataFrame(
@@ -632,7 +643,6 @@ def review_links(
                         "vrednost": diff,
                     }
                 ]
-
             )
             doc_discount_total += diff
 
@@ -750,15 +760,17 @@ def review_links(
                 .reset_index()
             )
 
-            summary_df["neto_brez_popusta"] = summary_df["vrednost"] + summary_df["rabata"]
+            summary_df["neto_brez_popusta"] = (
+                summary_df["vrednost"] + summary_df["rabata"]
+            )
             summary_df["wsm_naziv"] = summary_df["wsm_sifra"].map(
                 wsm_df.set_index("wsm_sifra")["wsm_naziv"]
             )
             summary_df["rabata_pct"] = [
                 (
-                    (row["rabata"] / row["neto_brez_popusta"] * Decimal("100")).quantize(
-                        Decimal("0.01")
-                    )
+                    (
+                        row["rabata"] / row["neto_brez_popusta"] * Decimal("100")
+                    ).quantize(Decimal("0.01"))
                     if row["neto_brez_popusta"]
                     else Decimal("0.00")
                 )
@@ -863,6 +875,23 @@ def review_links(
         state="readonly",
         width=5,
     )
+    log.debug("Inicializiran combobox z vrednostjo %s", unit_var.get())
+
+    def _on_unit_select(event=None):
+        val = unit_var.get()
+        log.info(f"Combobox selected: {val}")
+        log.debug("unit_menu.get()=%s", unit_menu.get())
+        log.debug(
+            "Units before any override: %s",
+            df["enota_norm"].value_counts().to_dict(),
+        )
+
+    def _on_unit_write(*_):
+        log.info(f"unit_var changed: {unit_var.get()}")
+        log.debug("trace info: %s", unit_var.trace_info())
+
+    unit_menu.bind("<<ComboboxSelected>>", _on_unit_select)
+    unit_var.trace_add("write", _on_unit_write)
 
     def _on_unit_select(event=None):
 
@@ -883,6 +912,12 @@ def review_links(
 
     def _set_all_units():
         new_u = unit_var.get()
+
+        log.debug(
+            "_set_all_units invoked with unit_var=%s unit_menu=%s",
+            new_u,
+            unit_menu.get(),
+        )
         before = df["enota_norm"].copy()
         log.info(f"Nastavljam vse enote na {new_u}")
 
@@ -913,6 +948,7 @@ def review_links(
             df["enota_norm"].value_counts().to_dict(),
             unit_var.get(),
         )
+
         _update_summary()
         _update_totals()
 
@@ -1055,23 +1091,25 @@ def review_links(
         if col != "#3" or not row_id:
             return
         idx = int(row_id)
-        log.debug(
-            "Editing row %s current unit=%s", idx, df.at[idx, "enota_norm"]
-        )
+
+        log.debug("Editing row %s current unit=%s", idx, df.at[idx, "enota_norm"])
+
         top = tk.Toplevel(root)
         top.title("Spremeni enoto")
         var = tk.StringVar(value=df.at[idx, "enota_norm"])
         cb = ttk.Combobox(top, values=unit_options, textvariable=var, state="readonly")
         cb.pack(padx=10, pady=10)
+        log.debug("Edit dialog opened with value %s", var.get())
 
         def _apply(_=None):
             new_u = var.get()
             before = df.at[idx, "enota_norm"]
             df.at[idx, "enota_norm"] = new_u
             tree.set(row_id, "enota_norm", new_u)
-            log.info(
-                "Updated row %s unit from %s to %s", idx, before, new_u
-            )
+
+            log.info("Updated row %s unit from %s to %s", idx, before, new_u)
+            log.debug("Combobox in edit dialog value: %s", cb.get())
+
             _update_summary()
             _update_totals()
             top.destroy()
