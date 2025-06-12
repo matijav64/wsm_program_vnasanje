@@ -253,6 +253,7 @@ def _write_supplier_map(sup_map: dict, sup_file: Path):
         log.info(f"Datoteka uspešno zapisana: {sup_file}")
         return
 
+
     # Determine whether `sup_file` represents a directory (existing or
     # intended).  When the directory does not exist yet, create it before
     # writing supplier data.  Otherwise fall back to the parent directory only
@@ -264,6 +265,7 @@ def _write_supplier_map(sup_map: dict, sup_file: Path):
         links_dir = sup_file
     else:
         links_dir = sup_file.parent
+
     for code, info in sup_map.items():
         from wsm.utils import sanitize_folder_name
 
