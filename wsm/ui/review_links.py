@@ -857,7 +857,11 @@ def review_links(
         value=_last_unit if _last_unit in unit_options else unit_options[0]
     )
     unit_menu = ttk.Combobox(
-        bottom, values=unit_options, textvariable=unit_var, state="readonly", width=5
+        bottom,
+        values=unit_options,
+        textvariable=unit_var,
+        state="readonly",
+        width=5,
     )
 
     def _on_unit_select(event=None):
@@ -870,16 +874,22 @@ def review_links(
         )
 
 
+    def _on_unit_write(*_):
+        log.info(f"unit_var changed: {unit_var.get()}")
+
     unit_menu.bind("<<ComboboxSelected>>", _on_unit_select)
-    unit_var.trace_add(
-        "write", lambda *_: log.info(f"unit_var changed: {unit_var.get()}")
-    )
+    unit_var.trace_add("write", _on_unit_write)
 
 
     def _set_all_units():
         new_u = unit_var.get()
         before = df["enota_norm"].copy()
         log.info(f"Nastavljam vse enote na {new_u}")
+
+        log.debug(
+            "Units distribution pre-override: %s",
+            before.value_counts().to_dict(),
+        )
 
         df["enota_norm"] = new_u
         df["enota"] = new_u
@@ -1045,6 +1055,9 @@ def review_links(
         if col != "#3" or not row_id:
             return
         idx = int(row_id)
+        log.debug(
+            "Editing row %s current unit=%s", idx, df.at[idx, "enota_norm"]
+        )
         top = tk.Toplevel(root)
         top.title("Spremeni enoto")
         var = tk.StringVar(value=df.at[idx, "enota_norm"])
@@ -1053,8 +1066,12 @@ def review_links(
 
         def _apply(_=None):
             new_u = var.get()
+            before = df.at[idx, "enota_norm"]
             df.at[idx, "enota_norm"] = new_u
             tree.set(row_id, "enota_norm", new_u)
+            log.info(
+                "Updated row %s unit from %s to %s", idx, before, new_u
+            )
             _update_summary()
             _update_totals()
             top.destroy()
