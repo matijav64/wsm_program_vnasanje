@@ -253,14 +253,17 @@ def _write_supplier_map(sup_map: dict, sup_file: Path):
         log.info(f"Datoteka uspešno zapisana: {sup_file}")
         return
 
-    # When `sup_file` points to a directory path that does not yet exist and
-    # has no suffix, create it and use it directly. Otherwise use the existing
-    # directory or the parent when a file path is given.
-    if not sup_file.exists() and sup_file.suffix == "":
-        sup_file.mkdir(parents=True, exist_ok=True)
+    # Determine whether `sup_file` represents a directory (existing or
+    # intended).  When the directory does not exist yet, create it before
+    # writing supplier data.  Otherwise fall back to the parent directory only
+    # when a file path is supplied.
+    is_dir_path = sup_file.is_dir() or sup_file.suffix == ""
+    if is_dir_path:
+        if not sup_file.exists():
+            sup_file.mkdir(parents=True, exist_ok=True)
         links_dir = sup_file
     else:
-        links_dir = sup_file if sup_file.is_dir() else sup_file.parent
+        links_dir = sup_file.parent
     for code, info in sup_map.items():
         from wsm.utils import sanitize_folder_name
 
