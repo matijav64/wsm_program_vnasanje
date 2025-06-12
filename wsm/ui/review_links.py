@@ -297,6 +297,9 @@ def _save_and_close(
     log.debug(
         f"Shranjevanje: supplier_name={supplier_name}, supplier_code={supplier_code}"
     )
+    log.info(f"Shranjujem {len(df)} vrstic z enotami: {df['enota_norm'].value_counts().to_dict()}")
+    if unit_value:
+        log.info(f"Enota izbirnika: {unit_value}")
 
     # Preverimo prazne sifra_dobavitelja
     empty_sifra = df["sifra_dobavitelja"].isna() | (df["sifra_dobavitelja"] == "")
@@ -568,7 +571,10 @@ def review_links(
                 return r["enota_norm"]
             return old_unit_dict.get(r["sifra_dobavitelja"], r["enota_norm"])
 
+        before = df["enota_norm"].copy()
         df["enota_norm"] = df.apply(_restore_unit, axis=1)
+        changed = (before != df["enota_norm"]).sum()
+        log.debug(f"Units restored from old map: {changed} rows updated")
     df["kolicina_norm"] = df["kolicina_norm"].astype(float)
     log.debug(f"df po normalizaciji: {df.head().to_dict()}")
 
@@ -835,12 +841,29 @@ def review_links(
         bottom, values=unit_options, textvariable=unit_var, state="readonly", width=5
     )
 
+    def _on_unit_select(event=None):
+        log.debug(f"Combobox selected: {unit_var.get()}")
+
+    unit_menu.bind("<<ComboboxSelected>>", _on_unit_select)
+    unit_var.trace_add("write", lambda *_: log.debug(f"unit_var changed: {unit_var.get()}"))
+
     def _set_all_units():
         new_u = unit_var.get()
+        before = df["enota_norm"].copy()
+        log.info(f"Nastavljam vse enote na {new_u}")
         df["enota_norm"] = new_u
         df["enota"] = new_u
         for item in tree.get_children():
             tree.set(item, "enota_norm", new_u)
+        changed = (before != df["enota_norm"]).sum()
+        if changed:
+            log.info(f"Spremenjenih vrstic: {changed}")
+        else:
+            log.warning("Nobena vrstica ni bila spremenjena pri nastavitvi enote")
+        log.debug(
+            "Units after override: %s",
+            df["enota_norm"].head().tolist(),
+        )
         root.update()  # refresh UI so the combobox selection is respected
         _update_summary()
         _update_totals()
