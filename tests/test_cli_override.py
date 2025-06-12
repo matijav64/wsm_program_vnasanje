@@ -59,3 +59,24 @@ def test_cli_override(tmp_path):
     assert row["kolicina"] == Decimal("2.5")
     assert total == Decimal("10")
     assert ok
+
+
+def test_cli_override_creates_dir(tmp_path):
+    links = tmp_path / "links"
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["override", "SUP", "--suppliers", str(links), "--set"])
+    assert result.exit_code == 0
+
+    supplier_json = links / "SUP" / "supplier.json"
+    assert supplier_json.exists()
+
+    xml_path = tmp_path / "invoice.xml"
+    xml_path.write_text(XML)
+
+    df, total, ok = analyze.analyze_invoice(xml_path, str(links))
+    row = df[df["sifra_dobavitelja"] == "SUP"].iloc[0]
+    assert row["enota"] == "kg"
+    assert row["kolicina"] == Decimal("2.5")
+    assert total == Decimal("10")
+    assert ok
