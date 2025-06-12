@@ -297,6 +297,9 @@ def _save_and_close(
     log.debug(
         f"Shranjevanje: supplier_name={supplier_name}, supplier_code={supplier_code}"
     )
+    log.info(f"Shranjujem {len(df)} vrstic z enotami: {df['enota_norm'].value_counts().to_dict()}")
+    if unit_value:
+        log.info(f"Enota izbirnika: {unit_value}")
 
     # Preverimo prazne sifra_dobavitelja
     empty_sifra = df["sifra_dobavitelja"].isna() | (df["sifra_dobavitelja"] == "")
@@ -840,11 +843,20 @@ def review_links(
 
     def _set_all_units():
         new_u = unit_var.get()
-        log.debug(f"_set_all_units triggered with unit: {new_u}")
+        before = df["enota_norm"].copy()
+        log.info(f"Nastavljam vse enote na {new_u}")
+
         df["enota_norm"] = new_u
         df["enota"] = new_u
         for item in tree.get_children():
             tree.set(item, "enota_norm", new_u)
+
+        changed = (before != df["enota_norm"]).sum()
+        if changed:
+            log.info(f"Spremenjenih vrstic: {changed}")
+        else:
+            log.warning("Nobena vrstica ni bila spremenjena pri nastavitvi enote")
+
         log.debug(
             "Units after override: %s",
             df["enota_norm"].head().tolist(),
