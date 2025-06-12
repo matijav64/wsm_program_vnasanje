@@ -190,23 +190,41 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
 
     links_dir = sup_file if sup_file.is_dir() else sup_file.parent
     for folder in links_dir.iterdir():
+        if not folder.is_dir():
+            continue
         info_path = folder / "supplier.json"
         if info_path.exists():
             try:
                 data = json.loads(info_path.read_text())
                 sifra = str(data.get("sifra", "")).strip()
-                ime = str(data.get("ime", "")).strip()
+                ime = str(data.get("ime", "")).strip() or folder.name
                 override = bool(data.get("override_H87_to_kg", False))
                 if sifra:
                     sup_map[sifra] = {
-                        "ime": ime or sifra,
+                        "ime": ime,
                         "override_H87_to_kg": override,
                     }
                     log.debug(
                         f"Dodan iz JSON: sifra={sifra}, ime={ime}, override={override}"
                     )
+                    # uspešno prebrali podatke, nadaljuj z naslednjo mapo
+                    continue
             except Exception as e:
                 log.error(f"Napaka pri branju {info_path}: {e}")
+        # fallback when supplier.json is missing or neveljaven
+        for file in folder.glob("*_povezane.xlsx"):
+            code = file.stem.split("_")[0]
+            if not code:
+                continue
+            if code not in sup_map:
+                sup_map[code] = {
+                    "ime": folder.name,
+                    "override_H87_to_kg": False,
+                }
+                log.debug(
+                    f"Dodan iz mape: sifra={code}, ime={folder.name}, override=False"
+                )
+            break
 
     log.info(f"Najdeni dobavitelji: {list(sup_map.keys())}")
     return sup_map
