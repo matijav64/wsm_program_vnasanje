@@ -832,8 +832,10 @@ def review_links(
     def _set_all_units():
         new_u = unit_var.get()
         df["enota_norm"] = new_u
+        df["enota"] = new_u
         for item in tree.get_children():
             tree.set(item, "enota_norm", new_u)
+        root.update_idletasks()
         _update_summary()
         _update_totals()
 
