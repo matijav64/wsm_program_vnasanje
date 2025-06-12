@@ -830,10 +830,15 @@ def review_links(
 
     bottom = tk.Frame(root)
     bottom.pack(fill="x", padx=8, pady=6)
-    custom = tk.Frame(bottom)
-    custom.pack(fill="x")
-    tk.Label(custom, text="Vpiši / izberi WSM naziv:").pack(side="left")
-    entry = tk.Entry(custom)
+        bottom,
+        values=unit_options,
+        textvariable=unit_var,
+        state="readonly",
+        width=5,
+    def _on_unit_write(*_):
+        log.info(f"unit_var changed: {unit_var.get()}")
+
+    unit_var.trace_add("write", _on_unit_write)
     entry.pack(side="left", fill="x", expand=True, padx=(4, 0))
     lb = tk.Listbox(custom, height=6)
 
@@ -1015,6 +1020,13 @@ def review_links(
             lb.activate(0)
             lb.see(0)
         else:
+        log.debug(
+            "Editing row %s current unit=%s", idx, df.at[idx, "enota_norm"]
+        )
+            before = df.at[idx, "enota_norm"]
+            log.info(
+                "Updated row %s unit from %s to %s", idx, before, new_u
+            )
             lb.pack_forget()
 
     def _init_listbox(evt=None):
