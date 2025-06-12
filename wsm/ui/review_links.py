@@ -845,15 +845,18 @@ def review_links(
         new_u = unit_var.get()
         before = df["enota_norm"].copy()
         log.info(f"Nastavljam vse enote na {new_u}")
+
         df["enota_norm"] = new_u
         df["enota"] = new_u
         for item in tree.get_children():
             tree.set(item, "enota_norm", new_u)
+
         changed = (before != df["enota_norm"]).sum()
         if changed:
             log.info(f"Spremenjenih vrstic: {changed}")
         else:
             log.warning("Nobena vrstica ni bila spremenjena pri nastavitvi enote")
+
         log.debug(
             "Units after override: %s",
             df["enota_norm"].head().tolist(),
