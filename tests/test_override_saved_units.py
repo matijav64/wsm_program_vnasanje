@@ -1,6 +1,8 @@
 import pandas as pd
 from decimal import Decimal
-from wsm.ui.review_links import _norm_unit
+
+from wsm.ui.review_links import _norm_unit, _apply_saved_units
+
 
 
 def test_override_h87_ignores_old_units():
@@ -24,11 +26,8 @@ def test_override_h87_ignores_old_units():
         ]
     )
 
-    if old_unit_dict:
-        def _restore_unit(r):
-            if True and str(r["enota"]).upper() == "H87":
-                return r["enota_norm"]
-            return old_unit_dict.get(r["sifra_dobavitelja"], r["enota_norm"])
-        df["enota_norm"] = df.apply(_restore_unit, axis=1)
+
+    df = _apply_saved_units(df, old_unit_dict, True)
+
 
     assert df.loc[0, "enota_norm"] == "kg"
