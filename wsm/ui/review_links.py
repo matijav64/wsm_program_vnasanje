@@ -568,7 +568,10 @@ def review_links(
                 return r["enota_norm"]
             return old_unit_dict.get(r["sifra_dobavitelja"], r["enota_norm"])
 
+        before = df["enota_norm"].copy()
         df["enota_norm"] = df.apply(_restore_unit, axis=1)
+        changed = (before != df["enota_norm"]).sum()
+        log.debug(f"Units restored from old map: {changed} rows updated")
     df["kolicina_norm"] = df["kolicina_norm"].astype(float)
     log.debug(f"df po normalizaciji: {df.head().to_dict()}")
 
@@ -837,10 +840,15 @@ def review_links(
 
     def _set_all_units():
         new_u = unit_var.get()
+        log.debug(f"_set_all_units triggered with unit: {new_u}")
         df["enota_norm"] = new_u
         df["enota"] = new_u
         for item in tree.get_children():
             tree.set(item, "enota_norm", new_u)
+        log.debug(
+            "Units after override: %s",
+            df["enota_norm"].head().tolist(),
+        )
         root.update()  # refresh UI so the combobox selection is respected
         _update_summary()
         _update_totals()
