@@ -842,17 +842,20 @@ def review_links(
     )
 
     def _on_unit_select(event=None):
-        log.debug(f"Combobox selected: {unit_var.get()}")
+        val = unit_var.get()
+        log.info(f"Combobox selected: {val}")
 
     unit_menu.bind("<<ComboboxSelected>>", _on_unit_select)
-    unit_var.trace_add("write", lambda *_: log.debug(f"unit_var changed: {unit_var.get()}"))
+    unit_var.trace_add(
+        "write", lambda *_: log.info(f"unit_var changed: {unit_var.get()}")
+    )
 
     def _set_all_units():
         new_u = unit_var.get()
         before = df["enota_norm"].copy()
         log.info(f"Nastavljam vse enote na {new_u}")
-
-        df["enota_norm"] = new_u
+        log.info(
+            df["enota_norm"].value_counts().to_dict(),
         df["enota"] = new_u
         for item in tree.get_children():
             tree.set(item, "enota_norm", new_u)
