@@ -3,6 +3,7 @@
 from __future__ import annotations
 import math, re, logging, hashlib, json
 from decimal import Decimal
+from wsm.parsing.money import detect_round_step
 from pathlib import Path
 from typing import Tuple
 
@@ -550,7 +551,8 @@ def review_links(
     # still match the invoice without showing an extra row.
     calculated_total = df["total_net"].sum() + doc_discount_total
     diff = invoice_total - calculated_total
-    if abs(diff) <= Decimal("0.05") and diff != 0:
+    step = detect_round_step(invoice_total, calculated_total)
+    if abs(diff) <= step and diff != 0:
         if not df_doc.empty:
             log.debug(
                 f"Prilagajam dokumentarni popust za razliko {diff}: "
@@ -701,14 +703,16 @@ def review_links(
             summary_df["wsm_naziv"] = summary_df["wsm_sifra"].map(
                 wsm_df.set_index("wsm_sifra")["wsm_naziv"]
             )
-            summary_df["rabata_pct"] = summary_df.apply(
-                lambda r: (
-                    (r["rabata"] / r["neto_brez_popusta"] * Decimal("100")).quantize(Decimal("0.01"))
-                    if r["neto_brez_popusta"]
+            summary_df["rabata_pct"] = [
+                (
+                    (row["rabata"] / row["neto_brez_popusta"] * Decimal("100")).quantize(
+                        Decimal("0.01")
+                    )
+                    if row["neto_brez_popusta"]
                     else Decimal("0.00")
-                ),
-                axis=1,
-            )
+                )
+                for _, row in summary_df.iterrows()
+            ]
 
             for _, row in summary_df.iterrows():
                 vals = [
@@ -735,7 +739,8 @@ def review_links(
     unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum()
     # Skupni seštevek mora biti vsota "povezano" in "ostalo"
     total_sum = linked_total + unlinked_total
-    match_symbol = "✓" if abs(total_sum - invoice_total) <= Decimal("0.01") else "✗"
+    step_total = detect_round_step(invoice_total, total_sum)
+    match_symbol = "✓" if abs(total_sum - invoice_total) <= step_total else "✗"
 
     tk.Label(
         total_frame,
@@ -750,7 +755,8 @@ def review_links(
         )
         unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum()
         total_sum = linked_total + unlinked_total
-        match_symbol = "✓" if abs(total_sum - invoice_total) <= Decimal("0.01") else "✗"
+        step_total = detect_round_step(invoice_total, total_sum)
+        match_symbol = "✓" if abs(total_sum - invoice_total) <= step_total else "✗"
         total_frame.children["total_sum"].config(
             text=f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(invoice_total)} € {match_symbol}"
         )
