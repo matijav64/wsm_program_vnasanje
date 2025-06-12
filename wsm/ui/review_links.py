@@ -1088,6 +1088,7 @@ def review_links(
             new_u = var.get()
             before = df.at[idx, "enota_norm"]
             df.at[idx, "enota_norm"] = new_u
+            df.at[idx, "enota"] = new_u
             tree.set(row_id, "enota_norm", new_u)
 
             log.info("Updated row %s unit from %s to %s", idx, before, new_u)
