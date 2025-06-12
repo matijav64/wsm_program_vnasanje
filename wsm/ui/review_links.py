@@ -842,10 +842,15 @@ def review_links(
     )
 
     def _on_unit_select(event=None):
-        log.debug(f"Combobox selected: {unit_var.get()}")
+
+        val = unit_var.get()
+        log.info(f"Combobox selected: {val}")
 
     unit_menu.bind("<<ComboboxSelected>>", _on_unit_select)
-    unit_var.trace_add("write", lambda *_: log.debug(f"unit_var changed: {unit_var.get()}"))
+    unit_var.trace_add(
+        "write", lambda *_: log.info(f"unit_var changed: {unit_var.get()}")
+    )
+
 
     def _set_all_units():
         new_u = unit_var.get()
@@ -863,9 +868,10 @@ def review_links(
         else:
             log.warning("Nobena vrstica ni bila spremenjena pri nastavitvi enote")
 
-        log.debug(
+        log.info(
             "Units after override: %s",
-            df["enota_norm"].head().tolist(),
+            df["enota_norm"].value_counts().to_dict(),
+
         )
         root.update()  # refresh UI so the combobox selection is respected
         _update_summary()
