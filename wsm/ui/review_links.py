@@ -563,10 +563,12 @@ def review_links(
         ]
     )
     if old_unit_dict:
-        df["enota_norm"] = df.apply(
-            lambda r: old_unit_dict.get(r["sifra_dobavitelja"], r["enota_norm"]),
-            axis=1,
-        )
+        def _restore_unit(r):
+            if override_h87_to_kg and str(r["enota"]).upper() == "H87":
+                return r["enota_norm"]
+            return old_unit_dict.get(r["sifra_dobavitelja"], r["enota_norm"])
+
+        df["enota_norm"] = df.apply(_restore_unit, axis=1)
     df["kolicina_norm"] = df["kolicina_norm"].astype(float)
     log.debug(f"df po normalizaciji: {df.head().to_dict()}")
 
