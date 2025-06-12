@@ -909,8 +909,12 @@ def review_links(
             before.value_counts().to_dict(),
         )
 
+        # Modify only the normalized unit so we preserve the
+        # original value from the invoice.  ``enota`` is used to
+        # detect whether an item originally had the H87 code, which
+        # is necessary for the ``override_h87_to_kg`` logic when
+        # restoring saved units.
         df["enota_norm"] = new_u
-        df["enota"] = new_u
         for item in tree.get_children():
             tree.set(item, "enota_norm", new_u)
 
