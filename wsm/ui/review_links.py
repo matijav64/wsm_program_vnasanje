@@ -893,23 +893,6 @@ def review_links(
     unit_menu.bind("<<ComboboxSelected>>", _on_unit_select)
     unit_var.trace_add("write", _on_unit_write)
 
-    def _on_unit_select(event=None):
-
-        val = unit_var.get()
-        log.info(f"Combobox selected: {val}")
-        log.debug(
-            "Units before any override: %s",
-            df["enota_norm"].value_counts().to_dict(),
-        )
-
-
-    def _on_unit_write(*_):
-        log.info(f"unit_var changed: {unit_var.get()}")
-
-    unit_menu.bind("<<ComboboxSelected>>", _on_unit_select)
-    unit_var.trace_add("write", _on_unit_write)
-
-
     def _set_all_units():
         new_u = unit_var.get()
 
