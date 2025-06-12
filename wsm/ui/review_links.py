@@ -588,10 +588,12 @@ def review_links(
         df["enota_norm"] = df.apply(_restore_unit, axis=1)
         changed = (before != df["enota_norm"]).sum()
         log.debug(f"Units restored from old map: {changed} rows updated")
+
         log.debug(
             "Units after applying saved mapping: %s",
             df["enota_norm"].value_counts().to_dict(),
         )
+
     df["kolicina_norm"] = df["kolicina_norm"].astype(float)
     log.debug(f"df po normalizaciji: {df.head().to_dict()}")
 
@@ -859,6 +861,7 @@ def review_links(
     )
 
     def _on_unit_select(event=None):
+
         val = unit_var.get()
         log.info(f"Combobox selected: {val}")
         log.debug(
@@ -866,31 +869,33 @@ def review_links(
             df["enota_norm"].value_counts().to_dict(),
         )
 
+
     unit_menu.bind("<<ComboboxSelected>>", _on_unit_select)
     unit_var.trace_add(
         "write", lambda *_: log.info(f"unit_var changed: {unit_var.get()}")
     )
 
+
     def _set_all_units():
         new_u = unit_var.get()
         before = df["enota_norm"].copy()
         log.info(f"Nastavljam vse enote na {new_u}")
-        log.debug(
-            "Units distribution pre-override: %s",
-            before.value_counts().to_dict(),
-        )
+
         df["enota_norm"] = new_u
         df["enota"] = new_u
         for item in tree.get_children():
             tree.set(item, "enota_norm", new_u)
+
         changed = (before != df["enota_norm"]).sum()
         if changed:
             log.info(f"Spremenjenih vrstic: {changed}")
         else:
             log.warning("Nobena vrstica ni bila spremenjena pri nastavitvi enote")
+
         log.info(
             "Units after override: %s",
             df["enota_norm"].value_counts().to_dict(),
+
         )
         root.update()  # refresh UI so the combobox selection is respected
         log.debug(
