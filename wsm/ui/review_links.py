@@ -733,10 +733,20 @@ def review_links(
     # Dokumentarni popust obravnavamo kot povezan znesek, saj ne potrebuje
     # dodatne ročne obdelave. Zato ga prištejemo k "Skupaj povezano" in ga
     # ne štejemo med "Skupaj ostalo".
-    linked_total = (
-        df[df["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
-    )
-    unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum()
+    if df["wsm_sifra"].notna().any():
+        # Ko je vsaj ena vrstica povezana, dokumentarni popust štejemo
+        # kot "povezan" znesek, saj ga uporabnik ne obravnava ročno.
+        linked_total = (
+            df[df["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
+        )
+        unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum()
+    else:
+        # Če ni še nobene povezave, popust prištejemo k "ostalim" vrsticam,
+        # da "Skupaj povezano" ostane ničelno.
+        linked_total = df[df["wsm_sifra"].notna()]["total_net"].sum()
+        unlinked_total = (
+            df[df["wsm_sifra"].isna()]["total_net"].sum() + doc_discount_total
+        )
     # Skupni seštevek mora biti vsota "povezano" in "ostalo"
     total_sum = linked_total + unlinked_total
     step_total = detect_round_step(invoice_total, total_sum)
@@ -750,10 +760,16 @@ def review_links(
     ).pack(side="left", padx=10)
 
     def _update_totals():
-        linked_total = (
-            df[df["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
-        )
-        unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum()
+        if df["wsm_sifra"].notna().any():
+            linked_total = (
+                df[df["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
+            )
+            unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum()
+        else:
+            linked_total = df[df["wsm_sifra"].notna()]["total_net"].sum()
+            unlinked_total = (
+                df[df["wsm_sifra"].isna()]["total_net"].sum() + doc_discount_total
+            )
         total_sum = linked_total + unlinked_total
         step_total = detect_round_step(invoice_total, total_sum)
         match_symbol = "✓" if abs(total_sum - invoice_total) <= step_total else "✗"
