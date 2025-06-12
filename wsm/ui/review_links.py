@@ -703,14 +703,16 @@ def review_links(
             summary_df["wsm_naziv"] = summary_df["wsm_sifra"].map(
                 wsm_df.set_index("wsm_sifra")["wsm_naziv"]
             )
-            summary_df["rabata_pct"] = summary_df.apply(
-                lambda r: (
-                    (r["rabata"] / r["neto_brez_popusta"] * Decimal("100")).quantize(Decimal("0.01"))
-                    if r["neto_brez_popusta"]
+            summary_df["rabata_pct"] = [
+                (
+                    (row["rabata"] / row["neto_brez_popusta"] * Decimal("100")).quantize(
+                        Decimal("0.01")
+                    )
+                    if row["neto_brez_popusta"]
                     else Decimal("0.00")
-                ),
-                axis=1,
-            )
+                )
+                for _, row in summary_df.iterrows()
+            ]
 
             for _, row in summary_df.iterrows():
                 vals = [
