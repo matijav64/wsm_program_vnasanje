@@ -841,6 +841,12 @@ def review_links(
         bottom, values=unit_options, textvariable=unit_var, state="readonly", width=5
     )
 
+    def _on_unit_select(event=None):
+        log.debug(f"Combobox selected: {unit_var.get()}")
+
+    unit_menu.bind("<<ComboboxSelected>>", _on_unit_select)
+    unit_var.trace_add("write", lambda *_: log.debug(f"unit_var changed: {unit_var.get()}"))
+
     def _set_all_units():
         new_u = unit_var.get()
         before = df["enota_norm"].copy()
