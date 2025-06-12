@@ -529,6 +529,8 @@ def review_links(
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"]
     doc_discount_total = df_doc["vrednost"].sum()
     df = df[df["sifra_dobavitelja"] != "_DOC_"]
+    # Ensure a clean sequential index so Treeview item IDs are predictable
+    df = df.reset_index(drop=True)
     df["cena_pred_rabatom"] = df.apply(
         lambda r: (r["vrednost"] + r["rabata"]) / r["kolicina"]
         if r["kolicina"]
