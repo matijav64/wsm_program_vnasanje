@@ -842,6 +842,7 @@ def review_links(
     )
 
     def _on_unit_select(event=None):
+
         val = unit_var.get()
         log.info(f"Combobox selected: {val}")
 
@@ -850,22 +851,27 @@ def review_links(
         "write", lambda *_: log.info(f"unit_var changed: {unit_var.get()}")
     )
 
+
     def _set_all_units():
         new_u = unit_var.get()
         before = df["enota_norm"].copy()
         log.info(f"Nastavljam vse enote na {new_u}")
+
         df["enota_norm"] = new_u
         df["enota"] = new_u
         for item in tree.get_children():
             tree.set(item, "enota_norm", new_u)
+
         changed = (before != df["enota_norm"]).sum()
         if changed:
             log.info(f"Spremenjenih vrstic: {changed}")
         else:
             log.warning("Nobena vrstica ni bila spremenjena pri nastavitvi enote")
+
         log.info(
             "Units after override: %s",
             df["enota_norm"].value_counts().to_dict(),
+
         )
         root.update()  # refresh UI so the combobox selection is respected
         _update_summary()
