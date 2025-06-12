@@ -172,6 +172,9 @@ def round_debug(invoice):
     rounded = round_to_step(line_sum_dec, step)
     click.echo(f"Glava računa: {header_total} €")
     click.echo(f"Vsota vrstic: {line_sum_dec} €")
+
+    click.echo(f"Razlika pred zaokrožitvijo: {header_total - line_sum_dec} €")
+
     click.echo(f"Zaznan korak zaokroževanja: {step}")
     click.echo(f"Vsota po zaokrožitvi: {rounded} €")
     click.echo(f"Razlika po zaokrožitvi: {header_total - rounded} €")
