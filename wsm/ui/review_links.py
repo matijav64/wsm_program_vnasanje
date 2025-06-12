@@ -359,10 +359,18 @@ def _save_and_close(
     if manual_new.empty:
         # Če ni obstoječih povezav, začni z df_links
         manual_new = df_links.copy()
+        log.debug(
+            "Starting new mapping DataFrame with units: %s",
+            manual_new["enota_norm"].value_counts().to_dict(),
+        )
     else:
         manual_new.loc[
             df_links.index, ["naziv", "wsm_sifra", "dobavitelj", "enota_norm"]
         ] = df_links
+        log.debug(
+            "Updated existing mappings with new units: %s",
+            manual_new["enota_norm"].value_counts().to_dict(),
+        )
 
     # Dodaj nove elemente, ki niso v manual_new
     new_items = df_links[~df_links.index.isin(manual_new.index)]
@@ -374,6 +382,10 @@ def _save_and_close(
     # Shrani v Excel
     log.info(f"Shranjujem {len(manual_new)} povezav v {links_file}")
     log.debug(f"Primer shranjenih povezav: {manual_new.head().to_dict()}")
+    if "enota_norm" in manual_new.columns:
+        log.debug(
+            "Units written to file: %s", manual_new["enota_norm"].value_counts().to_dict()
+        )
     try:
         manual_new.to_excel(links_file, index=False)
         log.info(f"Uspešno shranjeno v {links_file}")
@@ -566,6 +578,7 @@ def review_links(
         ]
     )
     if old_unit_dict:
+        log.debug(f"Old unit mapping loaded: {old_unit_dict}")
         def _restore_unit(r):
             if override_h87_to_kg and str(r["enota"]).upper() == "H87":
                 return r["enota_norm"]
@@ -575,6 +588,12 @@ def review_links(
         df["enota_norm"] = df.apply(_restore_unit, axis=1)
         changed = (before != df["enota_norm"]).sum()
         log.debug(f"Units restored from old map: {changed} rows updated")
+
+        log.debug(
+            "Units after applying saved mapping: %s",
+            df["enota_norm"].value_counts().to_dict(),
+        )
+
     df["kolicina_norm"] = df["kolicina_norm"].astype(float)
     log.debug(f"df po normalizaciji: {df.head().to_dict()}")
 
@@ -845,6 +864,11 @@ def review_links(
 
         val = unit_var.get()
         log.info(f"Combobox selected: {val}")
+        log.debug(
+            "Units before any override: %s",
+            df["enota_norm"].value_counts().to_dict(),
+        )
+
 
     unit_menu.bind("<<ComboboxSelected>>", _on_unit_select)
     unit_var.trace_add(
@@ -874,6 +898,11 @@ def review_links(
 
         )
         root.update()  # refresh UI so the combobox selection is respected
+        log.debug(
+            "Units after root.update: %s (combobox=%s)",
+            df["enota_norm"].value_counts().to_dict(),
+            unit_var.get(),
+        )
         _update_summary()
         _update_totals()
 
