@@ -1,6 +1,7 @@
 # File: wsm/parsing/money.py
 from decimal import Decimal, ROUND_HALF_UP
-
+import xml.etree.ElementTree as ET
+import pandas as pd
 
 def round_to_step(value: Decimal, step: Decimal, rounding=ROUND_HALF_UP) -> Decimal:
     """Round ``value`` to the nearest ``step`` (e.g. 0.01 or 0.05)."""
@@ -24,8 +25,6 @@ def quantize_like(value: Decimal, reference: Decimal, rounding=ROUND_HALF_UP) ->
     """Quantize ``value`` with the same precision as ``reference``."""
     quant = Decimal('1').scaleb(reference.as_tuple().exponent)
     return value.quantize(quant, rounding=rounding)
-import xml.etree.ElementTree as ET
-import pandas as pd
 
 def extract_total_amount(xml_root: ET.Element) -> Decimal:
     """

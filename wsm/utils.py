@@ -24,7 +24,10 @@ def sanitize_folder_name(name: str) -> str:
         raise TypeError(f"sanitize_folder_name expects a string, got {type(name)}")
     return re.sub(r'[\\/*?:"<>|]', "_", name)
 
-_clean = lambda s: re.sub(r"\s+", " ", s.strip().lower())
+
+def _clean(s: str) -> str:
+    """Normalize whitespace and lowercase the string."""
+    return re.sub(r"\s+", " ", s.strip().lower())
 
 # Helper to retrieve the first real supplier code from a DataFrame. ``_DOC_``
 # rows appear in some invoices due to document-level discounts and should be
