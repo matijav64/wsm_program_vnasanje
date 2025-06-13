@@ -660,12 +660,22 @@ def review_links(
 
     root = tk.Tk()
     root.title(f"Ročna revizija – {supplier_name}")
-    header = f"Dobavitelj: {supplier_name}"
-    if service_date:
-        header += f" | Datum storitve: {service_date}"
-    if invoice_number:
-        header += f" | Račun: {invoice_number}"
-    tk.Label(root, text=header, font=("Arial", 14, "bold")).pack(pady=4)
+
+    header_var = tk.StringVar()
+
+    def _refresh_header():
+        header = f"Dobavitelj: {supplier_name}"
+        if service_date:
+            header += f" | Datum storitve: {service_date}"
+        if invoice_number:
+            header += f" | Račun: {invoice_number}"
+        header_var.set(header)
+        root.title(f"Ročna revizija – {supplier_name}")
+
+    _refresh_header()
+
+    header_lbl = tk.Label(root, textvariable=header_var, font=("Arial", 14, "bold"))
+    header_lbl.pack(pady=4)
     # Start in fullscreen; press Esc to exit
     root.attributes("-fullscreen", True)
     root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
@@ -975,6 +985,60 @@ def review_links(
         ),
     )
 
+    def _edit_supplier():
+        nonlocal supplier_name, override_h87_to_kg
+        top = tk.Toplevel(root)
+        top.title("Uredi dobavitelja")
+        tk.Label(top, text="Ime dobavitelja:").pack(padx=10, pady=(10, 0))
+        name_entry = tk.Entry(top)
+        name_entry.insert(0, supplier_name)
+        name_entry.pack(padx=10, pady=5)
+        chk_var = tk.BooleanVar(value=override_h87_to_kg)
+        tk.Checkbutton(
+            top,
+            text="override_H87_to_kg",
+            variable=chk_var,
+            onvalue=True,
+            offvalue=False,
+        ).pack(padx=10, pady=5)
+
+        def _apply():
+            nonlocal supplier_name, override_h87_to_kg
+            new_name = name_entry.get().strip()
+            if new_name:
+                supplier_name = new_name
+            prev_override = override_h87_to_kg
+            override_h87_to_kg = chk_var.get()
+            sup_map[supplier_code] = {
+                "ime": supplier_name,
+                "override_H87_to_kg": override_h87_to_kg,
+            }
+            _write_supplier_map(sup_map, suppliers_file)
+            df["dobavitelj"] = supplier_name
+            for iid in tree.get_children():
+                vals = list(tree.item(iid, "values"))
+                vals[cols.index("dobavitelj")] = supplier_name
+                tree.item(iid, values=vals)
+
+            if override_h87_to_kg != prev_override:
+                df["kolicina_norm"], df["enota_norm"] = zip(
+                    *[
+                        _norm_unit(
+                            Decimal(str(q)), u, n, override_h87_to_kg
+                        )
+                        for q, u, n in zip(df["kolicina"], df["enota"], df["naziv"])
+                    ]
+                )
+                for idx, row in df.iterrows():
+                    tree.set(str(idx), "kolicina_norm", _fmt(row["kolicina_norm"]))
+                    tree.set(str(idx), "enota_norm", row["enota_norm"])
+                _update_summary()
+                _update_totals()
+            _refresh_header()
+            top.destroy()
+
+        tk.Button(top, text="Potrdi", command=_apply).pack(pady=(0, 10))
+
     def _exit():
         if remember_var.get():
             try:
@@ -992,6 +1056,14 @@ def review_links(
     )
     exit_btn.pack(side="right", padx=(6, 0))
     save_btn.pack(side="right", padx=(6, 0))
+
+    edit_btn = tk.Button(
+        bottom,
+        text="Uredi dobavitelja",
+        width=14,
+        command=_edit_supplier,
+    )
+    edit_btn.pack(side="right", padx=(6, 0))
     tk.Checkbutton(
         bottom,
         text="Zapomni enoto",
