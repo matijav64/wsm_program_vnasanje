@@ -1004,7 +1004,7 @@ def review_links(
 
         def _apply():
             supplier_name = name_entry.get().strip() or supplier_name
-            prev_override = override_h87_to_kg
+
             override_h87_to_kg = chk_var.get()
             sup_map[supplier_code] = {
                 "ime": supplier_name,
@@ -1016,6 +1016,7 @@ def review_links(
                 vals = list(tree.item(iid, "values"))
                 vals[cols.index("dobavitelj")] = supplier_name
                 tree.item(iid, values=vals)
+
 
             if override_h87_to_kg != prev_override:
                 df["kolicina_norm"], df["enota_norm"] = zip(
@@ -1031,6 +1032,7 @@ def review_links(
                     tree.set(str(idx), "enota_norm", row["enota_norm"])
                 _update_summary()
                 _update_totals()
+
             _refresh_header()
             top.destroy()
 
