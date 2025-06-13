@@ -15,12 +15,14 @@ from wsm.utils import sanitize_folder_name
 def launch_price_watch(suppliers: Path | str = Path("links")) -> None:
     """Launch the price watch window."""
     suppliers_dir = Path(suppliers)
+
     root = tk.Tk()
     root.title("Spremljanje cen")
     root.geometry("500x400")
 
     suppliers_map = _load_supplier_map(suppliers_dir)
     supplier_codes = sorted(suppliers_map)
+
 
     combo_values = [f"{c} - {suppliers_map[c]['ime']}" for c in supplier_codes]
     if combo_values:
@@ -47,6 +49,7 @@ def launch_price_watch(suppliers: Path | str = Path("links")) -> None:
         name = suppliers_map.get(code, {}).get("ime", code)
         safe_name = sanitize_folder_name(name)
         hist_path = suppliers_dir / safe_name / "price_history.xlsx"
+
         listbox.delete(0, tk.END)
         item_data.clear()
         if not hist_path.exists():
