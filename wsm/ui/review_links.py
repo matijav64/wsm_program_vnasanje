@@ -34,7 +34,10 @@ _rx_mass = re.compile(
     r"(?:teža|masa|weight)?\s*[:\s]?\s*([0-9]+[\.,]?[0-9]*)\s*((?:kgm?)|kgr|g|gr|gram|grams|mg|milligram|milligrams)\b",
     re.I,
 )
-_dec = lambda x: Decimal(x.replace(",", "."))
+
+def _dec(x: str) -> Decimal:
+    """Convert a comma-separated string to ``Decimal``."""
+    return Decimal(x.replace(",", "."))
 
 
 def _norm_unit(

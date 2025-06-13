@@ -1,6 +1,5 @@
 import json
 from decimal import Decimal
-from pathlib import Path
 import pandas as pd
 from wsm.ui.review_links import _save_and_close
 

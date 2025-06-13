@@ -6,7 +6,7 @@ import pandas as pd
 from wsm.parsing.eslog import parse_eslog_invoice
 from wsm.ui.review_links import _norm_unit, _load_supplier_map
 from wsm.parsing.eslog import extract_header_net
-from wsm.parsing.money import quantize_like, detect_round_step, round_to_step
+from wsm.parsing.money import detect_round_step, round_to_step
 
 
 def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[pd.DataFrame, Decimal, bool]:
