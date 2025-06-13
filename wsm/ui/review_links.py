@@ -1003,7 +1003,10 @@ def review_links(
         ).pack(padx=10, pady=5)
 
         def _apply():
-            supplier_name = name_entry.get().strip() or supplier_name
+            nonlocal supplier_name, override_h87_to_kg
+            new_name = name_entry.get().strip()
+            if new_name:
+                supplier_name = new_name
 
             override_h87_to_kg = chk_var.get()
             sup_map[supplier_code] = {
