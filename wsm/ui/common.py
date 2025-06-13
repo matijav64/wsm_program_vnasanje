@@ -31,11 +31,11 @@ def select_invoice() -> Path | None:
     return Path(file_path) if file_path else None
 
 
-def open_invoice_gui(invoice_path: Path) -> None:
+def open_invoice_gui(invoice_path: Path, suppliers: Path = Path("links")) -> None:
     """Parse invoice and launch the review GUI."""
     try:
         if invoice_path.suffix.lower() == ".xml":
-            df, total, _ = analyze_invoice(str(invoice_path))
+            df, total, _ = analyze_invoice(str(invoice_path), str(suppliers))
 
             if "rabata" in df.columns:
                 df["rabata"] = df["rabata"].fillna(Decimal("0"))
@@ -64,7 +64,7 @@ def open_invoice_gui(invoice_path: Path) -> None:
     else:
         name = supplier_code
     safe_name = sanitize_folder_name(name)
-    links_dir = Path("links") / safe_name
+    links_dir = suppliers / safe_name
     links_dir.mkdir(parents=True, exist_ok=True)
     links_file = links_dir / f"{supplier_code}_{safe_name}_povezane.xlsx"
 
