@@ -925,6 +925,14 @@ def review_links(
     def _set_all_units():
         new_u = unit_var.get()
 
+        if override_h87_to_kg:
+            log.debug(
+                "override_H87_to_kg is True, forcing unit to kg (selected %s)",
+                new_u,
+            )
+            new_u = "kg"
+            unit_var.set("kg")
+
         log.debug(
             "_set_all_units invoked with unit_var=%s unit_menu=%s",
             new_u,
