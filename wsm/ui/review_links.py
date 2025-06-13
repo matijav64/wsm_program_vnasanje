@@ -302,7 +302,7 @@ def _save_and_close(
     *,
     override_h87_to_kg: bool = False,
     invoice_path=None,
-    unit_file: Path | None = None,
+    last_unit_file: Path | None = None,
     remember: bool = False,
     unit_value: str = "",
 ):
@@ -445,12 +445,12 @@ def _save_and_close(
     except Exception as exc:
         log.warning(f"Napaka pri beleženju zgodovine cen: {exc}")
 
-    if remember and unit_file:
+    if remember and last_unit_file:
         try:
-            unit_file.parent.mkdir(parents=True, exist_ok=True)
-            unit_file.write_text(unit_value)
+            last_unit_file.parent.mkdir(parents=True, exist_ok=True)
+            last_unit_file.write_text(unit_value)
         except Exception as exc:
-            log.warning(f"Napaka pri zapisu {unit_file}: {exc}")
+            log.warning(f"Napaka pri zapisu {last_unit_file}: {exc}")
 
     root.quit()
 
@@ -877,7 +877,7 @@ def review_links(
 
     # --- Unit change widgets ---
     unit_options = ["kos", "kg", "L"]
-    last_unit_file = Path("links") / "last_unit.txt"
+    last_unit_file = links_file.parent.parent / "last_unit.txt"
 
     unit_from_xml = df["enota_norm"].mode().iat[0] if not df.empty else "kg"
     remember_default = False
@@ -983,7 +983,7 @@ def review_links(
             suppliers_file,
             override_h87_to_kg=override_h87_to_kg,
             invoice_path=invoice_path,
-            unit_file=last_unit_file,
+            last_unit_file=last_unit_file,
             remember=remember_var.get(),
             unit_value=unit_var.get(),
         ),
@@ -1097,7 +1097,7 @@ def review_links(
             suppliers_file,
             override_h87_to_kg=override_h87_to_kg,
             invoice_path=invoice_path,
-            unit_file=last_unit_file,
+            last_unit_file=last_unit_file,
             remember=remember_var.get(),
             unit_value=unit_var.get(),
         ),
