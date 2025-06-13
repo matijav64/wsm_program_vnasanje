@@ -80,7 +80,13 @@ def analyze(invoice, suppliers):
     default=None,
     help="Pot do sifre_wsm.xlsx",
 )
-def review(invoice, wsm_codes):
+@click.option(
+    "--suppliers",
+    type=click.Path(),
+    default="links",
+    help="Mapa z dobavitelji ali legacy suppliers.xlsx",
+)
+def review(invoice, wsm_codes, suppliers):
     """Odpri GUI za ročno povezovanje WSM šifer."""
     try:
         from wsm.ui.review_links import review_links
@@ -91,7 +97,7 @@ def review(invoice, wsm_codes):
     invoice_path = Path(invoice)
     try:
         if invoice_path.suffix.lower() == ".xml":
-            df, total, _ = analyze_invoice(str(invoice_path))
+            df, total, _ = analyze_invoice(str(invoice_path), suppliers)
         elif invoice_path.suffix.lower() == ".pdf":
             df = parse_pdf(str(invoice_path))
             total = df.get("vrednost", pd.Series(dtype=float)).sum()
@@ -114,7 +120,8 @@ def review(invoice, wsm_codes):
     else:
         name = supplier_code
     safe_name = sanitize_folder_name(name)
-    links_dir = Path("links") / safe_name
+    base = Path(suppliers)
+    links_dir = base / safe_name
     links_dir.mkdir(parents=True, exist_ok=True)
     links_file = links_dir / f"{supplier_code}_{safe_name}_povezane.xlsx"
 
