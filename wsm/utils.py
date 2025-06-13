@@ -26,6 +26,19 @@ def sanitize_folder_name(name: str) -> str:
 
 _clean = lambda s: re.sub(r"\s+", " ", s.strip().lower())
 
+# Helper to retrieve the first real supplier code from a DataFrame. ``_DOC_``
+# rows appear in some invoices due to document-level discounts and should be
+# ignored when determining the main supplier.
+def main_supplier_code(df: pd.DataFrame) -> str:
+    """Return the first ``sifra_dobavitelja`` value that isn't ``"_DOC_"``."""
+    if df.empty or "sifra_dobavitelja" not in df.columns:
+        return ""
+
+    for code in df["sifra_dobavitelja"]:
+        if str(code) != "_DOC_":
+            return str(code)
+    return str(df["sifra_dobavitelja"].iloc[0])
+
 # ────────────────────────── združevanje postavk ─────────────────────
 def zdruzi_artikle(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -240,7 +253,9 @@ def log_price_history(
     df["supplier_name"] = df["sifra_dobavitelja"].apply(
         lambda x: sup_map.get(str(x), {}).get('ime', str(x))
     )
-    safe_name = sanitize_folder_name(df["supplier_name"].iloc[0])
+    primary_code = main_supplier_code(df)
+    primary_name = df[df["sifra_dobavitelja"] == primary_code]["supplier_name"].iloc[0] if primary_code else df["supplier_name"].iloc[0]
+    safe_name = sanitize_folder_name(primary_name)
 
     history_path = Path(history_file).parent / safe_name / "price_history.xlsx"
     history_path.parent.mkdir(parents=True, exist_ok=True)
