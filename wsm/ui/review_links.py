@@ -923,15 +923,25 @@ def review_links(
     unit_var.trace_add("write", _on_unit_write)
 
     def _set_all_units():
-        new_u = unit_var.get()
+        """Apply the unit from ``unit_menu`` to all rows.
+
+        When ``override_h87_to_kg`` is enabled we always force the unit to
+        ``kg`` regardless of the combobox value.  This mirrors the behaviour of
+        the old application where checking the override instantly converted all
+        lines to kilograms.
+        """
+
+        selected = unit_var.get()
 
         if override_h87_to_kg:
             log.debug(
-                "override_H87_to_kg is True, forcing unit to kg (selected %s)",
-                new_u,
+                "override_H87_to_kg active -> overriding '%s' with 'kg'",
+                selected,
             )
             new_u = "kg"
             unit_var.set("kg")
+        else:
+            new_u = selected
 
         log.debug(
             "_set_all_units invoked with unit_var=%s unit_menu=%s",
