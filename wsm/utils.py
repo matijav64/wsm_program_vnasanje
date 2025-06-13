@@ -239,6 +239,7 @@ def log_price_history(
     history_file: Union[str, Path],
     *,
     service_date: str | None = None,
+    suppliers_dir: Union[str, Path] | None = None,
     max_entries_per_code: int = 50,
     invoice_id: str | None = None,
 ) -> None:
@@ -247,8 +248,8 @@ def log_price_history(
     Shranjeni so identifikator artikla (``sifra_dobavitelja + naziv``), cena,
     trenutni čas in opcijsko datum opravljene storitve.
     """
-    suppliers_file = Path("links")
-    sup_map = _load_supplier_map(suppliers_file)
+    suppliers_path = Path(suppliers_dir) if suppliers_dir is not None else Path("links")
+    sup_map = _load_supplier_map(suppliers_path)
 
     df["supplier_name"] = df["sifra_dobavitelja"].apply(
         lambda x: sup_map.get(str(x), {}).get('ime', str(x))

@@ -436,7 +436,11 @@ def _save_and_close(
         from wsm.utils import log_price_history
 
         log_price_history(
-            df, links_file, service_date=service_date, invoice_id=invoice_hash
+            df,
+            links_file,
+            service_date=service_date,
+            suppliers_dir=sup_file,
+            invoice_id=invoice_hash,
         )
     except Exception as exc:
         log.warning(f"Napaka pri beleženju zgodovine cen: {exc}")
@@ -461,7 +465,7 @@ def review_links(
 ) -> pd.DataFrame:
     df = df.copy()
     supplier_code = links_file.stem.split("_")[0]
-    suppliers_file = Path("links")
+    suppliers_file = links_file.parent.parent
     log.debug(f"Pot do mape links: {suppliers_file}")
     sup_map = _load_supplier_map(suppliers_file)
 
