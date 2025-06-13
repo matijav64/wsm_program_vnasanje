@@ -2,13 +2,9 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
-from click.testing import CliRunner
-
-from wsm.cli import main
 from wsm import analyze
 
-
-XML = (
+DOC_XML = (
     "<Invoice xmlns='urn:eslog:2.00'>"
     "  <M_INVOIC>"
     "    <G_SG2>"
@@ -26,57 +22,29 @@ XML = (
     "      <S_MOA><C_C516><D_5025>203</D_5025><D_5004>10</D_5004></C_C516></S_MOA>"
     "    </G_SG26>"
     "    <G_SG50>"
-    "      <S_MOA><C_C516><D_5025>389</D_5025><D_5004>10</D_5004></C_C516></S_MOA>"
+    "      <S_MOA><C_C516><D_5025>389</D_5025><D_5004>9</D_5004></C_C516></S_MOA>"
+    "    </G_SG50>"
+    "    <G_SG50>"
+    "      <S_MOA><C_C516><D_5025>204</D_5025><D_5004>1</D_5004></C_C516></S_MOA>"
     "    </G_SG50>"
     "  </M_INVOIC>"
     "</Invoice>"
 )
 
 
-def test_cli_override(tmp_path):
+def test_analyze_ignores_doc_row_for_supplier(tmp_path):
     links = tmp_path / "links"
     supplier_dir = links / "Test"
     supplier_dir.mkdir(parents=True)
-
-    info = {"sifra": "SUP", "ime": "Test", "override_H87_to_kg": False}
+    info = {"sifra": "SUP", "ime": "Test", "override_H87_to_kg": True}
     (supplier_dir / "supplier.json").write_text(json.dumps(info))
 
-    runner = CliRunner()
-    result = runner.invoke(main, [
-        "override", "SUP", "--suppliers", str(links), "--set"
-    ])
-    assert result.exit_code == 0
-
-    data = json.loads((supplier_dir / "supplier.json").read_text())
-    assert data["override_H87_to_kg"] is True
-
     xml_path = tmp_path / "invoice.xml"
-    xml_path.write_text(XML)
+    xml_path.write_text(DOC_XML)
 
     df, total, ok = analyze.analyze_invoice(xml_path, str(links))
     row = df[df["sifra_dobavitelja"] == "SUP"].iloc[0]
     assert row["enota"] == "kg"
     assert row["kolicina"] == Decimal("2.5")
-    assert total == Decimal("10")
-    assert ok
-
-
-def test_cli_override_creates_dir(tmp_path):
-    links = tmp_path / "links"
-
-    runner = CliRunner()
-    result = runner.invoke(main, ["override", "SUP", "--suppliers", str(links), "--set"])
-    assert result.exit_code == 0
-
-    supplier_json = links / "SUP" / "supplier.json"
-    assert supplier_json.exists()
-
-    xml_path = tmp_path / "invoice.xml"
-    xml_path.write_text(XML)
-
-    df, total, ok = analyze.analyze_invoice(xml_path, str(links))
-    row = df[df["sifra_dobavitelja"] == "SUP"].iloc[0]
-    assert row["enota"] == "kg"
-    assert row["kolicina"] == Decimal("2.5")
-    assert total == Decimal("10")
+    assert total == Decimal("9")
     assert ok

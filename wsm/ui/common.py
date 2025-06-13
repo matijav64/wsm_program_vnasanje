@@ -54,7 +54,9 @@ def open_invoice_gui(invoice_path: Path) -> None:
         messagebox.showerror("Napaka", str(exc))
         return
 
-    supplier_code = df["sifra_dobavitelja"].iloc[0] if not df.empty else "unknown"
+    from wsm.utils import main_supplier_code
+
+    supplier_code = main_supplier_code(df) or "unknown"
     if invoice_path.suffix.lower() == ".xml":
         name = get_supplier_name(invoice_path) or supplier_code
     elif invoice_path.suffix.lower() == ".pdf":
