@@ -18,7 +18,9 @@ def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[p
     """
     sup_map = _load_supplier_map(Path(suppliers_file)) if suppliers_file else {}
     df = parse_eslog_invoice(xml_path, sup_map)
-    supplier_code = df['sifra_dobavitelja'].iloc[0] if not df.empty else ''
+    from wsm.utils import main_supplier_code
+
+    supplier_code = main_supplier_code(df)
     override = sup_map.get(supplier_code, {}).get('override_H87_to_kg', False)
 
     # normalize units
