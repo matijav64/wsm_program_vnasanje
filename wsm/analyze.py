@@ -18,9 +18,6 @@ def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[p
     """
     sup_map = _load_supplier_map(Path(suppliers_file)) if suppliers_file else {}
     df = parse_eslog_invoice(xml_path, sup_map)
-    from wsm.utils import main_supplier_code
-
-    supplier_code = main_supplier_code(df)
 
     # normalize units
     df[['kolicina', 'enota']] = [
