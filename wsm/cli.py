@@ -143,31 +143,6 @@ def review(invoice, wsm_codes, suppliers):
         click.echo(f"[NAPAKA GUI] {e}")
 
 
-@main.command(name="override")
-@click.argument("supplier_code")
-@click.option(
-    "--suppliers",
-    type=click.Path(),
-    default="links",
-    help="Mapa z dobavitelji ali legacy suppliers.xlsx",
-)
-@click.option("--set", "override", flag_value=True, help="Omogoči pretvorbo H87 v kg")
-@click.option("--unset", "override", flag_value=False, help="Onemogoči pretvorbo H87 v kg")
-def override_cmd(supplier_code, suppliers, override):
-    """Uredi nastavitev ``override_H87_to_kg`` za dobavitelja."""
-    if override is None:
-        click.echo("Uporabite --set ali --unset za nastavitev vrednosti.")
-        return
-
-    from wsm.ui.review_links import _load_supplier_map, _write_supplier_map
-
-    sup_file = Path(suppliers)
-    sup_map = _load_supplier_map(sup_file)
-    info = sup_map.get(supplier_code, {"ime": supplier_code, "override_H87_to_kg": False})
-    info["override_H87_to_kg"] = override
-    sup_map[supplier_code] = info
-    _write_supplier_map(sup_map, sup_file)
-    click.echo(f"{supplier_code}: override_H87_to_kg = {override}")
 
 
 @main.command(name="round-debug")

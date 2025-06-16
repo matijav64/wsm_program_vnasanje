@@ -21,11 +21,10 @@ def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[p
     from wsm.utils import main_supplier_code
 
     supplier_code = main_supplier_code(df)
-    override = sup_map.get(supplier_code, {}).get('override_H87_to_kg', False)
 
     # normalize units
     df[['kolicina', 'enota']] = [
-        _norm_unit(row['kolicina'], row['enota'], row['naziv'], override)
+        _norm_unit(row['kolicina'], row['enota'], row['naziv'])
         for _, row in df.iterrows()
     ]
 

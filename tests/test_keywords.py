@@ -18,7 +18,7 @@ def _setup_manual_links(tmp_path: Path) -> Path:
     path = supplier_dir / "SUP_Test_povezane.xlsx"
     df.to_excel(path, index=False)
 
-    info = {"sifra": "SUP", "ime": "Test", "override_H87_to_kg": False}
+    info = {"sifra": "SUP", "ime": "Test"}
     (supplier_dir / "supplier.json").write_text(json.dumps(info))
 
     return links_dir

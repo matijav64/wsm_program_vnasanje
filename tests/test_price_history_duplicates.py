@@ -11,7 +11,7 @@ def test_log_price_history_avoids_duplicates(tmp_path, monkeypatch):
         'cena_bruto': [Decimal('10')],
     })
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(utils, '_load_supplier_map', lambda path: {'SUP': {'ime': 'Test', 'override_H87_to_kg': False}})
+    monkeypatch.setattr(utils, '_load_supplier_map', lambda path: {'SUP': {'ime': 'Test', }})
     hist_base = tmp_path / 'base.xlsx'
     utils.log_price_history(df, hist_base, suppliers_dir=tmp_path, invoice_id='abc')
     utils.log_price_history(df, hist_base, suppliers_dir=tmp_path, invoice_id='abc')
