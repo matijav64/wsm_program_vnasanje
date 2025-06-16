@@ -69,3 +69,51 @@ def parse_pdf(pdf_path: str | Path) -> pd.DataFrame:
     if not pages:
         raise ValueError(f"No invoice table found in {pdf_path!r}")
     return pd.concat(pages, ignore_index=True)
+
+# --- Helper functions for service date and invoice number ---
+_date_label_rx = re.compile(r"(?:Datum\s+storitve|Service\s+date|Datum\s+opravljene\s+storitve)", re.I)
+_date_value_rx = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{1,2}\.?\s*\d{1,2}\.?\s*\d{4})")
+_invoice_label_rx = re.compile(r"(?:\u0160t\.\s*ra\u010duna|Invoice\s*no\.?|Invoice\s*number)", re.I)
+_invoice_value_rx = re.compile(r"([A-Za-z0-9-_/]+)")
+
+def _normalize_date(date_str: str) -> str:
+    s = date_str.replace(" ", "").replace("\xa0", "")
+    m = re.match(r"(\d{1,2})\.?\s*(\d{1,2})\.?\s*(\d{4})", s)
+    if m:
+        d, mth, y = m.groups()
+        return f"{y}-{int(mth):02d}-{int(d):02d}"
+    return s
+
+def extract_service_date(pdf_path: Path) -> str | None:
+    """Extract service date from first PDF pages if possible."""
+    with pdfplumber.open(str(pdf_path)) as pdf:
+        for page in pdf.pages[:2]:
+            text = page.extract_text() or ""
+            for line in text.split("\n"):
+                if _date_label_rx.search(line):
+                    m = _date_value_rx.search(line)
+                    if m:
+                        return _normalize_date(m.group(1))
+            # look for label followed by next line value
+            lines = text.split("\n")
+            for i, line in enumerate(lines[:-1]):
+                if _date_label_rx.search(line) and _date_value_rx.search(lines[i+1]):
+                    return _normalize_date(_date_value_rx.search(lines[i+1]).group(1))
+    return None
+
+def extract_invoice_number(pdf_path: Path) -> str | None:
+    """Extract invoice number from first PDF pages if possible."""
+    with pdfplumber.open(str(pdf_path)) as pdf:
+        for page in pdf.pages[:2]:
+            text = page.extract_text() or ""
+            lines = text.split("\n")
+            for idx, line in enumerate(lines):
+                if _invoice_label_rx.search(line):
+                    m = _invoice_value_rx.search(line[_invoice_label_rx.search(line).end():])
+                    if m:
+                        return m.group(1).strip()
+                    if idx + 1 < len(lines):
+                        m = _invoice_value_rx.search(lines[idx+1])
+                        if m:
+                            return m.group(1).strip()
+    return None
