@@ -682,7 +682,7 @@ def review_links(
         if invoice_number:
             parts.append(str(invoice_number))
         header_var.set(" – ".join(parts))
-        root.title(f"Ročna revizija – {supplier_name}")
+        root.title(f"Ročna revizija – {header_var.get()}")
 
     _refresh_header()
 
