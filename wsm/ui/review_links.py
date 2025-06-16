@@ -686,6 +686,7 @@ def review_links(
 
     _refresh_header()
 
+
     header_lbl = tk.Label(
         root,
         textvariable=header_var,
@@ -694,6 +695,7 @@ def review_links(
         justify="center",
     )
     header_lbl.pack(pady=6)
+
     # Window starts in normal mode. Press Esc to exit fullscreen if enabled
     # manually (e.g. via the window manager).
     # root.attributes("-fullscreen", True)
