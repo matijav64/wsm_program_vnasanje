@@ -11,6 +11,7 @@ from typing import Optional
 
 import pandas as pd
 import pdfplumber
+from .utils import _normalize_date
 
 # ───────────────────── ime dobavitelja (za CLI) ──────────────────────
 def get_supplier_name_from_pdf(pdf_path: str | Path) -> Optional[str]:
@@ -75,14 +76,6 @@ _date_label_rx = re.compile(r"(?:Datum\s+storitve|Service\s+date|Datum\s+opravlj
 _date_value_rx = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{1,2}\.?\s*\d{1,2}\.?\s*\d{4})")
 _invoice_label_rx = re.compile(r"(?:\u0160t\.\s*ra\u010duna|Invoice\s*no\.?|Invoice\s*number)", re.I)
 _invoice_value_rx = re.compile(r"([A-Za-z0-9-_/]+)")
-
-def _normalize_date(date_str: str) -> str:
-    s = date_str.replace(" ", "").replace("\xa0", "")
-    m = re.match(r"(\d{1,2})\.?\s*(\d{1,2})\.?\s*(\d{4})", s)
-    if m:
-        d, mth, y = m.groups()
-        return f"{y}-{int(mth):02d}-{int(d):02d}"
-    return s
 
 def extract_service_date(pdf_path: Path) -> str | None:
     """Extract service date from first PDF pages if possible."""
