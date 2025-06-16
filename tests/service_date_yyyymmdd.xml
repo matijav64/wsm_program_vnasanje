@@ -1,0 +1,10 @@
+<Invoice xmlns='urn:eslog:2.00'>
+  <M_INVOIC>
+    <S_DTM>
+      <C_C507>
+        <D_2005>35</D_2005>
+        <D_2380>20250331</D_2380>
+      </C_C507>
+    </S_DTM>
+  </M_INVOIC>
+</Invoice>
