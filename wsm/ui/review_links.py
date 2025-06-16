@@ -649,12 +649,19 @@ def review_links(
     header_var = tk.StringVar()
 
     def _refresh_header():
-        header = f"Dobavitelj: {supplier_name}"
+        parts = [supplier_name]
         if service_date:
-            header += f" | Datum storitve: {service_date}"
+            date_txt = str(service_date)
+            if re.match(r"^\d{4}-\d{2}-\d{2}$", date_txt):
+                y, m, d = date_txt.split("-")
+                date_txt = f"{d}.{m}.{y}"
+            elif re.match(r"^\d{8}$", date_txt):
+                y, m, d = date_txt[:4], date_txt[4:6], date_txt[6:8]
+                date_txt = f"{d}.{m}.{y}"
+            parts.append(date_txt)
         if invoice_number:
-            header += f" | Račun: {invoice_number}"
-        header_var.set(header)
+            parts.append(str(invoice_number))
+        header_var.set(" – ".join(parts))
         root.title(f"Ročna revizija – {supplier_name}")
 
     _refresh_header()
