@@ -40,8 +40,14 @@ def _dec(x: str) -> Decimal:
     return Decimal(x.replace(",", "."))
 
 
-def _norm_unit(q: Decimal, u: str, name: str) -> Tuple[Decimal, str]:
-    """Normalize quantity and unit to (kg / L / kos)."""
+def _norm_unit(
+    q: Decimal, u: str, name: str, vat_rate: Decimal | float | str | None = None
+) -> Tuple[Decimal, str]:
+    """Normalize quantity and unit to (kg / L / kos).
+
+    ``vat_rate`` can be used as a fallback hint when no unit can be
+    determined from ``u`` or ``name``.
+    """
     log.debug(f"Normalizacija: q={q}, u={u}, name={name}")
     unit_map = {
         "KGM": ("kg", 1),  # Kilograms
@@ -142,10 +148,26 @@ def _norm_unit(q: Decimal, u: str, name: str) -> Tuple[Decimal, str]:
             log.debug(
                 f"Volumen najden v imenu: {val} {unit}, pretvorjeno v L: {volume_l}"
             )
+
             if volume_l >= 1:
                 return q_norm * volume_l, "L"
             else:
                 return q_norm, "kos"
+
+    # Heuristic: if unit remains ``kos`` and VAT rate is 9.5 %, many
+    # suppliers actually mean kilograms.  Use this as a fallback when
+    # nothing else matched.
+    try:
+        vat = Decimal(str(vat_rate)) if vat_rate is not None else Decimal("0")
+    except Exception:
+        vat = Decimal("0")
+
+    if base_unit == "kos" and vat == Decimal("9.5"):
+        log.debug("VAT rate 9.5% detected -> using 'kg' as fallback unit")
+        base_unit = "kg"
+
+    log.debug(f"Končna normalizacija: q_norm={q_norm}, base_unit={base_unit}")
+    return q_norm, base_unit
 
     log.debug(f"Končna normalizacija: q_norm={q_norm}, base_unit={base_unit}")
     return q_norm, base_unit
@@ -559,8 +581,10 @@ def review_links(
     df["total_net"] = df["vrednost"]
     df["kolicina_norm"], df["enota_norm"] = zip(
         *[
-            _norm_unit(Decimal(str(q)), u, n)
-            for q, u, n in zip(df["kolicina"], df["enota"], df["naziv"])
+            _norm_unit(Decimal(str(q)), u, n, vat)
+            for q, u, n, vat in zip(
+                df["kolicina"], df["enota"], df["naziv"], df["ddv_stopnja"]
+            )
         ]
     )
     if old_unit_dict:

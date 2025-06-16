@@ -24,7 +24,7 @@ def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[p
 
     # normalize units
     df[['kolicina', 'enota']] = [
-        _norm_unit(row['kolicina'], row['enota'], row['naziv'])
+        _norm_unit(row['kolicina'], row['enota'], row['naziv'], row['ddv_stopnja'])
         for _, row in df.iterrows()
     ]
 
