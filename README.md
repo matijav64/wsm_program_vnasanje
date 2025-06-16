@@ -45,14 +45,6 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
   Program odpre grafični vmesnik, kjer povezave shranjujete v podmapo
   `links/<ime_dobavitelja>/`. Posodobljene tabele najdete v datotekah
  `<koda>_<ime>_povezane.xlsx` in `price_history.xlsx`.
- V isti mapi je tudi datoteka `supplier.json`, ki vsebuje ime
- dobavitelja in nastavitev `override_H87_to_kg`.
- Nastavitev lahko spremenite z ukazom:
- ```bash
- python -m wsm.cli override SUP --set
- ```
- kjer `SUP` zamenjajte z želeno šifro dobavitelja
- (namesto `--set` uporabite `--unset` za izklop).
 
 Če `--wsm-codes` ni podan, program poskuša prebrati `sifre_wsm.xlsx` v
 korenu projekta.

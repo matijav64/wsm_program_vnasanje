@@ -35,7 +35,7 @@ def test_analyze_ignores_doc_row_for_supplier(tmp_path):
     links = tmp_path / "links"
     supplier_dir = links / "Test"
     supplier_dir.mkdir(parents=True)
-    info = {"sifra": "SUP", "ime": "Test", "override_H87_to_kg": True}
+    info = {"sifra": "SUP", "ime": "Test"}
     (supplier_dir / "supplier.json").write_text(json.dumps(info))
 
     xml_path = tmp_path / "invoice.xml"
@@ -43,7 +43,7 @@ def test_analyze_ignores_doc_row_for_supplier(tmp_path):
 
     df, total, ok = analyze.analyze_invoice(xml_path, str(links))
     row = df[df["sifra_dobavitelja"] == "SUP"].iloc[0]
-    assert row["enota"] == "kg"
+    assert row["enota"] == "kos"
     assert row["kolicina"] == Decimal("2.5")
     assert total == Decimal("9")
     assert ok
