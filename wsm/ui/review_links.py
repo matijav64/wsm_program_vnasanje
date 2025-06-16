@@ -283,9 +283,6 @@ def _save_and_close(
     sup_file,
     *,
     invoice_path=None,
-    last_unit_file: Path | None = None,
-    remember: bool = False,
-    unit_value: str = "",
 ):
     log.debug(
         f"Shranjevanje: supplier_name={supplier_name}, supplier_code={supplier_code}"
@@ -295,8 +292,6 @@ def _save_and_close(
         f"Shranjujem {len(df)} vrstic z enotami: {df['enota_norm'].value_counts().to_dict()}"
     )
 
-    if unit_value:
-        log.info(f"Enota izbirnika: {unit_value}")
 
     # Preverimo prazne sifra_dobavitelja
     empty_sifra = df["sifra_dobavitelja"].isna() | (df["sifra_dobavitelja"] == "")
@@ -417,13 +412,6 @@ def _save_and_close(
         )
     except Exception as exc:
         log.warning(f"Napaka pri beleženju zgodovine cen: {exc}")
-
-    if remember and last_unit_file:
-        try:
-            last_unit_file.parent.mkdir(parents=True, exist_ok=True)
-            last_unit_file.write_text(unit_value)
-        except Exception as exc:
-            log.warning(f"Napaka pri zapisu {last_unit_file}: {exc}")
 
     root.quit()
 
@@ -846,92 +834,7 @@ def review_links(
 
     # --- Unit change widgets ---
     unit_options = ["kos", "kg", "L"]
-    last_unit_file = links_file.parent.parent / "last_unit.txt"
 
-    unit_from_xml = df["enota_norm"].mode().iat[0] if not df.empty else "kg"
-    remember_default = False
-    _last_unit = unit_from_xml
-    if last_unit_file.exists():
-        remember_default = True
-        try:
-            val = last_unit_file.read_text().strip()
-            if val:
-                _last_unit = val
-        except Exception as exc:
-            log.debug(f"Napaka pri branju {last_unit_file}: {exc}")
-
-    unit_var = tk.StringVar(
-        value=_last_unit if _last_unit in unit_options else unit_options[0]
-    )
-    unit_menu = ttk.Combobox(
-        bottom,
-        values=unit_options,
-        textvariable=unit_var,
-        state="readonly",
-        width=5,
-    )
-    log.debug("Inicializiran combobox z vrednostjo %s", unit_var.get())
-
-    def _on_unit_select(event=None):
-        val = unit_var.get()
-        log.info(f"Combobox selected: {val}")
-        log.debug("unit_menu.get()=%s", unit_menu.get())
-        log.debug(
-            "Units before any override: %s",
-            df["enota_norm"].value_counts().to_dict(),
-        )
-
-    def _on_unit_write(*_):
-        log.info(f"unit_var changed: {unit_var.get()}")
-        log.debug("trace info: %s", unit_var.trace_info())
-
-    unit_menu.bind("<<ComboboxSelected>>", _on_unit_select)
-    unit_var.trace_add("write", _on_unit_write)
-
-    def _set_all_units():
-        """Apply the unit from ``unit_menu`` to all rows."""
-
-        new_u = unit_var.get()
-
-        log.debug(
-            "_set_all_units invoked with unit_var=%s unit_menu=%s",
-            new_u,
-            unit_menu.get(),
-        )
-        before = df["enota_norm"].copy()
-        log.info(f"Nastavljam vse enote na {new_u}")
-
-        log.debug(
-            "Units distribution pre-override: %s",
-            before.value_counts().to_dict(),
-        )
-
-        # Modify only the normalized unit so we preserve the
-        for item in tree.get_children():
-            tree.set(item, "enota_norm", new_u)
-
-        changed = (before != df["enota_norm"]).sum()
-        if changed:
-            log.info(f"Spremenjenih vrstic: {changed}")
-        else:
-            log.warning("Nobena vrstica ni bila spremenjena pri nastavitvi enote")
-
-        log.info(
-            "Units after override: %s",
-            df["enota_norm"].value_counts().to_dict(),
-
-        )
-        root.update()  # refresh UI so the combobox selection is respected
-        log.debug(
-            "Units after root.update: %s (combobox=%s)",
-            df["enota_norm"].value_counts().to_dict(),
-            unit_var.get(),
-        )
-
-        _update_summary()
-        _update_totals()
-
-    remember_var = tk.BooleanVar(value=remember_default)
 
     save_btn = tk.Button(
         bottom,
@@ -948,51 +851,11 @@ def review_links(
             sup_map,
             suppliers_file,
             invoice_path=invoice_path,
-            last_unit_file=last_unit_file,
-            remember=remember_var.get(),
-            unit_value=unit_var.get(),
         ),
     )
 
-    def _edit_supplier():
-        nonlocal supplier_name
-        top = tk.Toplevel(root)
-        top.title("Uredi dobavitelja")
-        tk.Label(top, text="Ime dobavitelja:").pack(padx=10, pady=(10, 0))
-        name_entry = tk.Entry(top)
-        name_entry.insert(0, supplier_name)
-        name_entry.pack(padx=10, pady=5)
-        chk_var = None
-
-        def _apply():
-            nonlocal supplier_name
-            new_name = name_entry.get().strip()
-            if new_name:
-                supplier_name = new_name
-
-            sup_map[supplier_code] = {
-                "ime": supplier_name,
-            }
-            _write_supplier_map(sup_map, suppliers_file)
-            df["dobavitelj"] = supplier_name
-            for iid in tree.get_children():
-                vals = list(tree.item(iid, "values"))
-                vals[cols.index("dobavitelj")] = supplier_name
-                tree.item(iid, values=vals)
-
-            _refresh_header()
-            top.destroy()
-
-
-        tk.Button(top, text="Potrdi", command=_apply).pack(pady=(0, 10))
 
     def _exit():
-        if remember_var.get():
-            try:
-                last_unit_file.parent.mkdir(parents=True, exist_ok=True)
-                last_unit_file.write_text(unit_var.get())
-            except Exception as exc:
-                log.warning(f"Napaka pri zapisu {last_unit_file}: {exc}")
         root.quit()
 
     exit_btn = tk.Button(
@@ -1003,25 +866,6 @@ def review_links(
     )
     exit_btn.pack(side="right", padx=(6, 0))
     save_btn.pack(side="right", padx=(6, 0))
-
-    edit_btn = tk.Button(
-        bottom,
-        text="Uredi dobavitelja",
-        width=14,
-        command=_edit_supplier,
-    )
-    edit_btn.pack(side="right", padx=(6, 0))
-    tk.Checkbutton(
-        bottom,
-        text="Zapomni enoto",
-        variable=remember_var,
-        onvalue=True,
-        offvalue=False,
-    ).pack(side="right", padx=(0, 20))
-    unit_menu.pack(side="right", padx=(6, 0))
-    tk.Button(bottom, text="Nastavi vse enote", command=_set_all_units).pack(
-        side="right", padx=(0, 20)
-    )
 
     root.bind(
         "<F10>",
@@ -1036,9 +880,6 @@ def review_links(
             sup_map,
             suppliers_file,
             invoice_path=invoice_path,
-            last_unit_file=last_unit_file,
-            remember=remember_var.get(),
-            unit_value=unit_var.get(),
         ),
     )
 
