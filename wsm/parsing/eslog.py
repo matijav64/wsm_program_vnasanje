@@ -36,6 +36,19 @@ def _decimal(el: ET.Element | None) -> Decimal:
     except Exception:
         return Decimal("0")
 
+def _normalize_date(date_str: str) -> str:
+    """Convert ``DD.MM.YYYY`` or ``YYYYMMDD`` into ``YYYY-MM-DD``."""
+    s = date_str.replace(" ", "").replace("\xa0", "")
+    m = re.match(r"(\d{1,2})\.(\d{1,2})\.(\d{4})$", s)
+    if m:
+        d, mth, y = m.groups()
+        return f"{y}-{int(mth):02d}-{int(d):02d}"
+    m = re.match(r"(\d{4})(\d{2})(\d{2})$", s)
+    if m:
+        y, mth, d = m.groups()
+        return f"{y}-{mth}-{d}"
+    return s
+
 # Namespace za ESLOG (če je prisoten)
 NS = {"e": "urn:eslog:2.00"}
 
@@ -108,12 +121,12 @@ def extract_service_date(xml_path: Path | str) -> str | None:
             if _text(dtm.find('./e:C_C507/e:D_2005', NS)) == '35':
                 date = _text(dtm.find('./e:C_C507/e:D_2380', NS))
                 if date:
-                    return date
+                    return _normalize_date(date)
         for dtm in root.findall('.//e:S_DTM', NS):
             if _text(dtm.find('./e:C_C507/e:D_2005', NS)) == '137':
                 date = _text(dtm.find('./e:C_C507/e:D_2380', NS))
                 if date:
-                    return date
+                    return _normalize_date(date)
     except Exception:
         pass
     return None
