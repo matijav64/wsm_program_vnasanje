@@ -17,7 +17,7 @@ def test_load_supplier_map_from_folders(tmp_path: Path):
     # folder with supplier.json
     sup_b = links_dir / "Acme"
     sup_b.mkdir()
-    info = {"sifra": "ACM", "ime": "Acme Corp", "override_H87_to_kg": False}
+    info = {"sifra": "ACM", "ime": "Acme Corp"}
     (sup_b / "supplier.json").write_text(json.dumps(info))
 
     result = _load_supplier_map(links_dir)

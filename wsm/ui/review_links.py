@@ -40,22 +40,15 @@ def _dec(x: str) -> Decimal:
     return Decimal(x.replace(",", "."))
 
 
-def _norm_unit(
-    q: Decimal, u: str, name: str, override_h87_to_kg: bool = False
-) -> Tuple[Decimal, str]:
+def _norm_unit(q: Decimal, u: str, name: str) -> Tuple[Decimal, str]:
     """Normalize quantity and unit to (kg / L / kos)."""
-    log.debug(
-        f"Normalizacija: q={q}, u={u}, name={name}, override_h87_to_kg={override_h87_to_kg}"
-    )
+    log.debug(f"Normalizacija: q={q}, u={u}, name={name}")
     unit_map = {
         "KGM": ("kg", 1),  # Kilograms
         "GRM": ("kg", 0.001),  # Grams (convert to kg)
         "LTR": ("L", 1),  # Liters
         "MLT": ("L", 0.001),  # Milliliters (convert to L)
-        "H87": (
-            "kg" if override_h87_to_kg else "kos",
-            1,
-        ),  # Piece, override to kg if set
+        "H87": ("kos", 1),  # Piece
         "EA": ("kos", 1),  # Each (piece)
     }
 
@@ -175,16 +168,11 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
             for _, row in df_sup.iterrows():
                 sifra = str(row["sifra"]).strip()
                 ime = str(row["ime"]).strip()
-                override_value = (
-                    str(row.get("override_H87_to_kg", "False")).strip().lower()
-                )
-                override = override_value in ["true", "1", "yes"]
                 sup_map[sifra] = {
                     "ime": ime or sifra,
-                    "override_H87_to_kg": override,
                 }
                 log.debug(
-                    f"Dodan v sup_map: sifra={sifra}, ime={ime}, override_value={override_value}, override={override}"
+                    f"Dodan v sup_map: sifra={sifra}, ime={ime}"
                 )
             return sup_map
         except Exception as e:
@@ -201,18 +189,12 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
                 data = json.loads(info_path.read_text())
                 sifra = str(data.get("sifra", "")).strip()
                 ime = str(data.get("ime", "")).strip() or folder.name
-                raw_override = data.get("override_H87_to_kg", False)
-                if isinstance(raw_override, str):
-                    override = raw_override.strip().lower() in ["true", "1", "yes"]
-                else:
-                    override = bool(raw_override)
                 if sifra:
                     sup_map[sifra] = {
                         "ime": ime,
-                        "override_H87_to_kg": override,
                     }
                     log.debug(
-                        f"Dodan iz JSON: sifra={sifra}, ime={ime}, override={override}"
+                        f"Dodan iz JSON: sifra={sifra}, ime={ime}"
                     )
                     # uspešno prebrali podatke, nadaljuj z naslednjo mapo
                     continue
@@ -226,10 +208,9 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
             if code not in sup_map:
                 sup_map[code] = {
                     "ime": folder.name,
-                    "override_H87_to_kg": False,
                 }
                 log.debug(
-                    f"Dodan iz mape: sifra={code}, ime={folder.name}, override=False"
+                    f"Dodan iz mape: sifra={code}, ime={folder.name}"
                 )
             break
 
@@ -247,7 +228,6 @@ def _write_supplier_map(sup_map: dict, sup_file: Path):
                 {
                     "sifra": k,
                     "ime": v["ime"],
-                    "override_H87_to_kg": v["override_H87_to_kg"],
                 }
                 for k, v in sup_map.items()
             ]
@@ -281,7 +261,6 @@ def _write_supplier_map(sup_map: dict, sup_file: Path):
                     {
                         "sifra": code,
                         "ime": info["ime"],
-                        "override_H87_to_kg": info["override_H87_to_kg"],
                     },
                     ensure_ascii=False,
                 )
@@ -303,7 +282,6 @@ def _save_and_close(
     sup_map,
     sup_file,
     *,
-    override_h87_to_kg: bool = False,
     invoice_path=None,
     last_unit_file: Path | None = None,
     remember: bool = False,
@@ -336,17 +314,9 @@ def _save_and_close(
 
     # Posodobi zemljevid dobaviteljev, če se je ime ali nastavitev spremenila
     old_info = sup_map.get(supplier_code, {})
-    if supplier_name:
-        changed = (
-            old_info.get("ime") != supplier_name
-            or old_info.get("override_H87_to_kg", False) != override_h87_to_kg
-        )
-        if changed:
-            sup_map[supplier_code] = {
-                "ime": supplier_name,
-                "override_H87_to_kg": override_h87_to_kg,
-            }
-            _write_supplier_map(sup_map, sup_file)
+    if supplier_name and old_info.get("ime") != supplier_name:
+        sup_map[supplier_code] = {"ime": supplier_name}
+        _write_supplier_map(sup_map, sup_file)
 
     # Nastavi indeks za manual_old
     if not manual_old.empty:
@@ -475,7 +445,6 @@ def review_links(
     log.info(f"Supplier code extracted: {supplier_code}")
     supplier_info = sup_map.get(supplier_code, {})
     default_name = supplier_info.get("ime", supplier_code)
-    override_h87_to_kg = supplier_info.get("override_H87_to_kg", False)
 
     service_date = None
     invoice_number = None
@@ -508,7 +477,6 @@ def review_links(
 
     log.info(f"Default name retrieved: {default_name}")
     log.debug(f"Supplier info: {supplier_info}")
-    log.info(f"Override H87 to kg: {override_h87_to_kg}")
 
     try:
         manual_old = pd.read_excel(links_file, dtype=str)
@@ -603,7 +571,7 @@ def review_links(
     df["total_net"] = df["vrednost"]
     df["kolicina_norm"], df["enota_norm"] = zip(
         *[
-            _norm_unit(Decimal(str(q)), u, n, override_h87_to_kg)
+            _norm_unit(Decimal(str(q)), u, n)
             for q, u, n in zip(df["kolicina"], df["enota"], df["naziv"])
         ]
     )
@@ -611,8 +579,6 @@ def review_links(
         log.debug(f"Old unit mapping loaded: {old_unit_dict}")
 
         def _restore_unit(r):
-            if override_h87_to_kg and str(r["enota"]).upper() == "H87":
-                return r["enota_norm"]
             return old_unit_dict.get(r["sifra_dobavitelja"], r["enota_norm"])
 
         before = df["enota_norm"].copy()
@@ -923,33 +889,9 @@ def review_links(
     unit_var.trace_add("write", _on_unit_write)
 
     def _set_all_units():
-        """Apply the unit from ``unit_menu`` to all rows.
+        """Apply the unit from ``unit_menu`` to all rows."""
 
-        When ``override_h87_to_kg`` is enabled we always force the unit to
-        ``kg`` regardless of the combobox value.  This mirrors the behaviour of
-        the old application where checking the override instantly converted all
-        lines to kilograms.
-        """
-
-        selected = unit_var.get()
-
-        if override_h87_to_kg:
-            log.debug(
-                "override_H87_to_kg active -> overriding '%s' with 'kg'",
-                selected,
-            )
-            new_u = "kg"
-            unit_var.set("kg")
-        else:
-            new_u = selected
-
-        if override_h87_to_kg:
-            log.debug(
-                "override_H87_to_kg is True, forcing unit to kg (selected %s)",
-                new_u,
-            )
-            new_u = "kg"
-            unit_var.set("kg")
+        new_u = unit_var.get()
 
         log.debug(
             "_set_all_units invoked with unit_var=%s unit_menu=%s",
@@ -965,11 +907,6 @@ def review_links(
         )
 
         # Modify only the normalized unit so we preserve the
-        # original value from the invoice.  ``enota`` is used to
-        # detect whether an item originally had the H87 code, which
-        # is necessary for the ``override_h87_to_kg`` logic when
-        # restoring saved units.
-        df["enota_norm"] = new_u
         for item in tree.get_children():
             tree.set(item, "enota_norm", new_u)
 
@@ -1010,7 +947,6 @@ def review_links(
             supplier_code,
             sup_map,
             suppliers_file,
-            override_h87_to_kg=override_h87_to_kg,
             invoice_path=invoice_path,
             last_unit_file=last_unit_file,
             remember=remember_var.get(),
@@ -1019,33 +955,23 @@ def review_links(
     )
 
     def _edit_supplier():
-        nonlocal supplier_name, override_h87_to_kg
+        nonlocal supplier_name
         top = tk.Toplevel(root)
         top.title("Uredi dobavitelja")
         tk.Label(top, text="Ime dobavitelja:").pack(padx=10, pady=(10, 0))
         name_entry = tk.Entry(top)
         name_entry.insert(0, supplier_name)
         name_entry.pack(padx=10, pady=5)
-        chk_var = tk.BooleanVar(value=override_h87_to_kg)
-        tk.Checkbutton(
-            top,
-            text="override_H87_to_kg",
-            variable=chk_var,
-            onvalue=True,
-            offvalue=False,
-        ).pack(padx=10, pady=5)
+        chk_var = None
 
         def _apply():
-            nonlocal supplier_name, override_h87_to_kg
+            nonlocal supplier_name
             new_name = name_entry.get().strip()
             if new_name:
                 supplier_name = new_name
-            prev_override = override_h87_to_kg
 
-            override_h87_to_kg = chk_var.get()
             sup_map[supplier_code] = {
                 "ime": supplier_name,
-                "override_H87_to_kg": override_h87_to_kg,
             }
             _write_supplier_map(sup_map, suppliers_file)
             df["dobavitelj"] = supplier_name
@@ -1054,24 +980,9 @@ def review_links(
                 vals[cols.index("dobavitelj")] = supplier_name
                 tree.item(iid, values=vals)
 
-
-            if override_h87_to_kg != prev_override:
-                df["kolicina_norm"], df["enota_norm"] = zip(
-                    *[
-                        _norm_unit(
-                            Decimal(str(q)), u, n, override_h87_to_kg
-                        )
-                        for q, u, n in zip(df["kolicina"], df["enota"], df["naziv"])
-                    ]
-                )
-                for idx, row in df.iterrows():
-                    tree.set(str(idx), "kolicina_norm", _fmt(row["kolicina_norm"]))
-                    tree.set(str(idx), "enota_norm", row["enota_norm"])
-                _update_summary()
-                _update_totals()
-
             _refresh_header()
             top.destroy()
+
 
         tk.Button(top, text="Potrdi", command=_apply).pack(pady=(0, 10))
 
@@ -1124,7 +1035,6 @@ def review_links(
             supplier_code,
             sup_map,
             suppliers_file,
-            override_h87_to_kg=override_h87_to_kg,
             invoice_path=invoice_path,
             last_unit_file=last_unit_file,
             remember=remember_var.get(),
