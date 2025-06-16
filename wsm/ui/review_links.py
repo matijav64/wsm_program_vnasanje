@@ -414,6 +414,18 @@ def _save_and_close(
             invoice_hash = hashlib.md5(invoice_path.read_bytes()).hexdigest()
         except Exception as exc:
             log.warning(f"Napaka pri izračunu hash: {exc}")
+    elif invoice_path and invoice_path.suffix.lower() == ".pdf":
+        try:
+            from wsm.parsing.pdf import extract_service_date
+
+            service_date = extract_service_date(invoice_path)
+        except Exception as exc:
+            log.warning(f"Napaka pri branju datuma storitve: {exc}")
+            service_date = None
+        try:
+            invoice_hash = hashlib.md5(invoice_path.read_bytes()).hexdigest()
+        except Exception as exc:
+            log.warning(f"Napaka pri izračunu hash: {exc}")
     else:
         service_date = None
         if invoice_path and invoice_path.exists():
@@ -461,6 +473,14 @@ def review_links(
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
             from wsm.parsing.eslog import extract_service_date, extract_invoice_number
+
+            service_date = extract_service_date(invoice_path)
+            invoice_number = extract_invoice_number(invoice_path)
+        except Exception as exc:
+            log.warning(f"Napaka pri branju glave računa: {exc}")
+    elif invoice_path and invoice_path.suffix.lower() == ".pdf":
+        try:
+            from wsm.parsing.pdf import extract_service_date, extract_invoice_number
 
             service_date = extract_service_date(invoice_path)
             invoice_number = extract_invoice_number(invoice_path)
