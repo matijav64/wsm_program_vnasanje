@@ -17,6 +17,7 @@ def test_grouping_by_code_and_discount(monkeypatch):
             'rabata_pct': Decimal('5'),
             'vrednost': Decimal('10'),
             'sifra_artikla': '001',
+            'ddv_stopnja': Decimal('22'),
         },
         {
             'sifra_dobavitelja': 'SUP',
@@ -29,6 +30,7 @@ def test_grouping_by_code_and_discount(monkeypatch):
             'rabata_pct': Decimal('5'),
             'vrednost': Decimal('15'),
             'sifra_artikla': '001',
+            'ddv_stopnja': Decimal('22'),
         },
         {
             'sifra_dobavitelja': 'SUP',
@@ -41,13 +43,14 @@ def test_grouping_by_code_and_discount(monkeypatch):
             'rabata_pct': Decimal('10'),
             'vrednost': Decimal('5'),
             'sifra_artikla': '001',
+            'ddv_stopnja': Decimal('22'),
         },
     ])
 
     # Patch parse_eslog_invoice to return our DataFrame
     monkeypatch.setattr(analyze, 'parse_eslog_invoice', lambda path, sup: data)
     # Identity normalization
-    monkeypatch.setattr(analyze, '_norm_unit', lambda q, u, n: (q, u))
+    monkeypatch.setattr(analyze, '_norm_unit', lambda q, u, n, vat=None: (q, u))
     # Header total equals sum of values
     monkeypatch.setattr(analyze, 'extract_header_net', lambda path: Decimal('30'))
 
