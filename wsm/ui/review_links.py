@@ -835,6 +835,7 @@ def review_links(
     # --- Unit change widgets ---
     unit_options = ["kos", "kg", "L"]
 
+
     save_btn = tk.Button(
         bottom,
         text="Shrani & zapri",
@@ -852,6 +853,7 @@ def review_links(
             invoice_path=invoice_path,
         ),
     )
+
 
     def _exit():
         root.quit()
