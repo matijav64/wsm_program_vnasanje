@@ -686,6 +686,7 @@ def review_links(
 
     _refresh_header()
 
+
     header_lbl = tk.Label(
         root,
         textvariable=header_var,
@@ -696,6 +697,7 @@ def review_links(
     header_lbl.pack(pady=8)
     # Start in fullscreen; press Esc to exit
     root.attributes("-fullscreen", True)
+
     root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
 
     frame = tk.Frame(root)
