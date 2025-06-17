@@ -11,3 +11,7 @@ def test_trailing_dot_and_space_removed():
 def test_non_string_raises_type_error():
     with pytest.raises(TypeError):
         sanitize_folder_name(None)
+
+def test_reserved_name_modified():
+    assert sanitize_folder_name("CON") == "CON_"
+
