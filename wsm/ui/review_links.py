@@ -658,8 +658,11 @@ def review_links(
     # Window title shows the full supplier name while the on-screen header can be
     # a bit shorter for readability.
     root.title(f"Ročna revizija – {supplier_name}")
-    # Always open the GUI in fullscreen mode; Escape toggles it off if needed
-    root.attributes("-fullscreen", True)
+    # Start maximized but keep the window decorations visible
+    try:
+        root.state("zoomed")
+    except tk.TclError:
+        pass
 
     # Limit supplier name to 20 characters in the GUI header
 
@@ -704,10 +707,9 @@ def review_links(
         justify="center",
     )
     header_lbl.pack(fill="x", pady=8)
+    # Allow Escape to restore the original window size
+    root.bind("<Escape>", lambda e: root.state("normal"))
 
-    # Bind Escape so the user can exit fullscreen if enabled manually
-
-    root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
 
     frame = tk.Frame(root)
     frame.pack(fill="both", expand=True)
