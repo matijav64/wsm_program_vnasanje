@@ -694,7 +694,7 @@ def review_links(
         anchor="center",
         justify="center",
     )
-    header_lbl.pack(pady=8)
+    header_lbl.pack(pady=8, expand=True)
     # Bind Escape so the user can exit fullscreen if enabled manually
 
     root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
