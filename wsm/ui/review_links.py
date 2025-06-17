@@ -44,10 +44,13 @@ def _dec(x: str) -> Decimal:
 def _norm_unit(
     q: Decimal, u: str, name: str, vat_rate: Decimal | float | str | None = None
 ) -> Tuple[Decimal, str]:
-    """Normalize quantity and unit to (kg / L / kos).
+    """Normalize quantity and unit to (kg / L / ``kos``).
 
     ``vat_rate`` can be used as a fallback hint when no unit can be
-    determined from ``u`` or ``name``.
+    determined from ``u`` or ``name``.  The function also accepts a
+    ``code`` keyword argument which identifies the supplier item.  When
+    provided and the resulting unit is ``kos``, the item code is looked
+    up in :data:`WEIGHTS_PER_PIECE` to infer the weight per piece.
     """
     log.debug(f"Normalizacija: q={q}, u={u}, name={name}")
     unit_map = {
