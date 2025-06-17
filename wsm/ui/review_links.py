@@ -665,6 +665,7 @@ def review_links(
         pass
 
     # Limit supplier name to 20 characters in the GUI header
+
     display_name = supplier_name[:20]
     header_var = tk.StringVar()
 
@@ -716,6 +717,7 @@ def review_links(
     table_info_lbl.pack(pady=(0, 4))
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
+
 
     frame = tk.Frame(root)
     frame.pack(fill="both", expand=True)
