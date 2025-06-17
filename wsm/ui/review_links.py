@@ -692,6 +692,14 @@ def review_links(
 
     _refresh_header()
 
+    info_lbl = tk.Label(
+        root,
+        textvariable=header_var,
+        font=("Arial", 12),
+        anchor="w",
+        justify="left",
+    )
+    info_lbl.pack(anchor="w", padx=8)
 
     header_lbl = tk.Label(
         root,
@@ -700,7 +708,7 @@ def review_links(
         anchor="center",
         justify="center",
     )
-    header_lbl.pack(pady=8, expand=True)
+    header_lbl.pack(pady=8)
     # Bind Escape so the user can exit fullscreen if enabled manually
 
     root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
