@@ -681,6 +681,14 @@ def review_links(
                 y, m, d = date_txt[:4], date_txt[4:6], date_txt[6:8]
                 date_txt = f"{d}.{m}.{y}"
             parts_full.append(date_txt)
+
+    # Repeat invoice info above the main table for better visibility
+    table_info_lbl = tk.Label(
+        root,
+        textvariable=header_var,
+        font=("Arial", 20, "bold"),
+    )
+    table_info_lbl.pack(pady=(0, 4))
             parts_display.append(date_txt)
         if invoice_number:
             parts_full.append(str(invoice_number))
