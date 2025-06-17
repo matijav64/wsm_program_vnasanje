@@ -35,6 +35,7 @@ _rx_mass = re.compile(
     re.I,
 )
 
+
 def _dec(x: str) -> Decimal:
     """Convert a comma-separated string to ``Decimal``."""
     return Decimal(x.replace(",", "."))
@@ -193,9 +194,7 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
                 sup_map[sifra] = {
                     "ime": ime or sifra,
                 }
-                log.debug(
-                    f"Dodan v sup_map: sifra={sifra}, ime={ime}"
-                )
+                log.debug(f"Dodan v sup_map: sifra={sifra}, ime={ime}")
             return sup_map
         except Exception as e:
             log.error(f"Napaka pri branju suppliers.xlsx: {e}")
@@ -215,9 +214,7 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
                     sup_map[sifra] = {
                         "ime": ime,
                     }
-                    log.debug(
-                        f"Dodan iz JSON: sifra={sifra}, ime={ime}"
-                    )
+                    log.debug(f"Dodan iz JSON: sifra={sifra}, ime={ime}")
                     # uspešno prebrali podatke, nadaljuj z naslednjo mapo
                     continue
             except Exception as e:
@@ -231,9 +228,7 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
                 sup_map[code] = {
                     "ime": folder.name,
                 }
-                log.debug(
-                    f"Dodan iz mape: sifra={code}, ime={folder.name}"
-                )
+                log.debug(f"Dodan iz mape: sifra={code}, ime={folder.name}")
             break
 
     log.info(f"Najdeni dobavitelji: {list(sup_map.keys())}")
@@ -257,7 +252,6 @@ def _write_supplier_map(sup_map: dict, sup_file: Path):
         df.to_excel(sup_file, index=False)
         log.info(f"Datoteka uspešno zapisana: {sup_file}")
         return
-
 
     # Determine whether `sup_file` represents a directory (existing or
     # intended).  When the directory does not exist yet, create it before
@@ -313,7 +307,6 @@ def _save_and_close(
     log.info(
         f"Shranjujem {len(df)} vrstic z enotami: {df['enota_norm'].value_counts().to_dict()}"
     )
-
 
     # Preverimo prazne sifra_dobavitelja
     empty_sifra = df["sifra_dobavitelja"].isna() | (df["sifra_dobavitelja"] == "")
@@ -390,10 +383,8 @@ def _save_and_close(
     log.debug(f"Primer shranjenih povezav: {manual_new.head().to_dict()}")
     if "enota_norm" in manual_new.columns:
         log.debug(
-
             "Units written to file: %s",
             manual_new["enota_norm"].value_counts().to_dict(),
-
         )
     try:
         manual_new.to_excel(links_file, index=False)
@@ -664,12 +655,22 @@ def review_links(
             doc_discount_total += diff
 
     root = tk.Tk()
+    # Window title shows the full supplier name while the on-screen header can be
+    # a bit shorter for readability.
     root.title(f"Ročna revizija – {supplier_name}")
+    # Start maximized but keep the window decorations visible
+    try:
+        root.state("zoomed")
+    except tk.TclError:
+        pass
 
+    # Limit supplier name to 20 characters in the GUI header
+    display_name = supplier_name[:20]
     header_var = tk.StringVar()
 
     def _refresh_header():
-        parts = [supplier_name]
+        parts_full = [supplier_name]
+        parts_display = [display_name]
         if service_date:
             date_txt = str(service_date)
             if re.match(r"^\d{4}-\d{2}-\d{2}$", date_txt):
@@ -678,26 +679,35 @@ def review_links(
             elif re.match(r"^\d{8}$", date_txt):
                 y, m, d = date_txt[:4], date_txt[4:6], date_txt[6:8]
                 date_txt = f"{d}.{m}.{y}"
-            parts.append(date_txt)
+            parts_full.append(date_txt)
+            parts_display.append(date_txt)
         if invoice_number:
-            parts.append(str(invoice_number))
-        header_var.set(" – ".join(parts))
-        root.title(f"Ročna revizija – {header_var.get()}")
+            parts_full.append(str(invoice_number))
+            parts_display.append(str(invoice_number))
+        header_var.set(" – ".join(parts_display))
+        root.title(f"Ročna revizija – {' – '.join(parts_full)}")
 
     _refresh_header()
 
+    info_lbl = tk.Label(
+        root,
+        textvariable=header_var,
+        font=("Arial", 12),
+        anchor="w",
+        justify="left",
+    )
+    info_lbl.pack(anchor="w", padx=8)
 
     header_lbl = tk.Label(
         root,
         textvariable=header_var,
-        font=("Arial", 24, "bold"),
+        font=("Arial", 32, "bold"),
         anchor="center",
         justify="center",
     )
-    header_lbl.pack(pady=8, expand=True)
-    # Bind Escape so the user can exit fullscreen if enabled manually
-
-    root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
+    header_lbl.pack(fill="x", pady=8)
+    # Allow Escape to restore the original window size
+    root.bind("<Escape>", lambda e: root.state("normal"))
 
     frame = tk.Frame(root)
     frame.pack(fill="both", expand=True)
@@ -893,7 +903,6 @@ def review_links(
     # --- Unit change widgets ---
     unit_options = ["kos", "kg", "L"]
 
-
     save_btn = tk.Button(
         bottom,
         text="Shrani & zapri",
@@ -911,7 +920,6 @@ def review_links(
             invoice_path=invoice_path,
         ),
     )
-
 
     def _exit():
         root.quit()
