@@ -25,6 +25,7 @@ def sanitize_folder_name(name: str) -> str:
     ``PRN``) in jim doda ``_`` na konec, da se izogne napakam pri
     ustvarjanju map.
     """
+
     if not isinstance(name, str):
         raise TypeError(
             f"sanitize_folder_name expects a string, got {type(name)}"
@@ -60,6 +61,7 @@ def sanitize_folder_name(name: str) -> str:
 
     if cleaned.upper() in reserved:
         cleaned += "_"
+
 
     return cleaned
 
