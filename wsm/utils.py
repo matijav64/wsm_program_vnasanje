@@ -19,11 +19,12 @@ log = logging.getLogger(__name__)
 
 # ────────────────────────── skupna orodja ───────────────────────────
 def sanitize_folder_name(name: str) -> str:
-    """Prepovedane znake zamenja z ``_`` in odstrani končne presledke/pike.
+    """Return a Windows- and Linux-safe folder name.
 
-    Poleg tega prepozna rezervirana imena v Windows (npr. ``CON``,
-    ``PRN``) in jim doda ``_`` na konec, da se izogne napakam pri
-    ustvarjanju map.
+    Prepovedane znake zamenja z ``_`` in odstrani končne presledke ali pike.
+    Odstrani tudi kontrolne znake (ASCII < 32). Poleg tega prepozna
+    rezervirana imena v Windows (npr. ``CON``, ``PRN``) in jim doda ``_`` na
+    konec, da se izogne napakam pri ustvarjanju map.
     """
 
     if not isinstance(name, str):
@@ -31,6 +32,8 @@ def sanitize_folder_name(name: str) -> str:
             f"sanitize_folder_name expects a string, got {type(name)}"
         )
     cleaned = re.sub(r'[\\/*?:"<>|]', "_", name)
+    cleaned = re.sub(r'[\x00-\x1f]', "_", cleaned)
+
     # Trailing dots and spaces niso dovoljeni na Windows
     cleaned = re.sub(r"[\s.]+$", "", cleaned)
 

@@ -15,3 +15,7 @@ def test_non_string_raises_type_error():
 def test_reserved_name_modified():
     assert sanitize_folder_name("CON") == "CON_"
 
+
+def test_control_chars_replaced():
+    assert sanitize_folder_name("bad\x05name") == "bad_name"
+
