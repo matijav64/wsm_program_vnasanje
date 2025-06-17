@@ -363,13 +363,16 @@ def _save_and_close(
             manual_new["enota_norm"].value_counts().to_dict(),
         )
     else:
-        manual_new.loc[
-            df_links.index, ["naziv", "wsm_sifra", "dobavitelj", "enota_norm"]
-        ] = df_links
-        log.debug(
-            "Updated existing mappings with new units: %s",
-            manual_new["enota_norm"].value_counts().to_dict(),
-        )
+        common = manual_new.index.intersection(df_links.index)
+        if not common.empty:
+            manual_new.loc[
+                common,
+                ["naziv", "wsm_sifra", "dobavitelj", "enota_norm"],
+            ] = df_links.loc[common]
+            log.debug(
+                "Updated existing mappings with new units: %s",
+                manual_new["enota_norm"].value_counts().to_dict(),
+            )
 
     # Dodaj nove elemente, ki niso v manual_new
     new_items = df_links[~df_links.index.isin(manual_new.index)]
