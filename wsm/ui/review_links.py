@@ -658,6 +658,8 @@ def review_links(
     # Window title shows the full supplier name while the on-screen header can be
     # a bit shorter for readability.
     root.title(f"Ročna revizija – {supplier_name}")
+    # Always open the GUI in fullscreen mode; Escape toggles it off if needed
+    root.attributes("-fullscreen", True)
 
     # Limit supplier name to 20 characters in the GUI header
 
