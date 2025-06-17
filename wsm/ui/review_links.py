@@ -662,6 +662,7 @@ def review_links(
     root.attributes("-fullscreen", True)
 
     # Limit supplier name to 20 characters in the GUI header
+
     display_name = supplier_name[:20]
     header_var = tk.StringVar()
 
@@ -703,6 +704,7 @@ def review_links(
         justify="center",
     )
     header_lbl.pack(fill="x", pady=8)
+
     # Bind Escape so the user can exit fullscreen if enabled manually
 
     root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
