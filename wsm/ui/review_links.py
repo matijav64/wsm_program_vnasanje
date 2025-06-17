@@ -707,6 +707,14 @@ def review_links(
         justify="center",
     )
     header_lbl.pack(fill="x", pady=8)
+
+    # Repeat invoice info above the main table for better visibility
+    table_info_lbl = tk.Label(
+        root,
+        textvariable=header_var,
+        font=("Arial", 20, "bold"),
+    )
+    table_info_lbl.pack(pady=(0, 4))
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
 
