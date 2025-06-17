@@ -19,10 +19,15 @@ log = logging.getLogger(__name__)
 
 # ────────────────────────── skupna orodja ───────────────────────────
 def sanitize_folder_name(name: str) -> str:
-    """Prepovedane znake zamenja z “_” (Windows/Linux združljivo)."""
+    """Prepovedane znake zamenja z ``_`` in odstrani končne presledke/pike."""
     if not isinstance(name, str):
-        raise TypeError(f"sanitize_folder_name expects a string, got {type(name)}")
-    return re.sub(r'[\\/*?:"<>|]', "_", name)
+        raise TypeError(
+            f"sanitize_folder_name expects a string, got {type(name)}"
+        )
+    cleaned = re.sub(r'[\\/*?:"<>|]', "_", name)
+    # Trailing dots and spaces niso dovoljeni na Windows
+    cleaned = re.sub(r"[\s.]+$", "", cleaned)
+    return cleaned
 
 
 def _clean(s: str) -> str:
