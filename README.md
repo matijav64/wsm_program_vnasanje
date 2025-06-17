@@ -45,9 +45,9 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
   Program odpre grafični vmesnik, kjer povezave shranjujete v podmapo
   `links/<ime_dobavitelja>/`. Posodobljene tabele najdete v datotekah
   `<koda>_<ime>_povezane.xlsx` in `price_history.xlsx`.
-
-  Okno se odpre v celozaslonskem načinu. Če želite izstopiti iz
-  celozaslonskega pogleda, pritisnite tipko Esc.
+  Okno se privzeto odpre v običajni velikosti. S tipko F11 ga lahko
+  ročno preklopite v celozaslonski način, iz katerega izstopite s
+  tipko Esc.
 
 
 Če `--wsm-codes` ni podan, program poskuša prebrati `sifre_wsm.xlsx` v

@@ -695,8 +695,7 @@ def review_links(
         justify="center",
     )
     header_lbl.pack(pady=8)
-    # Start in fullscreen; press Esc to exit
-    root.attributes("-fullscreen", True)
+    # Bind Escape so the user can exit fullscreen if enabled manually
 
     root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
 
