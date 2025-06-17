@@ -41,10 +41,12 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    ```bash
    python -m wsm.cli review <invoice.xml>
    ```
-   (po želji dodajte `--wsm-codes pot/do/sifre_wsm.xlsx`)
+  (po želji dodajte `--wsm-codes pot/do/sifre_wsm.xlsx`)
   Program odpre grafični vmesnik, kjer povezave shranjujete v podmapo
   `links/<ime_dobavitelja>/`. Posodobljene tabele najdete v datotekah
- `<koda>_<ime>_povezane.xlsx` in `price_history.xlsx`.
+  `<koda>_<ime>_povezane.xlsx` in `price_history.xlsx`.
+  Okno se odpre v celozaslonskem načinu. Če želite izstopiti iz
+  celozaslonskega pogleda, pritisnite tipko Esc.
 
 Če `--wsm-codes` ni podan, program poskuša prebrati `sifre_wsm.xlsx` v
 korenu projekta.
