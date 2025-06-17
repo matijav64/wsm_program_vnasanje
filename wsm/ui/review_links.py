@@ -664,12 +664,16 @@ def review_links(
             doc_discount_total += diff
 
     root = tk.Tk()
+    # Window title displays the full supplier name and invoice info
     root.title(f"Ročna revizija – {supplier_name}")
 
+    # Displayed header text is slightly shorter for readability
+    display_name = supplier_name[:20]
     header_var = tk.StringVar()
 
     def _refresh_header():
-        parts = [supplier_name]
+        parts_full = [supplier_name]
+        parts_display = [display_name]
         if service_date:
             date_txt = str(service_date)
             if re.match(r"^\d{4}-\d{2}-\d{2}$", date_txt):
@@ -678,23 +682,33 @@ def review_links(
             elif re.match(r"^\d{8}$", date_txt):
                 y, m, d = date_txt[:4], date_txt[4:6], date_txt[6:8]
                 date_txt = f"{d}.{m}.{y}"
-            parts.append(date_txt)
+            parts_full.append(date_txt)
+            parts_display.append(date_txt)
         if invoice_number:
-            parts.append(str(invoice_number))
-        header_var.set(" – ".join(parts))
-        root.title(f"Ročna revizija – {header_var.get()}")
+            parts_full.append(str(invoice_number))
+            parts_display.append(str(invoice_number))
+        header_var.set(" – ".join(parts_display))
+        root.title(f"Ročna revizija – {' – '.join(parts_full)}")
 
     _refresh_header()
 
+    info_lbl = tk.Label(
+        root,
+        textvariable=header_var,
+        font=("Arial", 12),
+        anchor="w",
+        justify="left",
+    )
+    info_lbl.pack(anchor="w", padx=8)
 
     header_lbl = tk.Label(
         root,
         textvariable=header_var,
-        font=("Arial", 24, "bold"),
+        font=("Arial", 32, "bold"),
         anchor="center",
         justify="center",
     )
-    header_lbl.pack(pady=8, expand=True)
+    header_lbl.pack(pady=8)
     # Bind Escape so the user can exit fullscreen if enabled manually
 
     root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
