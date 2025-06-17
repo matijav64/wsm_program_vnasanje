@@ -19,10 +19,51 @@ log = logging.getLogger(__name__)
 
 # ────────────────────────── skupna orodja ───────────────────────────
 def sanitize_folder_name(name: str) -> str:
-    """Prepovedane znake zamenja z “_” (Windows/Linux združljivo)."""
+    """Return a Windows- and Linux-safe folder name.
+
+    Prepovedane znake zamenja z ``_`` in odstrani končne presledke ali pike.
+    Odstrani tudi kontrolne znake (ASCII < 32). Poleg tega prepozna
+    rezervirana imena v Windows (npr. ``CON``, ``PRN``) in jim doda ``_`` na
+    konec, da se izogne napakam pri ustvarjanju map.
+    """
     if not isinstance(name, str):
-        raise TypeError(f"sanitize_folder_name expects a string, got {type(name)}")
-    return re.sub(r'[\\/*?:"<>|]', "_", name)
+        raise TypeError(
+            f"sanitize_folder_name expects a string, got {type(name)}"
+        )
+    cleaned = re.sub(r'[\\/*?:"<>|]', "_", name)
+    cleaned = re.sub(r'[\x00-\x1f]', "_", cleaned)
+    # Trailing dots and spaces niso dovoljeni na Windows
+    cleaned = re.sub(r"[\s.]+$", "", cleaned)
+
+    reserved = {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        "COM1",
+        "COM2",
+        "COM3",
+        "COM4",
+        "COM5",
+        "COM6",
+        "COM7",
+        "COM8",
+        "COM9",
+        "LPT1",
+        "LPT2",
+        "LPT3",
+        "LPT4",
+        "LPT5",
+        "LPT6",
+        "LPT7",
+        "LPT8",
+        "LPT9",
+    }
+
+    if cleaned.upper() in reserved:
+        cleaned += "_"
+
+    return cleaned
 
 
 def _clean(s: str) -> str:
