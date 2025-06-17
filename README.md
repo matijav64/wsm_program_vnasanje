@@ -49,6 +49,7 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
   ročno preklopite v celozaslonski način, iz katerega izstopite s
   tipko Esc.
 
+
 Če `--wsm-codes` ni podan, program poskuša prebrati `sifre_wsm.xlsx` v
 korenu projekta.
 
