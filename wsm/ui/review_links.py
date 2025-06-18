@@ -698,16 +698,23 @@ def review_links(
             parts_display.append(date_txt)
             date_var.set(date_txt)
         else:
-            date_var.set("")
+            # Do not clear the value if ``service_date`` is missing so
+            # previously set text in ``date_var`` remains visible.
+            pass
         if invoice_number:
             parts_full.append(str(invoice_number))
             parts_display.append(str(invoice_number))
             invoice_var.set(str(invoice_number))
         else:
-            invoice_var.set("")
+            # Preserve any existing invoice number displayed in the entry.
+            pass
         supplier_var.set(supplier_name)
         header_var.set(" – ".join(parts_display))
         root.title(f"Ročna revizija – {' – '.join(parts_full)}")
+        log.debug(
+            f"_refresh_header: supplier_var={supplier_var.get()}, "
+            f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
+        )
 
 
     header_lbl = tk.Label(
@@ -762,6 +769,10 @@ def review_links(
     # Refresh header once widgets exist. ``after_idle`` ensures widgets are
     # fully initialized before values are set so the entries show up
     root.after_idle(_refresh_header)
+    log.debug(
+        f"after_idle scheduled: supplier_var={supplier_var.get()}, "
+        f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
+    )
 
 
     # Allow Escape to restore the original window size
