@@ -730,8 +730,8 @@ def review_links(
     header_lbl.pack(fill="x", pady=(0, 0))
 
     info_frame = tk.Frame(root)
-    # Eliminate padding to minimize the gap below the header
-    info_frame.pack(anchor="w", padx=8, pady=(0, 0))
+    # Keep the buttons tight to the header but leave extra room below
+    info_frame.pack(anchor="w", padx=8, pady=(0, 12))
 
 
     def _copy(val: str) -> None:
