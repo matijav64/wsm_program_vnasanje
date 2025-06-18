@@ -6,6 +6,7 @@ from decimal import Decimal
 from wsm.parsing.money import detect_round_step
 from pathlib import Path
 from typing import Tuple
+from wsm.utils import short_supplier_name
 
 import pandas as pd
 import tkinter as tk
@@ -463,7 +464,7 @@ def review_links(
 
     log.info(f"Supplier code extracted: {supplier_code}")
     supplier_info = sup_map.get(supplier_code, {})
-    default_name = supplier_info.get("ime", supplier_code)
+    default_name = short_supplier_name(supplier_info.get("ime", supplier_code))
 
     service_date = None
     invoice_number = None
@@ -500,7 +501,7 @@ def review_links(
         except Exception:
             inv_name = None
     if inv_name:
-        default_name = inv_name
+        default_name = short_supplier_name(inv_name)
 
     log.info(f"Default name retrieved: {default_name}")
     log.debug(f"Supplier info: {supplier_info}")
@@ -533,12 +534,12 @@ def review_links(
 
     existing_names = sorted(
         {
-            n
+            short_supplier_name(n)
             for n in manual_old.get("dobavitelj", [])
             if isinstance(n, str) and n.strip()
         }
     )
-    supplier_name = default_name
+    supplier_name = short_supplier_name(default_name)
     if supplier_name and supplier_name not in existing_names:
         existing_names.insert(0, supplier_name)
     supplier_name = existing_names[0] if existing_names else supplier_code
@@ -674,6 +675,9 @@ def review_links(
 
     display_name = supplier_name[:20]
     header_var = tk.StringVar()
+    supplier_var = tk.StringVar()
+    date_var = tk.StringVar()
+    invoice_var = tk.StringVar()
 
     def _refresh_header():
         parts_full = [supplier_name]
@@ -688,22 +692,20 @@ def review_links(
                 date_txt = f"{d}.{m}.{y}"
             parts_full.append(date_txt)
             parts_display.append(date_txt)
+            date_var.set(date_txt)
+        else:
+            date_var.set("")
         if invoice_number:
             parts_full.append(str(invoice_number))
             parts_display.append(str(invoice_number))
+            invoice_var.set(str(invoice_number))
+        else:
+            invoice_var.set("")
+        supplier_var.set(supplier_name)
         header_var.set(" – ".join(parts_display))
         root.title(f"Ročna revizija – {' – '.join(parts_full)}")
 
     _refresh_header()
-
-    info_lbl = tk.Label(
-        root,
-        textvariable=header_var,
-        font=("Arial", 12),
-        anchor="w",
-        justify="left",
-    )
-    info_lbl.pack(anchor="w", padx=8)
 
     header_lbl = tk.Label(
         root,
@@ -713,6 +715,25 @@ def review_links(
         justify="center",
     )
     header_lbl.pack(fill="x", pady=8)
+
+    info_frame = tk.Frame(root)
+    info_frame.pack(anchor="w", padx=8, pady=(0, 6))
+
+    def _copy(val: str) -> None:
+        root.clipboard_clear()
+        root.clipboard_append(val)
+
+    tk.Label(info_frame, text="Dobavitelj:").grid(row=0, column=0, sticky="w")
+    tk.Entry(info_frame, textvariable=supplier_var, state="readonly", width=40).grid(row=0, column=1, sticky="w", padx=(4,4))
+    tk.Button(info_frame, text="Kopiraj", command=lambda: _copy(supplier_var.get())).grid(row=0, column=2)
+
+    tk.Label(info_frame, text="Datum storitve:").grid(row=1, column=0, sticky="w")
+    tk.Entry(info_frame, textvariable=date_var, state="readonly", width=20).grid(row=1, column=1, sticky="w", padx=(4,4))
+    tk.Button(info_frame, text="Kopiraj", command=lambda: _copy(date_var.get())).grid(row=1, column=2)
+
+    tk.Label(info_frame, text="Št. računa:").grid(row=2, column=0, sticky="w")
+    tk.Entry(info_frame, textvariable=invoice_var, state="readonly", width=20).grid(row=2, column=1, sticky="w", padx=(4,4))
+    tk.Button(info_frame, text="Kopiraj", command=lambda: _copy(invoice_var.get())).grid(row=2, column=2)
 
     # Repeat invoice info above the main table for better visibility
     table_info_lbl = tk.Label(

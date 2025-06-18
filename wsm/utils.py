@@ -12,10 +12,14 @@ import re
 from typing import Tuple, Union, List, Dict
 
 import pandas as pd
-from wsm.ui.review_links import _load_supplier_map
-
 import logging
 log = logging.getLogger(__name__)
+
+
+def _load_supplier_map(path: Path) -> dict:
+    """Lazy import wrapper for :func:`wsm.ui.review_links._load_supplier_map`."""
+    from wsm.ui.review_links import _load_supplier_map as real
+    return real(path)
 
 # ────────────────────────── skupna orodja ───────────────────────────
 def sanitize_folder_name(name: str) -> str:
@@ -72,6 +76,27 @@ def sanitize_folder_name(name: str) -> str:
 def _clean(s: str) -> str:
     """Normalize whitespace and lowercase the string."""
     return re.sub(r"\s+", " ", s.strip().lower())
+
+
+def short_supplier_name(name: str) -> str:
+    """Return a supplier name without location or extra descriptors.
+
+    Examples
+    --------
+    >>> short_supplier_name("Podjetje d.o.o., Maribor")
+    'Podjetje d.o.o.'
+    >>> short_supplier_name("Dobavitelj d.d. Celje")
+    'Dobavitelj d.d.'
+    """
+
+    if not isinstance(name, str):
+        return name
+
+    base = name.split(",")[0]
+    m = re.search(r"(.+?(?:d\.o\.o\.|d\.d\.|s\.p\.))", base, re.I)
+    if m:
+        base = m.group(1)
+    return base.strip()
 
 # Helper to retrieve the first real supplier code from a DataFrame. ``_DOC_``
 # rows appear in some invoices due to document-level discounts and should be
