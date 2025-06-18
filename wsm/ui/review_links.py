@@ -708,6 +708,9 @@ def review_links(
         supplier_var.set(supplier_name)
         header_var.set(" – ".join(parts_display))
         root.title(f"Ročna revizija – {' – '.join(parts_full)}")
+        print(
+            f"_refresh_header: supplier_var={supplier_var.get()}, date_var={date_var.get()}, invoice_var={invoice_var.get()}"
+        )
 
 
     header_lbl = tk.Label(
@@ -762,6 +765,9 @@ def review_links(
     # Refresh header once widgets exist. ``after_idle`` ensures widgets are
     # fully initialized before values are set so the entries show up
     root.after_idle(_refresh_header)
+    print(
+        f"after_idle scheduled: supplier_var={supplier_var.get()}, date_var={date_var.get()}, invoice_var={invoice_var.get()}"
+    )
 
 
     # Allow Escape to restore the original window size
