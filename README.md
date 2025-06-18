@@ -54,6 +54,7 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
   prostora, da se ločijo od tabele.
 
 
+
 Če `--wsm-codes` ni podan, program poskuša prebrati `sifre_wsm.xlsx` v
 korenu projekta.
 
