@@ -1,7 +1,11 @@
 # File: wsm/ui/review_links.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-import math, re, logging, hashlib, json
+import hashlib
+import json
+import logging
+import math
+import re
 from decimal import Decimal
 from wsm.parsing.money import detect_round_step
 from pathlib import Path

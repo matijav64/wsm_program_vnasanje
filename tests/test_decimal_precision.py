@@ -1,4 +1,3 @@
-import pytest
 from decimal import Decimal
 from wsm.parsing.eslog import parse_invoice
 
