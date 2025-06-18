@@ -714,11 +714,51 @@ def review_links(
     header_lbl = tk.Label(
         root,
         textvariable=header_var,
-        font=("Arial", 32, "bold"),
+        font=("Arial", 24, "bold"),
         anchor="center",
         justify="center",
     )
-    header_lbl.pack(fill="x", pady=8)
+    header_lbl.pack(fill="x", pady=4)
+
+    info_frame = tk.Frame(root)
+    info_frame.pack(anchor="w", padx=8, pady=(0, 4))
+
+    def _copy(val: str) -> None:
+        root.clipboard_clear()
+        root.clipboard_append(val)
+
+    tk.Label(info_frame, text="Dobavitelj:").grid(row=0, column=0, sticky="w")
+    tk.Entry(
+        info_frame,
+        textvariable=supplier_var,
+        state="readonly",
+        width=40,
+        readonlybackground="white",
+        fg="black",
+    ).grid(row=0, column=1, sticky="w", padx=(4, 4))
+    tk.Button(info_frame, text="Kopiraj", command=lambda: _copy(supplier_var.get())).grid(row=0, column=2)
+
+    tk.Label(info_frame, text="Datum storitve:").grid(row=1, column=0, sticky="w")
+    tk.Entry(
+        info_frame,
+        textvariable=date_var,
+        state="readonly",
+        width=20,
+        readonlybackground="white",
+        fg="black",
+    ).grid(row=1, column=1, sticky="w", padx=(4, 4))
+    tk.Button(info_frame, text="Kopiraj", command=lambda: _copy(date_var.get())).grid(row=1, column=2)
+
+    tk.Label(info_frame, text="Št. računa:").grid(row=2, column=0, sticky="w")
+    tk.Entry(
+        info_frame,
+        textvariable=invoice_var,
+        state="readonly",
+        width=20,
+        readonlybackground="white",
+        fg="black",
+    ).grid(row=2, column=1, sticky="w", padx=(4, 4))
+    tk.Button(info_frame, text="Kopiraj", command=lambda: _copy(invoice_var.get())).grid(row=2, column=2)
 
     info_frame = tk.Frame(root)
     info_frame.pack(anchor="w", padx=8, pady=(0, 6))
@@ -743,9 +783,9 @@ def review_links(
     table_info_lbl = tk.Label(
         root,
         textvariable=header_var,
-        font=("Arial", 20, "bold"),
+        font=("Arial", 16, "bold"),
     )
-    table_info_lbl.pack(pady=(0, 4))
+    table_info_lbl.pack(pady=(0, 2))
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
 
@@ -934,18 +974,22 @@ def review_links(
 
     bottom = tk.Frame(root)
     bottom.pack(fill="x", padx=8, pady=6)
+
     custom = tk.Frame(bottom)
-    custom.pack(fill="x")
+    custom.pack(side="left", fill="x", expand=True)
     tk.Label(custom, text="Vpiši / izberi WSM naziv:").pack(side="left")
     entry = tk.Entry(custom)
     entry.pack(side="left", fill="x", expand=True, padx=(4, 0))
     lb = tk.Listbox(custom, height=6)
 
+    btn_frame = tk.Frame(bottom)
+    btn_frame.pack(side="right")
+
     # --- Unit change widgets ---
     unit_options = ["kos", "kg", "L"]
 
     save_btn = tk.Button(
-        bottom,
+        btn_frame,
         text="Shrani & zapri",
         width=14,
         command=lambda e=None: _save_and_close(
@@ -966,7 +1010,7 @@ def review_links(
         root.quit()
 
     exit_btn = tk.Button(
-        bottom,
+        btn_frame,
         text="Izhod",
         width=14,
         command=_exit,
