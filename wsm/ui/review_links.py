@@ -725,12 +725,13 @@ def review_links(
         anchor="center",
         justify="center",
     )
-    # Reduce vertical padding so the buttons sit closer to the title
-    header_lbl.pack(fill="x", pady=1)
+    # Remove extra space so the buttons sit right under the title
+    header_lbl.pack(fill="x", pady=0)
 
     info_frame = tk.Frame(root)
-    # Reduce bottom padding to shrink the gap below the header
-    info_frame.pack(anchor="w", padx=8, pady=(0, 1))
+    # Eliminate padding to minimize the gap below the header
+    info_frame.pack(anchor="w", padx=8, pady=0)
+
 
     def _copy(val: str) -> None:
         root.clipboard_clear()
