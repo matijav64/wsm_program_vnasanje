@@ -714,6 +714,7 @@ def review_links(
         log.debug(
             f"_refresh_header: supplier_var={supplier_var.get()}, "
             f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
+
         )
 
 
@@ -772,6 +773,7 @@ def review_links(
     log.debug(
         f"after_idle scheduled: supplier_var={supplier_var.get()}, "
         f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
+
     )
 
 
