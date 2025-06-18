@@ -709,7 +709,6 @@ def review_links(
         header_var.set(" – ".join(parts_display))
         root.title(f"Ročna revizija – {' – '.join(parts_full)}")
 
-    _refresh_header()
 
     header_lbl = tk.Label(
         root,
@@ -759,6 +758,10 @@ def review_links(
         fg="black",
     ).grid(row=2, column=1, sticky="w", padx=(4, 4))
     tk.Button(info_frame, text="Kopiraj", command=lambda: _copy(invoice_var.get())).grid(row=2, column=2)
+
+    # Refresh header once widgets exist to ensure values appear
+    _refresh_header()
+    root.update_idletasks()
 
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
