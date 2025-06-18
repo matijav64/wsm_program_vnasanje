@@ -50,7 +50,7 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
   tipko Esc.
   Pri vrhu okna so na voljo gumbi "Kopiraj dobavitelja", "Kopiraj storitev" in
   "Kopiraj številko računa", ki ustrezne vrednosti hitro prenesejo na odložišče.
-  Gumbi so zdaj povsem pri vrhu brez odvečnega presledka.
+  Gumbi so zdaj takoj pod zgornjo vrstico z minimalnim presledkom.
 
 
 
