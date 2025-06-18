@@ -733,6 +733,7 @@ def review_links(
     # Eliminate padding to minimize the gap below the header
     info_frame.pack(anchor="w", padx=8, pady=(0, 0))
 
+
     def _copy(val: str) -> None:
         root.clipboard_clear()
         root.clipboard_append(val)
@@ -752,6 +753,7 @@ def review_links(
         text="Kopiraj številko računa",
         command=lambda: _copy(invoice_var.get()),
     ).grid(row=0, column=2, sticky="w")
+
 
     # Refresh header once widgets exist. ``after_idle`` ensures widgets are
     # fully initialized before values are set so the entries show up

@@ -53,6 +53,7 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
   Gumbi so zdaj takoj pod zgornjo vrstico z minimalnim presledkom.
 
 
+
 Če `--wsm-codes` ni podan, program poskuša prebrati `sifre_wsm.xlsx` v
 korenu projekta.
 
