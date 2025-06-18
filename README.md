@@ -58,6 +58,10 @@ shranjenih datotek sam izdela datoteko `keywords.xlsx`.
 Če ta datoteka ne obstaja, jo funkcija `povezi_z_wsm`
 samodejno napolni z najpogostejšimi izrazi iz `*_povezane.xlsx`.
 
+Za artikle, kjer masa na kos ni razvidna iz naziva, preverite slovar
+`WEIGHTS_PER_PIECE` v `wsm/constants.py`. Če naletite na novo kodo s
+stalno maso pakiranja, jo dodajte v ta slovar.
+
 5. Analizo in združevanje postavk lahko izvedete z:
    ```bash
    python -m wsm.cli analyze <invoice.xml> --suppliers links
