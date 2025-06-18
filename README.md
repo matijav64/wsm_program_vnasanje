@@ -52,6 +52,7 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
   "Kopiraj številko računa", ki ustrezne vrednosti hitro prenesejo na odložišče.
 
 
+
 Če `--wsm-codes` ni podan, program poskuša prebrati `sifre_wsm.xlsx` v
 korenu projekta.
 
