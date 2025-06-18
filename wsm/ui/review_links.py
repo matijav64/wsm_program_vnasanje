@@ -956,11 +956,14 @@ def review_links(
     entry.pack(side="left", fill="x", expand=True, padx=(4, 0))
     lb = tk.Listbox(custom, height=6)
 
+    btn_frame = tk.Frame(bottom)
+    btn_frame.pack(side="right")
+
     # --- Unit change widgets ---
     unit_options = ["kos", "kg", "L"]
 
     save_btn = tk.Button(
-        bottom,
+        btn_frame,
         text="Shrani & zapri",
         width=14,
         command=lambda e=None: _save_and_close(
@@ -981,7 +984,7 @@ def review_links(
         root.quit()
 
     exit_btn = tk.Button(
-        bottom,
+        btn_frame,
         text="Izhod",
         width=14,
         command=_exit,
