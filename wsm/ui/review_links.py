@@ -763,6 +763,7 @@ def review_links(
     # fully initialized before values are set so the entries show up
     root.after_idle(_refresh_header)
 
+
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
 
