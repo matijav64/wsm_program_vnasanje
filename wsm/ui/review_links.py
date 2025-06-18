@@ -743,7 +743,7 @@ def review_links(
         readonlybackground="white",
         fg="black",
     ).grid(row=0, column=1, sticky="w", padx=(4, 4))
-    tk.Button(info_frame, text="Kopiraj", command=lambda: _copy(supplier_var.get())).grid(row=0, column=2)
+    tk.Button(info_frame, text="Kopiraj dobavitelja", command=lambda: _copy(supplier_var.get())).grid(row=0, column=2)
 
     tk.Label(info_frame, text="Datum storitve:").grid(row=1, column=0, sticky="w")
     tk.Entry(
@@ -754,7 +754,7 @@ def review_links(
         readonlybackground="white",
         fg="black",
     ).grid(row=1, column=1, sticky="w", padx=(4, 4))
-    tk.Button(info_frame, text="Kopiraj", command=lambda: _copy(date_var.get())).grid(row=1, column=2)
+    tk.Button(info_frame, text="Kopiraj storitev", command=lambda: _copy(date_var.get())).grid(row=1, column=2)
 
     tk.Label(info_frame, text="Št. računa:").grid(row=2, column=0, sticky="w")
     tk.Entry(
@@ -765,7 +765,7 @@ def review_links(
         readonlybackground="white",
         fg="black",
     ).grid(row=2, column=1, sticky="w", padx=(4, 4))
-    tk.Button(info_frame, text="Kopiraj", command=lambda: _copy(invoice_var.get())).grid(row=2, column=2)
+    tk.Button(info_frame, text="Kopiraj številko računa", command=lambda: _copy(invoice_var.get())).grid(row=2, column=2)
 
     # Refresh header once widgets exist. ``after_idle`` ensures widgets are
     # fully initialized before values are set so the entries show up

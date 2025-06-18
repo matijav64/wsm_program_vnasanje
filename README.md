@@ -48,8 +48,9 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
   Okno se privzeto odpre v običajni velikosti. S tipko F11 ga lahko
   ročno preklopite v celozaslonski način, iz katerega izstopite s
   tipko Esc.
-  Pri vrhu okna so prikazana polja za dobavitelja, datum storitve in 
-  številko računa. Za vsakim je gumb "Kopiraj", ki vsebino hitro prenese na odložišče.
+  Pri vrhu okna so prikazana polja za dobavitelja, datum storitve in
+  številko računa. Za vsakim je gumb ("Kopiraj dobavitelja", "Kopiraj storitev"
+  in "Kopiraj številko računa"), ki vsebino hitro prenese na odložišče.
 
 
 Če `--wsm-codes` ni podan, program poskuša prebrati `sifre_wsm.xlsx` v
