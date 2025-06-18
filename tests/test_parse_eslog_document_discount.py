@@ -2,7 +2,11 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from wsm.parsing.eslog import parse_eslog_invoice, DEFAULT_DOC_DISCOUNT_CODES
+from wsm.parsing.eslog import (
+    parse_eslog_invoice,
+    DEFAULT_DOC_DISCOUNT_CODES,
+    extract_header_net,
+)
 
 
 def _compute_doc_discount(xml_path: Path) -> Decimal:
@@ -99,9 +103,6 @@ def test_parse_eslog_invoice_sums_multiple_discount_codes(tmp_path):
 
     assert doc_row["vrednost"] == Decimal("-3.50")
     assert doc_row["rabata_pct"] == Decimal("100.00")
-
-
-from wsm.parsing.eslog import extract_header_net
 
 
 def test_line_and_doc_discount_total_matches_header():
