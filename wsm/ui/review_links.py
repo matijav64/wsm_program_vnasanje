@@ -760,32 +760,6 @@ def review_links(
     ).grid(row=2, column=1, sticky="w", padx=(4, 4))
     tk.Button(info_frame, text="Kopiraj", command=lambda: _copy(invoice_var.get())).grid(row=2, column=2)
 
-    info_frame = tk.Frame(root)
-    info_frame.pack(anchor="w", padx=8, pady=(0, 6))
-
-    def _copy(val: str) -> None:
-        root.clipboard_clear()
-        root.clipboard_append(val)
-
-    tk.Label(info_frame, text="Dobavitelj:").grid(row=0, column=0, sticky="w")
-    tk.Entry(info_frame, textvariable=supplier_var, state="readonly", width=40).grid(row=0, column=1, sticky="w", padx=(4,4))
-    tk.Button(info_frame, text="Kopiraj", command=lambda: _copy(supplier_var.get())).grid(row=0, column=2)
-
-    tk.Label(info_frame, text="Datum storitve:").grid(row=1, column=0, sticky="w")
-    tk.Entry(info_frame, textvariable=date_var, state="readonly", width=20).grid(row=1, column=1, sticky="w", padx=(4,4))
-    tk.Button(info_frame, text="Kopiraj", command=lambda: _copy(date_var.get())).grid(row=1, column=2)
-
-    tk.Label(info_frame, text="Št. računa:").grid(row=2, column=0, sticky="w")
-    tk.Entry(info_frame, textvariable=invoice_var, state="readonly", width=20).grid(row=2, column=1, sticky="w", padx=(4,4))
-    tk.Button(info_frame, text="Kopiraj", command=lambda: _copy(invoice_var.get())).grid(row=2, column=2)
-
-    # Repeat invoice info above the main table for better visibility
-    table_info_lbl = tk.Label(
-        root,
-        textvariable=header_var,
-        font=("Arial", 16, "bold"),
-    )
-    table_info_lbl.pack(pady=(0, 2))
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
 
