@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from decimal import Decimal
+import os
 import re
 from typing import Tuple, Union, List, Dict
 
@@ -232,17 +233,25 @@ def load_wsm_data(
 def povezi_z_wsm(
     df_items      : pd.DataFrame,
     sifre_path    : str,
-    keywords_path : str,
-    links_dir     : Path,
-    supplier_code : str
+    keywords_path : str | None = None,
+    links_dir     : Path | None = None,
+    supplier_code : str | None = None
 ) -> pd.DataFrame:
     """
-    Poskusi vsaki vrstici v df_items pripisati WSM kodo:
-      1) če obstaja ročna povezava → status “POVEZANO”
-      2) če se v nazivu pojavi ključna beseda → status “KLJUCNA_BES”
-      3) sicer status NaN (prazno)
+    Poskusi vsaki vrstici v ``df_items`` pripisati WSM kodo:
+      1) če obstaja ročna povezava → status ``POVEZANO``
+      2) če se v nazivu pojavi ključna beseda → status ``KLJUCNA_BES``
+      3) sicer status ``NaN`` (prazno)
     Nove zadetke po ključnih besedah doda v datoteko povezav.
+
+    ``keywords_path`` je neobvezen. Če ni podan, funkcija prebere
+    okoljsko spremenljivko ``WSM_KEYWORDS`` in privzeto uporabi
+    ``keywords.xlsx``.
     """
+    if keywords_path is None:
+        keywords_path = os.getenv("WSM_KEYWORDS", "keywords.xlsx")
+    if links_dir is None or supplier_code is None:
+        raise TypeError("links_dir and supplier_code must be provided")
     kw_path = Path(keywords_path)
     if not kw_path.exists():
         extract_keywords(links_dir, kw_path)
