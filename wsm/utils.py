@@ -337,24 +337,34 @@ def log_price_history(
     Shranjeni so identifikator artikla (``sifra_dobavitelja + naziv``), cena,
     trenutni čas in opcijsko datum opravljene storitve.
     """
-    suppliers_path = Path(suppliers_dir) if suppliers_dir is not None else Path("links")
+    suppliers_path = Path(suppliers_dir) if suppliers_dir is not None else Path(history_file).parent
     sup_map = _load_supplier_map(suppliers_path)
 
     df["supplier_name"] = df["sifra_dobavitelja"].apply(
-        lambda x: sup_map.get(str(x), {}).get('ime', str(x))
+        lambda x: sup_map.get(str(x), {}).get("ime", str(x))
     )
     primary_code = main_supplier_code(df)
-    primary_name = df[df["sifra_dobavitelja"] == primary_code]["supplier_name"].iloc[0] if primary_code else df["supplier_name"].iloc[0]
+    primary_name = (
+        df[df["sifra_dobavitelja"] == primary_code]["supplier_name"].iloc[0]
+        if primary_code
+        else df["supplier_name"].iloc[0]
+    )
     safe_name = sanitize_folder_name(primary_name)
 
-    history_path = Path(history_file).parent / safe_name / "price_history.xlsx"
+    history_path = suppliers_path / safe_name / "price_history.xlsx"
     history_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Ustvari ključ iz sifra_dobavitelja in naziv
     df_hist = df[["sifra_dobavitelja", "naziv", "cena_bruto"]].copy()
-    df_hist["key"] = df_hist["sifra_dobavitelja"] + "_" + df_hist["naziv"].str.replace(r"[^\w\s]", "_", regex=True)
-    df_hist = df_hist[["key", "cena_bruto"]].copy()
-    df_hist.columns = ["key", "cena"]
+    df_hist["key"] = df_hist["sifra_dobavitelja"].astype(str) + "_" + df_hist["naziv"].str.replace(r"[^\w\s]", "_", regex=True)
+    df_hist.rename(
+        columns={
+            "sifra_dobavitelja": "code",
+            "naziv": "name",
+            "cena_bruto": "cena",
+        },
+        inplace=True,
+    )
     df_hist["time"] = pd.Timestamp.now()
     df_hist["service_date"] = service_date
     df_hist["invoice_id"] = invoice_id
@@ -366,6 +376,12 @@ def log_price_history(
 
     if history_path.exists():
         old = pd.read_excel(history_path, dtype={"key": str})
+        if "code" not in old.columns or "name" not in old.columns:
+            parts = old["key"].str.split("_", n=1, expand=True)
+            if "code" not in old.columns:
+                old["code"] = parts[0]
+            if "name" not in old.columns:
+                old["name"] = parts[1].fillna("")
         if "invoice_id" not in old.columns:
             old["invoice_id"] = pd.NA
         if invoice_id is not None:
@@ -375,7 +391,10 @@ def log_price_history(
 
     df_hist = (
         df_hist.sort_values("time", ascending=False)
-               .groupby("key", as_index=False)
-               .head(max_entries_per_code)
+        .groupby("key", as_index=False)
+        .head(max_entries_per_code)
     )
+    df_hist = df_hist[
+        ["key", "code", "name", "cena", "time", "service_date", "invoice_id"]
+    ]
     df_hist.to_excel(history_path, index=False)
