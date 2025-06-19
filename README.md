@@ -57,9 +57,13 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
 
 Če `--wsm-codes` ni podan, program poskuša prebrati `sifre_wsm.xlsx` v
 korenu projekta.
+Lahko pa pot do datoteke določite tudi z okoljsko spremenljivko
+`WSM_CODES`. Podobno lahko z `WSM_SUPPLIERS` nastavite mapo s povezavami
+do dobaviteljev. GUI in ukazi CLI privzeto upoštevajo ti spremenljivki,
+če argumenti niso podani.
 
 Pri samodejnem povezovanju lahko program iz teh ročno
-shranjenih datotek sam izdela datoteko `keywords.xlsx`.
+shranjenih datotek sam izdela datoteko `kljucne_besede_wsm_kode.xlsx`.
 Če ta datoteka ne obstaja, jo funkcija `povezi_z_wsm`
 samodejno napolni z najpogostejšimi izrazi iz `*_povezane.xlsx`.
 

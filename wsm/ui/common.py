@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from decimal import Decimal
 
@@ -31,8 +32,23 @@ def select_invoice() -> Path | None:
     return Path(file_path) if file_path else None
 
 
-def open_invoice_gui(invoice_path: Path, suppliers: Path = Path("links")) -> None:
-    """Parse invoice and launch the review GUI."""
+def open_invoice_gui(
+    invoice_path: Path,
+    suppliers: Path | None = None,
+    wsm_codes: Path | None = None,
+) -> None:
+    """Parse invoice and launch the review GUI.
+
+    If ``suppliers`` or ``wsm_codes`` is not provided, the function reads the
+    paths from environment variables ``WSM_SUPPLIERS`` and ``WSM_CODES``.
+    When neither is set, it falls back to ``links`` and ``sifre_wsm.xlsx`` in
+    the current working directory.
+    """
+
+    if suppliers is None:
+        suppliers = Path(os.getenv("WSM_SUPPLIERS", "links"))
+    if wsm_codes is None:
+        wsm_codes = Path(os.getenv("WSM_CODES", "sifre_wsm.xlsx"))
     try:
         if invoice_path.suffix.lower() == ".xml":
             df, total, _ = analyze_invoice(str(invoice_path), str(suppliers))
@@ -68,7 +84,7 @@ def open_invoice_gui(invoice_path: Path, suppliers: Path = Path("links")) -> Non
     links_dir.mkdir(parents=True, exist_ok=True)
     links_file = links_dir / f"{supplier_code}_{safe_name}_povezane.xlsx"
 
-    sifre_file = Path("sifre_wsm.xlsx")
+    sifre_file = wsm_codes
     if sifre_file.exists():
         try:
             wsm_df = pd.read_excel(sifre_file, dtype=str)

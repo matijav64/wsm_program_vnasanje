@@ -26,7 +26,7 @@ def _setup_manual_links(tmp_path: Path) -> Path:
 
 def test_extract_keywords(tmp_path):
     links_dir = _setup_manual_links(tmp_path)
-    keywords_path = tmp_path / "keywords.xlsx"
+    keywords_path = tmp_path / "kljucne_besede_wsm_kode.xlsx"
 
     kw_df = extract_keywords(links_dir, keywords_path)
     assert keywords_path.exists()
@@ -40,7 +40,7 @@ def test_povezi_z_wsm_autolearn(tmp_path):
     sifre_path = tmp_path / "sifre_wsm.xlsx"
     pd.DataFrame({"wsm_sifra": ["100"], "wsm_naziv": ["Coca Cola"]}).to_excel(sifre_path, index=False)
 
-    keywords_path = tmp_path / "keywords.xlsx"  # non-existent
+    keywords_path = tmp_path / "kljucne_besede_wsm_kode.xlsx"  # non-existent
 
     df_items = pd.DataFrame({
         "sifra_dobavitelja": ["SUP"],

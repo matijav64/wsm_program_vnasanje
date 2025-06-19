@@ -1,6 +1,7 @@
 # File: wsm/cli.py
 import click
 import pandas as pd
+import os
 from pathlib import Path
 from decimal import Decimal
 
@@ -64,10 +65,11 @@ def _validate_file(file_path: Path):
 
 @main.command()
 @click.argument("invoice", type=click.Path(exists=True))
-@click.option("--suppliers", type=click.Path(exists=True), default=None, help="Mapa z dobavitelji ali legacy suppliers.xlsx")
+@click.option("--suppliers", type=click.Path(), default=None, help="Mapa z dobavitelji ali legacy suppliers.xlsx")
 def analyze(invoice, suppliers):
     """Prikaži združene postavke in preveri seštevek."""
-    df, total, ok = analyze_invoice(invoice, suppliers)
+    suppliers_path = suppliers or os.getenv("WSM_SUPPLIERS", "links")
+    df, total, ok = analyze_invoice(invoice, suppliers_path)
     click.echo(df.to_string(index=False))
     status = "OK" if ok else "NESKLADJE"
     click.echo(f"{status}: vsota vrstic {total:.2f} €")
@@ -76,14 +78,14 @@ def analyze(invoice, suppliers):
 @click.argument("invoice", type=click.Path(exists=True))
 @click.option(
     "--wsm-codes",
-    type=click.Path(exists=True),
+    type=click.Path(),
     default=None,
     help="Pot do sifre_wsm.xlsx",
 )
 @click.option(
     "--suppliers",
     type=click.Path(),
-    default="links",
+    default=None,
     help="Mapa z dobavitelji ali legacy suppliers.xlsx",
 )
 def review(invoice, wsm_codes, suppliers):
@@ -95,9 +97,11 @@ def review(invoice, wsm_codes, suppliers):
         return
 
     invoice_path = Path(invoice)
+    suppliers_path = suppliers or os.getenv("WSM_SUPPLIERS", "links")
+    sifre_path = Path(wsm_codes) if wsm_codes else Path(os.getenv("WSM_CODES", "sifre_wsm.xlsx"))
     try:
         if invoice_path.suffix.lower() == ".xml":
-            df, total, _ = analyze_invoice(str(invoice_path), suppliers)
+            df, total, _ = analyze_invoice(str(invoice_path), suppliers_path)
         elif invoice_path.suffix.lower() == ".pdf":
             df = parse_pdf(str(invoice_path))
             total = df.get("vrednost", pd.Series(dtype=float)).sum()
@@ -120,12 +124,11 @@ def review(invoice, wsm_codes, suppliers):
     else:
         name = supplier_code
     safe_name = sanitize_folder_name(name)
-    base = Path(suppliers)
+    base = Path(suppliers_path)
     links_dir = base / safe_name
     links_dir.mkdir(parents=True, exist_ok=True)
     links_file = links_dir / f"{supplier_code}_{safe_name}_povezane.xlsx"
 
-    sifre_path = Path(wsm_codes) if wsm_codes else Path("sifre_wsm.xlsx")
     if sifre_path.exists():
         try:
             wsm_df = pd.read_excel(sifre_path, dtype=str)
