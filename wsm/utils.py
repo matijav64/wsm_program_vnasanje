@@ -281,7 +281,11 @@ def povezi_z_wsm(
     if not kw_df.empty:
         for idx, row in df[mask].iterrows():
             text = row["naziv"].lower()
-            hit  = kw_df[kw_df["keyword"].str.lower().apply(lambda k: k in text)]
+            hit  = kw_df[
+                kw_df["keyword"].str.lower().apply(
+                    lambda k: bool(re.search(r"\b%s\b" % re.escape(k.lower()), text))
+                )
+            ]
             if not hit.empty:
                 wsm_code = hit.iloc[0]["wsm_sifra"]
                 df.at[idx, "wsm_sifra"] = wsm_code
