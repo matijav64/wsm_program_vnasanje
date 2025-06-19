@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox, ttk
 from pathlib import Path
 
 import pandas as pd
@@ -21,17 +21,26 @@ def launch_price_watch(suppliers: Path | str = Path("links")) -> None:
     root.geometry("500x400")
 
     suppliers_map = _load_supplier_map(suppliers_dir)
-    supplier_codes = sorted(suppliers_map)
 
+    # Preberemo vse price_history.xlsx, da dobimo skupen seznam artiklov
+    all_items: dict[str, pd.DataFrame] = {}
+    for code, info in suppliers_map.items():
+        safe_name = sanitize_folder_name(info.get("ime", code))
+        hist_path = suppliers_dir / safe_name / "price_history.xlsx"
+        if not hist_path.exists():
+            continue
+        df = pd.read_excel(hist_path)
+        if "key" not in df.columns:
+            continue
+        for key in df["key"].unique():
+            sub = df[df["key"] == key].sort_values("time")
+            if key in all_items:
+                sub = pd.concat([all_items[key], sub], ignore_index=True).sort_values("time")
+            all_items[key] = sub
 
-    combo_values = [f"{c} - {suppliers_map[c]['ime']}" for c in supplier_codes]
-    if combo_values:
-        combo_state = "readonly"
-    else:
-        combo_values = ["Ni dobaviteljev"]
-        combo_state = "disabled"
-    combo = ttk.Combobox(root, values=combo_values, width=40, state=combo_state)
-    combo.pack(pady=10)
+    search_var = tk.StringVar()
+    entry = ttk.Entry(root, textvariable=search_var, width=45)
+    entry.pack(pady=5)
 
     listbox = tk.Listbox(root, width=60)
     listbox.pack(pady=10, fill=tk.BOTH, expand=True)
@@ -39,34 +48,20 @@ def launch_price_watch(suppliers: Path | str = Path("links")) -> None:
     canvas = tk.Canvas(root, width=450, height=150)
     canvas.pack(pady=10)
 
-    item_data: dict[str, pd.DataFrame] = {}
+    all_keys = sorted(all_items)
 
-    def on_supplier_selected(event=None):
-        sel = combo.get()
-        if not sel:
-            return
-        code = sel.split(" - ")[0]
-        name = suppliers_map.get(code, {}).get("ime", code)
-        safe_name = sanitize_folder_name(name)
-        hist_path = suppliers_dir / safe_name / "price_history.xlsx"
-
+    def update_list(event=None):
+        query = search_var.get().lower()
         listbox.delete(0, tk.END)
-        item_data.clear()
-        if not hist_path.exists():
-            messagebox.showwarning("Opozorilo", "Za izbranega dobavitelja ni podatkov o cenah.")
-            return
-        df = pd.read_excel(hist_path)
-        if "key" not in df.columns:
-            return
-        for key in sorted(df["key"].unique()):
-            listbox.insert(tk.END, key)
-            item_data[key] = df[df["key"] == key].sort_values("time")
+        for key in all_keys:
+            if query in key.lower():
+                listbox.insert(tk.END, key)
 
     def on_item_selected(event=None):
         if not listbox.curselection():
             return
         key = listbox.get(listbox.curselection()[0])
-        df_item = item_data.get(key)
+        df_item = all_items.get(key)
         if df_item is None or df_item.empty:
             return
         canvas.delete("all")
@@ -91,8 +86,10 @@ def launch_price_watch(suppliers: Path | str = Path("links")) -> None:
                 arrow = "→"
             canvas.create_text(width - margin, margin, text=arrow, font=("Arial", 16))
 
-    combo.bind("<<ComboboxSelected>>", on_supplier_selected)
+    entry.bind("<KeyRelease>", update_list)
     listbox.bind("<<ListboxSelect>>", on_item_selected)
+
+    update_list()
 
     tk.Button(root, text="Nazaj", command=root.destroy).pack(pady=5)
 
