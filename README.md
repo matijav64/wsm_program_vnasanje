@@ -76,6 +76,10 @@ Lahko pa pot do datoteke določite tudi z okoljsko spremenljivko
 do dobaviteljev. GUI in ukazi CLI privzeto upoštevajo ti spremenljivki,
 če argumenti niso podani.
 
+Za datoteko s ključnimi besedami lahko nastavite okoljsko spremenljivko
+`WSM_KEYWORDS`, ki kaže na `kljucne_besede_wsm_kode.xlsx`. Če ni
+nastavljena, program privzeto bere to datoteko iz trenutne mape.
+
 
 Pri samodejnem povezovanju lahko program iz teh ročno
 shranjenih datotek sam izdela datoteko `kljucne_besede_wsm_kode.xlsx`.

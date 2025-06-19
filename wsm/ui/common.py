@@ -36,6 +36,7 @@ def open_invoice_gui(
     invoice_path: Path,
     suppliers: Path | None = None,
     wsm_codes: Path | None = None,
+    keywords: Path | None = None,
 ) -> None:
     """Parse invoice and launch the review GUI.
 
@@ -49,6 +50,8 @@ def open_invoice_gui(
         suppliers = Path(os.getenv("WSM_SUPPLIERS", "links"))
     if wsm_codes is None:
         wsm_codes = Path(os.getenv("WSM_CODES", "sifre_wsm.xlsx"))
+    if keywords is None:
+        keywords = Path(os.getenv("WSM_KEYWORDS", "kljucne_besede_wsm_kode.xlsx"))
     try:
         if invoice_path.suffix.lower() == ".xml":
             df, total, _ = analyze_invoice(str(invoice_path), str(suppliers))
@@ -93,6 +96,13 @@ def open_invoice_gui(
             wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
     else:
         wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
+
+    try:
+        from wsm.utils import povezi_z_wsm
+
+        df = povezi_z_wsm(df, str(sifre_file), str(keywords), suppliers, supplier_code)
+    except Exception as exc:
+        logging.warning(f"Napaka pri samodejnem povezovanju: {exc}")
 
     review_links(df, wsm_df, links_file, total, invoice_path)
 

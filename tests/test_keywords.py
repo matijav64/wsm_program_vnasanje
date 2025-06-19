@@ -70,3 +70,20 @@ def test_povezi_z_wsm_reads_env(monkeypatch, tmp_path):
     assert result.loc[0, "wsm_sifra"] == "100"
     assert env_path.exists()
 
+
+def test_povezi_z_wsm_default_path(monkeypatch, tmp_path):
+    links_dir = _setup_manual_links(tmp_path)
+    sifre_path = tmp_path / "sifre_wsm.xlsx"
+    pd.DataFrame({"wsm_sifra": ["100"], "wsm_naziv": ["Coca Cola"]}).to_excel(sifre_path, index=False)
+
+    monkeypatch.chdir(tmp_path)
+
+    df_items = pd.DataFrame({
+        "sifra_dobavitelja": ["SUP"],
+        "naziv": ["Coca Cola Zero Sugar 0.5L"],
+    })
+
+    result = povezi_z_wsm(df_items, str(sifre_path), links_dir=links_dir, supplier_code="SUP")
+    assert result.loc[0, "wsm_sifra"] == "100"
+    assert (tmp_path / "kljucne_besede_wsm_kode.xlsx").exists()
+
