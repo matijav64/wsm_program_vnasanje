@@ -310,6 +310,7 @@ def povezi_z_wsm(
             subset=["sifra_dobavitelja", "naziv_ckey"], keep="first", inplace=True
         )
         manual_links.to_excel(links_path, index=False)
+        extract_keywords(links_dir, kw_path)
 
     return df
 
