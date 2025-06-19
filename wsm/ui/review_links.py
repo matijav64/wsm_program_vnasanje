@@ -55,7 +55,7 @@ def _norm_unit(
     determined from ``u`` or ``name``.  The function also accepts a
     ``code`` keyword argument which identifies the supplier item.  When
     provided and the resulting unit is ``kos``, the item code is looked
-    up in :data:`WEIGHTS_PER_PIECE` to infer the weight per piece.
+    up in :data:`wsm.constants.WEIGHTS_PER_PIECE` to infer the weight per piece.
     """
     log.debug(f"Normalizacija: q={q}, u={u}, name={name}")
     unit_map = {
