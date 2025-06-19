@@ -37,8 +37,12 @@ def test_cli_review_uses_env_vars(monkeypatch, tmp_path):
     codes_file = tmp_path / "codes.xlsx"
     codes_file.write_text("dummy")
 
+    keywords_file = tmp_path / "kw.xlsx"
+    keywords_file.write_text("dummy")
+
     monkeypatch.setenv("WSM_SUPPLIERS", str(suppliers_dir))
     monkeypatch.setenv("WSM_CODES", str(codes_file))
+    monkeypatch.setenv("WSM_KEYWORDS", str(keywords_file))
 
     captured = {}
 
@@ -61,9 +65,14 @@ def test_cli_review_uses_env_vars(monkeypatch, tmp_path):
     def fake_review_links(df, wsm_df, links_file, total, invoice_path):
         captured["links"] = links_file
 
+    def fake_povezi(df, sifre, keywords_path=None, links_dir=None, supplier_code=None):
+        captured["kw"] = Path(keywords_path)
+        return df
+
     monkeypatch.setattr(cli, "analyze_invoice", fake_analyze)
     monkeypatch.setattr(cli.pd, "read_excel", fake_read_excel)
     monkeypatch.setattr("wsm.ui.review_links.review_links", fake_review_links)
+    monkeypatch.setattr("wsm.utils.povezi_z_wsm", fake_povezi)
     monkeypatch.setattr(cli, "get_supplier_name", lambda p: "Test Supplier")
 
     runner = CliRunner()
@@ -74,6 +83,7 @@ def test_cli_review_uses_env_vars(monkeypatch, tmp_path):
     assert captured["sup"] == str(suppliers_dir)
     assert captured["codes"] == codes_file
     assert captured["links"] == expected
+    assert captured["kw"] == keywords_file
 
 
 def test_open_invoice_gui_uses_env_vars(monkeypatch, tmp_path):
@@ -84,8 +94,12 @@ def test_open_invoice_gui_uses_env_vars(monkeypatch, tmp_path):
     codes_file = tmp_path / "codes.xlsx"
     codes_file.write_text("dummy")
 
+    keywords_file = tmp_path / "kw.xlsx"
+    keywords_file.write_text("dummy")
+
     monkeypatch.setenv("WSM_SUPPLIERS", str(suppliers_dir))
     monkeypatch.setenv("WSM_CODES", str(codes_file))
+    monkeypatch.setenv("WSM_KEYWORDS", str(keywords_file))
 
     captured = {}
 
@@ -108,9 +122,14 @@ def test_open_invoice_gui_uses_env_vars(monkeypatch, tmp_path):
     def fake_review_links(df, wsm_df, links_file, total, invoice_path):
         captured["links"] = links_file
 
+    def fake_povezi(df, sifre, keywords_path=None, links_dir=None, supplier_code=None):
+        captured["kw"] = Path(keywords_path)
+        return df
+
     monkeypatch.setattr("wsm.ui.common.analyze_invoice", fake_analyze)
     monkeypatch.setattr("wsm.ui.common.pd.read_excel", fake_read_excel)
     monkeypatch.setattr("wsm.ui.common.review_links", fake_review_links)
+    monkeypatch.setattr("wsm.utils.povezi_z_wsm", fake_povezi)
     monkeypatch.setattr("wsm.ui.common.get_supplier_name", lambda p: "Test Supplier")
 
     open_invoice_gui(invoice_path=invoice)
@@ -119,3 +138,4 @@ def test_open_invoice_gui_uses_env_vars(monkeypatch, tmp_path):
     assert captured["sup"] == suppliers_dir
     assert captured["codes"] == codes_file
     assert captured["links"] == expected
+    assert captured["kw"] == keywords_file

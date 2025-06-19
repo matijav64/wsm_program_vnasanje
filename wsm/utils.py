@@ -195,9 +195,9 @@ def extract_keywords(links_dir: Path, keywords_path: Path) -> pd.DataFrame:
 
 def load_wsm_data(
     sifre_path   : str,
-    keywords_path: str,
+    keywords_path: str | None,
     links_dir    : Path,
-    supplier_code: str
+    supplier_code: str,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Vrne:
@@ -206,6 +206,9 @@ def load_wsm_data(
       • links_df  – ročne povezave za dobavitelja (če obstaja datoteka)
     """
     sifre_df = pd.read_excel(sifre_path, dtype=str)
+
+    if keywords_path is None:
+        keywords_path = os.getenv("WSM_KEYWORDS", "kljucne_besede_wsm_kode.xlsx")
 
     kw_all = pd.read_excel(keywords_path, dtype=str)
     kw_all = _coerce_keyword_column(kw_all)
@@ -246,10 +249,10 @@ def povezi_z_wsm(
 
     ``keywords_path`` je neobvezen. Če ni podan, funkcija prebere
     okoljsko spremenljivko ``WSM_KEYWORDS`` in privzeto uporabi
-    ``keywords.xlsx``.
+    ``kljucne_besede_wsm_kode.xlsx``.
     """
     if keywords_path is None:
-        keywords_path = os.getenv("WSM_KEYWORDS", "keywords.xlsx")
+        keywords_path = os.getenv("WSM_KEYWORDS", "kljucne_besede_wsm_kode.xlsx")
     if links_dir is None or supplier_code is None:
         raise TypeError("links_dir and supplier_code must be provided")
     kw_path = Path(keywords_path)

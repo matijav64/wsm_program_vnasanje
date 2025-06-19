@@ -88,7 +88,13 @@ def analyze(invoice, suppliers):
     default=None,
     help="Mapa z dobavitelji ali legacy suppliers.xlsx",
 )
-def review(invoice, wsm_codes, suppliers):
+@click.option(
+    "--keywords",
+    type=click.Path(),
+    default=None,
+    help="Pot do kljucne_besede_wsm_kode.xlsx",
+)
+def review(invoice, wsm_codes, suppliers, keywords):
     """Odpri GUI za ročno povezovanje WSM šifer."""
     try:
         from wsm.ui.review_links import review_links
@@ -99,6 +105,7 @@ def review(invoice, wsm_codes, suppliers):
     invoice_path = Path(invoice)
     suppliers_path = suppliers or os.getenv("WSM_SUPPLIERS", "links")
     sifre_path = Path(wsm_codes) if wsm_codes else Path(os.getenv("WSM_CODES", "sifre_wsm.xlsx"))
+    keywords_path = Path(keywords) if keywords else Path(os.getenv("WSM_KEYWORDS", "kljucne_besede_wsm_kode.xlsx"))
     try:
         if invoice_path.suffix.lower() == ".xml":
             df, total, _ = analyze_invoice(str(invoice_path), suppliers_path)
@@ -139,6 +146,12 @@ def review(invoice, wsm_codes, suppliers):
         if wsm_codes:
             click.echo(f"[NAPAKA] Datoteka {sifre_path} ne obstaja.")
         wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
+
+    try:
+        from wsm.utils import povezi_z_wsm
+        df = povezi_z_wsm(df, str(sifre_path), str(keywords_path), Path(suppliers_path), supplier_code)
+    except Exception as exc:
+        click.echo(f"[NAPAKA] Samodejno povezovanje ni uspelo: {exc}")
 
     try:
         review_links(df, wsm_df, links_file, total, Path(invoice))
