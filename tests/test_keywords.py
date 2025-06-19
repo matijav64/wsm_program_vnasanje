@@ -111,3 +111,20 @@ def test_keywords_updated_after_new_links(tmp_path):
     tokens = updated_kw[updated_kw["wsm_sifra"] == "100"]["keyword"].tolist()
     assert "zero" in tokens
 
+
+def test_keyword_partial_match_not_matched(tmp_path):
+    links_dir = _setup_manual_links(tmp_path)
+    sifre_path = tmp_path / "sifre_wsm.xlsx"
+    pd.DataFrame({"wsm_sifra": ["500"], "wsm_naziv": ["Eso Item"]}).to_excel(sifre_path, index=False)
+
+    keywords_path = tmp_path / "kw.xlsx"
+    pd.DataFrame({"wsm_sifra": ["500"], "keyword": ["eso"]}).to_excel(keywords_path, index=False)
+
+    df_items = pd.DataFrame({
+        "sifra_dobavitelja": ["SUP"],
+        "naziv": ["Expreso Machine"],
+    })
+
+    result = povezi_z_wsm(df_items, str(sifre_path), str(keywords_path), links_dir, "SUP")
+    assert pd.isna(result.loc[0, "wsm_sifra"])
+
