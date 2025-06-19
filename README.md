@@ -74,7 +74,8 @@ korenu projekta.
 Lahko pa pot do datoteke določite tudi z okoljsko spremenljivko
 `WSM_CODES`. Podobno lahko z `WSM_SUPPLIERS` nastavite mapo s povezavami
 do dobaviteljev. GUI in ukazi CLI privzeto upoštevajo ti spremenljivki,
-če argumenti niso podani.
+če argumenti niso podani. Pot do datoteke `keywords.xlsx` lahko
+nastavite z `WSM_KEYWORDS` (privzeto je `keywords.xlsx` v korenu projekta).
 
 Pri samodejnem povezovanju lahko program iz teh ročno
 shranjenih datotek sam izdela datoteko `keywords.xlsx`.
