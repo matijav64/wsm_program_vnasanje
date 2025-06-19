@@ -31,13 +31,27 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    ```
    Med glavnimi odvisnostmi so `pandas`, `pdfplumber` in `openpyxl`.
 
-3. Za osnovno validacijo računov lahko zaženete:
+3. (Opcijsko) namestite paket v razvojni načini:
+   ```bash
+   pip install -e .
+   ```
+   Po takšni namestitvi (ali če ukaze zaganjate iz korena repozitorija) GUI
+   odprete z:
+   ```bash
+   python -m wsm.run
+   ```
+   CLI orodja pa s:
+   ```bash
+   python -m wsm.cli
+   ```
+
+4. Za osnovno validacijo računov lahko zaženete:
    ```bash
    python -m wsm.cli validate <mapa_z_racuni>
    ```
    kjer `<mapa_z_racuni>` vsebuje XML ali PDF datoteke z e‑računi.
 
-4. Za ročno povezovanje WSM šifer podajte pot do računa:
+5. Za ročno povezovanje WSM šifer podajte pot do računa:
    ```bash
    python -m wsm.cli review <invoice.xml>
    ```
@@ -71,7 +85,7 @@ Za artikle, kjer masa na kos ni razvidna iz naziva, preverite slovar
 `WEIGHTS_PER_PIECE` v `wsm/constants.py`. Če naletite na novo kodo s
 stalno maso pakiranja, jo dodajte v ta slovar.
 
-5. Analizo in združevanje postavk lahko izvedete z:
+6. Analizo in združevanje postavk lahko izvedete z:
    ```bash
    python -m wsm.cli analyze <invoice.xml> --suppliers links
    ```
