@@ -2,6 +2,7 @@
 """Simple GUI for watching price history of items."""
 from __future__ import annotations
 
+import os
 import tkinter as tk
 from tkinter import messagebox, ttk
 from pathlib import Path
@@ -12,9 +13,14 @@ from wsm.ui.review_links import _load_supplier_map
 from wsm.utils import sanitize_folder_name
 
 
-def launch_price_watch(suppliers: Path | str = Path("links")) -> None:
-    """Launch the price watch window."""
-    suppliers_dir = Path(suppliers)
+def launch_price_watch(suppliers: Path | str | None = None) -> None:
+    """Launch the price watch window.
+
+    When ``suppliers`` is ``None`` it will read the path from the
+    ``WSM_SUPPLIERS`` environment variable and fall back to ``links`` in the
+    current working directory.
+    """
+    suppliers_dir = Path(suppliers or os.getenv("WSM_SUPPLIERS", "links"))
 
     root = tk.Tk()
     root.title("Spremljanje cen")
