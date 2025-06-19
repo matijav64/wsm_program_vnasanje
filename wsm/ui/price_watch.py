@@ -8,6 +8,9 @@ from tkinter import messagebox, ttk
 from pathlib import Path
 
 import pandas as pd
+import logging
+
+log = logging.getLogger(__name__)
 
 from wsm.ui.review_links import _load_supplier_map
 from wsm.utils import sanitize_folder_name
@@ -21,6 +24,12 @@ def launch_price_watch(suppliers: Path | str | None = None) -> None:
     current working directory.
     """
     suppliers_dir = Path(suppliers or os.getenv("WSM_SUPPLIERS", "links"))
+    if not suppliers_dir.exists():
+        log.info(
+            "Supplier path %s does not exist (WSM_SUPPLIERS=%s)",
+            suppliers_dir,
+            os.getenv("WSM_SUPPLIERS"),
+        )
 
     root = tk.Tk()
     root.title("Spremljanje cen")
