@@ -32,11 +32,21 @@ def launch_price_watch(suppliers: Path | str = Path("links")) -> None:
         df = pd.read_excel(hist_path)
         if "key" not in df.columns:
             continue
-        for key in df["key"].unique():
-            sub = df[df["key"] == key].sort_values("time")
-            if key in all_items:
-                sub = pd.concat([all_items[key], sub], ignore_index=True).sort_values("time")
-            all_items[key] = sub
+        if "code" not in df.columns or "name" not in df.columns:
+            parts = df["key"].str.split("_", n=1, expand=True)
+            if "code" not in df.columns:
+                df["code"] = parts[0]
+            if "name" not in df.columns:
+                df["name"] = parts[1].fillna("")
+        df["label"] = df["code"].astype(str) + " - " + df["name"].astype(str)
+        for label in df["label"].unique():
+            sub = df[df["label"] == label].sort_values("time")
+            if label in all_items:
+                sub = (
+                    pd.concat([all_items[label], sub], ignore_index=True)
+                    .sort_values("time")
+                )
+            all_items[label] = sub
 
     search_var = tk.StringVar()
     entry = ttk.Entry(root, textvariable=search_var, width=45)
@@ -47,6 +57,8 @@ def launch_price_watch(suppliers: Path | str = Path("links")) -> None:
 
     canvas = tk.Canvas(root, width=450, height=150)
     canvas.pack(pady=10)
+    info_label = tk.Label(root, text="")
+    info_label.pack()
 
     all_keys = sorted(all_items)
 
@@ -85,6 +97,8 @@ def launch_price_watch(suppliers: Path | str = Path("links")) -> None:
             else:
                 arrow = "→"
             canvas.create_text(width - margin, margin, text=arrow, font=("Arial", 16))
+        last_time = pd.to_datetime(df_item["time"].iloc[-1])
+        info_label.config(text=f"Zadnja cena: {prices[-1]} (\u010das: {last_time:%Y-%m-%d})")
 
     entry.bind("<KeyRelease>", update_list)
     listbox.bind("<<ListboxSelect>>", on_item_selected)

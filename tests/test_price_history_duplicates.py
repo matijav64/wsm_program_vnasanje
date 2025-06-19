@@ -18,4 +18,5 @@ def test_log_price_history_avoids_duplicates(tmp_path, monkeypatch):
     hist_path = hist_base.parent / 'Test' / 'price_history.xlsx'
     hist = pd.read_excel(hist_path, dtype=str)
     assert len(hist) == 1
+    assert {'code', 'name', 'cena'}.issubset(set(hist.columns))
 
