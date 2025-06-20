@@ -31,3 +31,13 @@ def test_load_price_histories(tmp_path):
     assert set(items["S1"].keys()) == {"S1 - ItemA"}
     assert set(items["S2"].keys()) == {"S2 - ItemB"}
 
+
+def test_load_price_histories_missing_file(tmp_path):
+    links = tmp_path / "links"
+    s1 = links / "Sup1"
+    s1.mkdir(parents=True)
+    (s1 / "supplier.json").write_text(json.dumps({"sifra": "S1", "ime": "Sup1"}))
+
+    items = _load_price_histories(links)
+    assert items == {}
+

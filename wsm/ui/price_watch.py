@@ -23,7 +23,9 @@ def _load_price_histories(suppliers_dir: Path) -> dict[str, dict[str, pd.DataFra
     for code, info in suppliers_map.items():
         safe_name = sanitize_folder_name(info.get("ime", code))
         hist_path = suppliers_dir / safe_name / "price_history.xlsx"
+        log.debug("Checking history file for %s at %s", code, hist_path)
         if not hist_path.exists():
+            log.info("price_history.xlsx ni najden: %s", hist_path)
             continue
         df = pd.read_excel(hist_path)
         if "key" not in df.columns:
@@ -104,7 +106,11 @@ def launch_price_watch(suppliers: Path | str | None = None) -> None:
         listbox.delete(0, tk.END)
         if not code:
             return
-        for key in sorted(items_by_supplier.get(code, {})):
+        items = items_by_supplier.get(code, {})
+        if not items:
+            listbox.insert(tk.END, "(ni zgodovine)")
+            return
+        for key in sorted(items):
             if query in key.lower():
                 listbox.insert(tk.END, key)
 
