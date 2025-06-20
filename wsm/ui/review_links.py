@@ -236,6 +236,29 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
                 log.debug(f"Dodan iz mape: sifra={code}, ime={folder.name}")
             break
 
+        # as a final fallback, allow folders that only contain
+        # ``price_history.xlsx`` without ``supplier.json`` or
+        # ``*_povezane.xlsx`` files.  In this case we try to infer the
+        # supplier code from the history file.
+        hist_path = folder / "price_history.xlsx"
+        if hist_path.exists():
+            try:
+                df_hist = pd.read_excel(hist_path)
+                if "code" in df_hist.columns:
+                    code = str(df_hist["code"].dropna().astype(str).iloc[0])
+                elif "key" in df_hist.columns:
+                    code = str(df_hist["key"].dropna().astype(str).iloc[0]).split("_")[0]
+                else:
+                    code = None
+            except Exception as exc:
+                log.error(f"Napaka pri branju {hist_path}: {exc}")
+                code = None
+            if code and code not in sup_map:
+                sup_map[code] = {"ime": folder.name}
+                log.debug(
+                    f"Dodan iz price_history: sifra={code}, ime={folder.name}"
+                )
+
     log.info(f"Najdeni dobavitelji: {list(sup_map.keys())}")
     return sup_map
 
