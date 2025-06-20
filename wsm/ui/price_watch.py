@@ -16,6 +16,31 @@ from wsm.ui.review_links import _load_supplier_map
 from wsm.utils import sanitize_folder_name
 
 
+def _load_price_histories(suppliers_dir: Path) -> dict[str, dict[str, pd.DataFrame]]:
+    """Return price history grouped by supplier and item label."""
+    suppliers_map = _load_supplier_map(suppliers_dir)
+    items_by_supplier: dict[str, dict[str, pd.DataFrame]] = {}
+    for code, info in suppliers_map.items():
+        safe_name = sanitize_folder_name(info.get("ime", code))
+        hist_path = suppliers_dir / safe_name / "price_history.xlsx"
+        if not hist_path.exists():
+            continue
+        df = pd.read_excel(hist_path)
+        if "key" not in df.columns:
+            continue
+        if "code" not in df.columns or "name" not in df.columns:
+            parts = df["key"].str.split("_", n=1, expand=True)
+            if "code" not in df.columns:
+                df["code"] = parts[0]
+            if "name" not in df.columns:
+                df["name"] = parts[1].fillna("")
+        df["label"] = df["code"].astype(str) + " - " + df["name"].astype(str)
+        for label in df["label"].unique():
+            sub = df[df["label"] == label].sort_values("time")
+            items_by_supplier.setdefault(code, {})[label] = sub
+    return items_by_supplier
+
+
 def launch_price_watch(suppliers: Path | str | None = None) -> None:
     """Launch the price watch window.
 
@@ -45,25 +70,7 @@ def launch_price_watch(suppliers: Path | str | None = None) -> None:
     suppliers_map = _load_supplier_map(suppliers_dir)
 
     # Preberemo price_history.xlsx po posameznih dobaviteljih
-    items_by_supplier: dict[str, dict[str, pd.DataFrame]] = {}
-    for code, info in suppliers_map.items():
-        safe_name = sanitize_folder_name(info.get("ime", code))
-        hist_path = suppliers_dir / safe_name / "price_history.xlsx"
-        if not hist_path.exists():
-            continue
-        df = pd.read_excel(hist_path)
-        if "key" not in df.columns:
-            continue
-        if "code" not in df.columns or "name" not in df.columns:
-            parts = df["key"].str.split("_", n=1, expand=True)
-            if "code" not in df.columns:
-                df["code"] = parts[0]
-            if "name" not in df.columns:
-                df["name"] = parts[1].fillna("")
-        df["label"] = df["code"].astype(str) + " - " + df["name"].astype(str)
-        for label in df["label"].unique():
-            sub = df[df["label"] == label].sort_values("time")
-            items_by_supplier.setdefault(code, {})[label] = sub
+    items_by_supplier = _load_price_histories(suppliers_dir)
 
     supplier_var = tk.StringVar()
     supplier_codes = {
