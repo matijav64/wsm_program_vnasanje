@@ -206,7 +206,9 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
             return {}
 
     links_dir = sup_file if sup_file.is_dir() else sup_file.parent
+    log.info(f"Pregledujem mapo dobaviteljev: {links_dir}")
     for folder in links_dir.iterdir():
+        log.info(f"\u2192 mapa: {folder}")
         if not folder.is_dir():
             continue
         info_path = folder / "supplier.json"
@@ -224,6 +226,8 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
                     continue
             except Exception as e:
                 log.error(f"Napaka pri branju {info_path}: {e}")
+        else:
+            log.info(f"Ni datoteke supplier.json v {folder}")
         # fallback when supplier.json is missing or neveljaven
         for file in folder.glob("*_povezane.xlsx"):
             code = file.stem.split("_")[0]
