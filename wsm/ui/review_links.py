@@ -178,9 +178,6 @@ def _norm_unit(
     log.debug(f"Končna normalizacija: q_norm={q_norm}, base_unit={base_unit}")
     return q_norm, base_unit
 
-    log.debug(f"Končna normalizacija: q_norm={q_norm}, base_unit={base_unit}")
-    return q_norm, base_unit
-
 
 # File handling functions
 def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
