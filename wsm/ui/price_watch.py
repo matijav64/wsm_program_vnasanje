@@ -37,8 +37,8 @@ def launch_price_watch(suppliers: Path | str | None = None) -> None:
 
     suppliers_map = _load_supplier_map(suppliers_dir)
 
-    # Preberemo vse price_history.xlsx, da dobimo skupen seznam artiklov
-    all_items: dict[str, pd.DataFrame] = {}
+    # Preberemo price_history.xlsx po posameznih dobaviteljih
+    items_by_supplier: dict[str, dict[str, pd.DataFrame]] = {}
     for code, info in suppliers_map.items():
         safe_name = sanitize_folder_name(info.get("ime", code))
         hist_path = suppliers_dir / safe_name / "price_history.xlsx"
@@ -56,12 +56,21 @@ def launch_price_watch(suppliers: Path | str | None = None) -> None:
         df["label"] = df["code"].astype(str) + " - " + df["name"].astype(str)
         for label in df["label"].unique():
             sub = df[df["label"] == label].sort_values("time")
-            if label in all_items:
-                sub = (
-                    pd.concat([all_items[label], sub], ignore_index=True)
-                    .sort_values("time")
-                )
-            all_items[label] = sub
+            items_by_supplier.setdefault(code, {})[label] = sub
+
+    supplier_var = tk.StringVar()
+    supplier_codes = {
+        f"{code} - {info['ime']}": code for code, info in suppliers_map.items()
+    }
+    supplier_box = ttk.Combobox(
+        root, values=list(supplier_codes), textvariable=supplier_var, state="readonly", width=47
+    )
+    supplier_box.pack(pady=5)
+
+    if supplier_codes:
+        supplier_box.current(0)
+        # populate initial item list
+        supplier_var.set(list(supplier_codes)[0])
 
     search_var = tk.StringVar()
     entry = ttk.Entry(root, textvariable=search_var, width=45)
@@ -75,12 +84,13 @@ def launch_price_watch(suppliers: Path | str | None = None) -> None:
     info_label = tk.Label(root, text="")
     info_label.pack()
 
-    all_keys = sorted(all_items)
-
     def update_list(event=None):
+        code = supplier_codes.get(supplier_var.get())
         query = search_var.get().lower()
         listbox.delete(0, tk.END)
-        for key in all_keys:
+        if not code:
+            return
+        for key in sorted(items_by_supplier.get(code, {})):
             if query in key.lower():
                 listbox.insert(tk.END, key)
 
@@ -88,7 +98,10 @@ def launch_price_watch(suppliers: Path | str | None = None) -> None:
         if not listbox.curselection():
             return
         key = listbox.get(listbox.curselection()[0])
-        df_item = all_items.get(key)
+        code = supplier_codes.get(supplier_var.get())
+        if not code:
+            return
+        df_item = items_by_supplier.get(code, {}).get(key)
         if df_item is None or df_item.empty:
             return
         canvas.delete("all")
@@ -116,6 +129,7 @@ def launch_price_watch(suppliers: Path | str | None = None) -> None:
         info_label.config(text=f"Zadnja cena: {prices[-1]} (\u010das: {last_time:%Y-%m-%d})")
 
     entry.bind("<KeyRelease>", update_list)
+    supplier_box.bind("<<ComboboxSelected>>", update_list)
     listbox.bind("<<ListboxSelect>>", on_item_selected)
 
     update_list()
