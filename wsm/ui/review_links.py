@@ -196,8 +196,10 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
             for _, row in df_sup.iterrows():
                 sifra = str(row["sifra"]).strip()
                 ime = str(row["ime"]).strip()
+                vat = str(row.get("vat") or row.get("davcna") or "").strip()
                 sup_map[sifra] = {
                     "ime": ime or sifra,
+                    "vat": vat,
                 }
                 log.debug(f"Dodan v sup_map: sifra={sifra}, ime={ime}")
             return sup_map
@@ -217,9 +219,11 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
                 data = json.loads(info_path.read_text())
                 sifra = str(data.get("sifra", "")).strip()
                 ime = str(data.get("ime", "")).strip() or folder.name
+                vat = str(data.get("vat") or data.get("davcna") or "").strip()
                 if sifra:
                     sup_map[sifra] = {
                         "ime": ime,
+                        "vat": vat,
                     }
                     log.debug(f"Dodan iz JSON: sifra={sifra}, ime={ime}")
                     # uspešno prebrali podatke, nadaljuj z naslednjo mapo
@@ -236,6 +240,7 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
             if code not in sup_map:
                 sup_map[code] = {
                     "ime": folder.name,
+                    "vat": "",
                 }
                 log.debug(f"Dodan iz mape: sifra={code}, ime={folder.name}")
             break
@@ -258,7 +263,7 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
                 log.error(f"Napaka pri branju {hist_path}: {exc}")
                 code = None
             if code and code not in sup_map:
-                sup_map[code] = {"ime": folder.name}
+                sup_map[code] = {"ime": folder.name, "vat": ""}
                 log.debug(
                     f"Dodan iz price_history: sifra={code}, ime={folder.name}"
                 )
@@ -271,7 +276,7 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
 
             code = sanitize_folder_name(folder.name)
             if code not in sup_map:
-                sup_map[code] = {"ime": folder.name}
+                sup_map[code] = {"ime": folder.name, "vat": ""}
                 log.debug(f"Dodan iz imena mape: sifra={code}, ime={folder.name}")
 
 
@@ -289,6 +294,7 @@ def _write_supplier_map(sup_map: dict, sup_file: Path):
                 {
                     "sifra": k,
                     "ime": v["ime"],
+                    "vat": v.get("vat", ""),
                 }
                 for k, v in sup_map.items()
             ]
@@ -312,7 +318,7 @@ def _write_supplier_map(sup_map: dict, sup_file: Path):
     for code, info in sup_map.items():
         from wsm.utils import sanitize_folder_name
 
-        folder = links_dir / sanitize_folder_name(info["ime"])
+        folder = links_dir / sanitize_folder_name(info.get("vat") or info["ime"])
         folder.mkdir(parents=True, exist_ok=True)
         info_path = folder / "supplier.json"
         try:
@@ -321,6 +327,7 @@ def _write_supplier_map(sup_map: dict, sup_file: Path):
                     {
                         "sifra": code,
                         "ime": info["ime"],
+                        "vat": info.get("vat"),
                     },
                     ensure_ascii=False,
                 )
@@ -343,6 +350,7 @@ def _save_and_close(
     sup_file,
     *,
     invoice_path=None,
+    vat=None,
 ):
     log.debug(
         f"Shranjevanje: supplier_name={supplier_name}, supplier_code={supplier_code}"
@@ -368,8 +376,16 @@ def _save_and_close(
 
     # Posodobi zemljevid dobaviteljev, če se je ime ali nastavitev spremenila
     old_info = sup_map.get(supplier_code, {})
+    new_info = old_info.copy()
+    changed = False
     if supplier_name and old_info.get("ime") != supplier_name:
-        sup_map[supplier_code] = {"ime": supplier_name}
+        new_info["ime"] = supplier_name
+        changed = True
+    if vat and old_info.get("vat") != vat:
+        new_info["vat"] = vat
+        changed = True
+    if changed:
+        sup_map[supplier_code] = new_info
         _write_supplier_map(sup_map, sup_file)
 
     # Nastavi indeks za manual_old
@@ -505,6 +521,7 @@ def review_links(
     log.info(f"Supplier code extracted: {supplier_code}")
     supplier_info = sup_map.get(supplier_code, {})
     default_name = short_supplier_name(supplier_info.get("ime", supplier_code))
+    supplier_vat = supplier_info.get("vat")
 
     service_date = None
     invoice_number = None
@@ -528,9 +545,12 @@ def review_links(
     inv_name = None
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
-            from wsm.parsing.eslog import get_supplier_name
+            from wsm.parsing.eslog import get_supplier_name, get_supplier_info_vat
 
             inv_name = get_supplier_name(invoice_path)
+            if not supplier_vat:
+                _, _, vat = get_supplier_info_vat(invoice_path)
+                supplier_vat = vat
         except Exception:
             inv_name = None
     elif invoice_path and invoice_path.suffix.lower() == ".pdf":
@@ -1018,6 +1038,7 @@ def review_links(
             sup_map,
             suppliers_file,
             invoice_path=invoice_path,
+            vat=supplier_vat,
         ),
     )
 
@@ -1046,6 +1067,7 @@ def review_links(
             sup_map,
             suppliers_file,
             invoice_path=invoice_path,
+            vat=supplier_vat,
         ),
     )
 
