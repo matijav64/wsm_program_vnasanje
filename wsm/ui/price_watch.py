@@ -30,6 +30,13 @@ def launch_price_watch(suppliers: Path | str | None = None) -> None:
             suppliers_dir,
             os.getenv("WSM_SUPPLIERS"),
         )
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(
+            "Napaka", f"Mapa dobaviteljev ni najdena: {suppliers_dir}"
+        )
+        root.destroy()
+        return
 
     root = tk.Tk()
     root.title("Spremljanje cen")
