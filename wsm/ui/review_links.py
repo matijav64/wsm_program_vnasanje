@@ -274,6 +274,7 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
                 sup_map[code] = {"ime": folder.name}
                 log.debug(f"Dodan iz imena mape: sifra={code}, ime={folder.name}")
 
+
     log.info(f"Najdeni dobavitelji: {list(sup_map.keys())}")
     return sup_map
 
