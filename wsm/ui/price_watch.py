@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 from pathlib import Path
 
 import pandas as pd
