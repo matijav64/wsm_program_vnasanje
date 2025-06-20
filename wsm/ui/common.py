@@ -88,7 +88,7 @@ def open_invoice_gui(
         name = get_supplier_name_from_pdf(invoice_path) or supplier_code
     else:
         name = supplier_code
-    safe_id = sanitize_folder_name(vat or name)
+    safe_id = sanitize_folder_name(name)
     links_dir = suppliers / safe_id
     links_dir.mkdir(parents=True, exist_ok=True)
     links_file = links_dir / f"{supplier_code}_{safe_id}_povezane.xlsx"
