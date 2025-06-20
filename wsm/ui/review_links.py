@@ -263,6 +263,18 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
                     f"Dodan iz price_history: sifra={code}, ime={folder.name}"
                 )
 
+        # if none of the known files exist, still expose the folder name so the
+        # user can select it in the dropdown.  Use a sanitized version of the
+        # folder name as the code to keep it stable across runs.
+        if folder.name and folder.name not in {info.get("ime") for info in sup_map.values()}:
+            from wsm.utils import sanitize_folder_name
+
+            code = sanitize_folder_name(folder.name)
+            if code not in sup_map:
+                sup_map[code] = {"ime": folder.name}
+                log.debug(f"Dodan iz imena mape: sifra={code}, ime={folder.name}")
+
+
     log.info(f"Najdeni dobavitelji: {list(sup_map.keys())}")
     return sup_map
 
