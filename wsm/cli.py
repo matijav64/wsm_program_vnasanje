@@ -136,7 +136,7 @@ def review(invoice, wsm_codes, suppliers, keywords):
         name = get_supplier_name_from_pdf(invoice_path) or supplier_code
     else:
         name = supplier_code
-    safe_id = sanitize_folder_name(vat or name)
+    safe_id = sanitize_folder_name(name)
     base = Path(suppliers_path)
     links_dir = base / safe_id
     links_dir.mkdir(parents=True, exist_ok=True)

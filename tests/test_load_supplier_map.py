@@ -15,7 +15,7 @@ def test_load_supplier_map_from_folders(tmp_path: Path):
     df.to_excel(sup_a / "KVIBO_povezane.xlsx", index=False)
 
     # folder with supplier.json and VAT
-    sup_b = links_dir / "SI123"
+    sup_b = links_dir / "Acme"
     sup_b.mkdir()
     info = {"sifra": "ACM", "ime": "Acme Corp", "vat": "SI123"}
     (sup_b / "supplier.json").write_text(json.dumps(info))

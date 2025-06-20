@@ -226,7 +226,7 @@ def load_wsm_data(
         if isinstance(supplier_info, dict)
         else supplier_code
     )
-    safe_id = sanitize_folder_name(supplier_info.get("vat") or supplier_name)
+    safe_id = sanitize_folder_name(supplier_name)
 
     links_path = links_dir / safe_id / f"{supplier_code}_{safe_id}_povezane.xlsx"
     if links_path.exists():
@@ -311,7 +311,7 @@ def povezi_z_wsm(
             if isinstance(supplier_info, dict)
             else supplier_code
         )
-        safe_id = sanitize_folder_name(supplier_info.get("vat") or supplier_name)
+        safe_id = sanitize_folder_name(supplier_name)
 
         dst = links_dir / safe_id
         dst.mkdir(parents=True, exist_ok=True)
@@ -358,7 +358,7 @@ def log_price_history(
         if primary_code
         else df["supplier_name"].iloc[0]
     )
-    safe_id = sanitize_folder_name(info.get("vat") or primary_name)
+    safe_id = sanitize_folder_name(primary_name)
 
     history_path = suppliers_path / safe_id / "price_history.xlsx"
     history_path.parent.mkdir(parents=True, exist_ok=True)
