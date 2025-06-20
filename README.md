@@ -90,7 +90,13 @@ Za artikle, kjer masa na kos ni razvidna iz naziva, preverite slovar
 `WEIGHTS_PER_PIECE` v `wsm/constants.py`. Če naletite na novo kodo s
 stalno maso pakiranja, jo dodajte v ta slovar.
 
-6. Analizo in združevanje postavk lahko izvedete z:
+6. Za spremljanje cen že povezanih artiklov odprite vmesnik **Price Watch**.
+   V glavnem meniju (`python -m wsm.run`) je na voljo gumb "Spremljaj cene",
+   vmesnik pa lahko po potrebi zaženete tudi neposredno s funkcijo
+   `launch_price_watch`. V oknu izberite dobavitelja in preglejte grafe, ki
+   prikazujejo gibanje cen za posamezne artikle.
+
+7. Analizo in združevanje postavk lahko izvedete z:
    ```bash
    python -m wsm.cli analyze <invoice.xml> --suppliers links
    ```
