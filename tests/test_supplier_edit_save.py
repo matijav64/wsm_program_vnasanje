@@ -26,9 +26,9 @@ def test_supplier_edit_saved_to_custom_dir(tmp_path, monkeypatch):
     wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
 
     base_dir = tmp_path / "suppliers"
-    links_dir = base_dir / "Test"
+    links_dir = base_dir / "SI999"
     links_dir.mkdir(parents=True)
-    links_file = links_dir / "SUP_Test_povezane.xlsx"
+    links_file = links_dir / "SUP_SI999_povezane.xlsx"
 
     monkeypatch.setattr("wsm.utils.log_price_history", lambda *a, **k: None)
 
@@ -42,6 +42,7 @@ def test_supplier_edit_saved_to_custom_dir(tmp_path, monkeypatch):
         "SUP",
         {},
         base_dir,
+        vat="SI999",
     )
 
     info_file = links_dir / "supplier.json"
@@ -49,5 +50,6 @@ def test_supplier_edit_saved_to_custom_dir(tmp_path, monkeypatch):
     data = json.loads(info_file.read_text())
     assert data["sifra"] == "SUP"
     assert data["ime"] == "Test"
+    assert data["vat"] == "SI999"
 
 

@@ -76,16 +76,22 @@ def open_invoice_gui(
     from wsm.utils import main_supplier_code
 
     supplier_code = main_supplier_code(df) or "unknown"
+    vat = None
     if invoice_path.suffix.lower() == ".xml":
+        from wsm.parsing.eslog import get_supplier_info_vat
+
         name = get_supplier_name(invoice_path) or supplier_code
+        _, _, vat_num = get_supplier_info_vat(invoice_path)
+        if vat_num:
+            vat = vat_num
     elif invoice_path.suffix.lower() == ".pdf":
         name = get_supplier_name_from_pdf(invoice_path) or supplier_code
     else:
         name = supplier_code
-    safe_name = sanitize_folder_name(name)
-    links_dir = suppliers / safe_name
+    safe_id = sanitize_folder_name(vat or name)
+    links_dir = suppliers / safe_id
     links_dir.mkdir(parents=True, exist_ok=True)
-    links_file = links_dir / f"{supplier_code}_{safe_name}_povezane.xlsx"
+    links_file = links_dir / f"{supplier_code}_{safe_id}_povezane.xlsx"
 
     sifre_file = wsm_codes
     if sifre_file.exists():

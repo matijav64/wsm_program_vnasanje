@@ -87,6 +87,25 @@ def get_supplier_name(xml_path: str | Path) -> Optional[str]:
     _, name = get_supplier_info(xml_path)
     return name or None
 
+# ────────────────────── dobavitelj: koda + ime + davčna ──────────────────────
+def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
+    """Return supplier code, name and VAT number if available."""
+    code, name = get_supplier_info(xml_path)
+    vat: str | None = None
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        for rff in root.findall(".//e:S_RFF", NS):
+            rff_code = _text(rff.find("./e:C_C506/e:D_1153", NS))
+            if rff_code in {"VA", "AHP", "0199"}:
+                vat_val = _text(rff.find("./e:C_C506/e:D_1154", NS))
+                if vat_val:
+                    vat = vat_val
+                    break
+    except Exception:
+        vat = None
+    return code, name, vat
+
 # ─────────────────────── vsota iz glave ───────────────────────
 def extract_header_net(xml_path: Path | str) -> Decimal:
     """Vrne znesek iz MOA 389 (neto brez DDV)."""

@@ -221,10 +221,14 @@ def load_wsm_data(
     sup_map = _load_supplier_map(suppliers_file)
     
     supplier_info = sup_map.get(supplier_code, {})
-    supplier_name = supplier_info.get('ime', supplier_code) if isinstance(supplier_info, dict) else supplier_code
-    safe_name = sanitize_folder_name(supplier_name)
+    supplier_name = (
+        supplier_info.get("ime", supplier_code)
+        if isinstance(supplier_info, dict)
+        else supplier_code
+    )
+    safe_id = sanitize_folder_name(supplier_info.get("vat") or supplier_name)
 
-    links_path = links_dir / safe_name / f"{supplier_code}_{safe_name}_povezane.xlsx"
+    links_path = links_dir / safe_id / f"{supplier_code}_{safe_id}_povezane.xlsx"
     if links_path.exists():
         links_df = pd.read_excel(links_path, dtype=str)
     else:
@@ -302,12 +306,16 @@ def povezi_z_wsm(
         suppliers_file = links_dir
         sup_map = _load_supplier_map(suppliers_file)
         supplier_info = sup_map.get(supplier_code, {})
-        supplier_name = supplier_info.get('ime', supplier_code) if isinstance(supplier_info, dict) else supplier_code
-        safe_name = sanitize_folder_name(supplier_name)
+        supplier_name = (
+            supplier_info.get("ime", supplier_code)
+            if isinstance(supplier_info, dict)
+            else supplier_code
+        )
+        safe_id = sanitize_folder_name(supplier_info.get("vat") or supplier_name)
 
-        dst = links_dir / safe_name
+        dst = links_dir / safe_id
         dst.mkdir(parents=True, exist_ok=True)
-        links_path = dst / f"{supplier_code}_{safe_name}_povezane.xlsx"
+        links_path = dst / f"{supplier_code}_{safe_id}_povezane.xlsx"
 
         manual_links = pd.concat([manual_links, pd.DataFrame(new_links)], ignore_index=True)
         manual_links.drop_duplicates(
@@ -344,14 +352,15 @@ def log_price_history(
         lambda x: sup_map.get(str(x), {}).get("ime", str(x))
     )
     primary_code = main_supplier_code(df)
+    info = sup_map.get(primary_code, {})
     primary_name = (
         df[df["sifra_dobavitelja"] == primary_code]["supplier_name"].iloc[0]
         if primary_code
         else df["supplier_name"].iloc[0]
     )
-    safe_name = sanitize_folder_name(primary_name)
+    safe_id = sanitize_folder_name(info.get("vat") or primary_name)
 
-    history_path = suppliers_path / safe_name / "price_history.xlsx"
+    history_path = suppliers_path / safe_id / "price_history.xlsx"
     history_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Ustvari ključ iz sifra_dobavitelja in naziv
