@@ -102,6 +102,14 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
                 if vat_val:
                     vat = vat_val
                     break
+        if not vat:
+            for com in root.findall(".//e:S_COM", NS):
+                com_code = _text(com.find("./e:C_C076/e:D_3155", NS))
+                if com_code == "9949":
+                    vat_val = _text(com.find("./e:C_C076/e:D_3148", NS))
+                    if vat_val:
+                        vat = vat_val
+                        break
     except Exception:
         vat = None
     return code, name, vat

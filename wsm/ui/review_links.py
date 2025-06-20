@@ -318,7 +318,7 @@ def _write_supplier_map(sup_map: dict, sup_file: Path):
     for code, info in sup_map.items():
         from wsm.utils import sanitize_folder_name
 
-        folder = links_dir / sanitize_folder_name(info["ime"])
+        folder = links_dir / sanitize_folder_name(info.get("vat") or info["ime"])
         folder.mkdir(parents=True, exist_ok=True)
         info_path = folder / "supplier.json"
         try:
