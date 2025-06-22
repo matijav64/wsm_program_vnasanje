@@ -384,6 +384,31 @@ def _save_and_close(
     if vat and old_info.get("vat") != vat:
         new_info["vat"] = vat
         changed = True
+    from wsm.utils import sanitize_folder_name
+
+    old_safe = links_file.parent.name
+    new_safe = sanitize_folder_name(vat or supplier_name)
+    if new_safe != old_safe:
+        old_folder = links_file.parent
+        new_folder = Path(sup_file) / new_safe
+        try:
+            if not new_folder.exists():
+                old_folder.rename(new_folder)
+            else:
+                target = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
+                if links_file.exists():
+                    links_file.rename(target)
+                for p in old_folder.iterdir():
+                    if not (new_folder / p.name).exists():
+                        p.rename(new_folder / p.name)
+                try:
+                    old_folder.rmdir()
+                except OSError:
+                    pass
+            links_file = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
+        except Exception as exc:
+            log.warning(f"Napaka pri preimenovanju {old_folder} v {new_folder}: {exc}")
+
     if changed:
         sup_map[supplier_code] = new_info
         _write_supplier_map(sup_map, sup_file)
