@@ -214,24 +214,48 @@ def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
         if not folder.is_dir():
             continue
         info_path = folder / "supplier.json"
+        data = {}
         if info_path.exists():
             try:
                 data = json.loads(info_path.read_text())
-                sifra = str(data.get("sifra", "")).strip()
-                ime = str(data.get("ime", "")).strip() or folder.name
-                vat = str(data.get("vat") or data.get("davcna") or "").strip()
-                if sifra:
-                    sup_map[sifra] = {
-                        "ime": ime,
-                        "vat": vat,
-                    }
-                    log.debug(f"Dodan iz JSON: sifra={sifra}, ime={ime}")
-                    # uspešno prebrali podatke, nadaljuj z naslednjo mapo
-                    continue
             except Exception as e:
                 log.error(f"Napaka pri branju {info_path}: {e}")
         else:
             log.info(f"Ni datoteke supplier.json v {folder}")
+
+        sifra = str(data.get("sifra", "")).strip()
+        ime = str(data.get("ime", "")).strip() or folder.name
+        vat = str(data.get("vat") or data.get("davcna") or "").strip()
+
+        if vat:
+            from wsm.utils import sanitize_folder_name
+
+            safe_vat = sanitize_folder_name(vat)
+            if safe_vat != folder.name:
+                new_folder = links_dir / safe_vat
+                try:
+                    if not new_folder.exists():
+                        folder.rename(new_folder)
+                    else:
+                        for p in folder.iterdir():
+                            target = new_folder / p.name
+                            if not target.exists():
+                                p.rename(target)
+                        try:
+                            folder.rmdir()
+                        except OSError:
+                            pass
+                    folder = new_folder
+                    info_path = folder / "supplier.json"
+                except Exception as exc:
+                    log.warning(
+                        f"Napaka pri preimenovanju {folder} v {new_folder}: {exc}"
+                    )
+
+        if sifra:
+            sup_map[sifra] = {"ime": ime, "vat": vat}
+            log.debug(f"Dodan iz JSON: sifra={sifra}, ime={ime}")
+            continue
         # fallback when supplier.json is missing or neveljaven
         for file in folder.glob("*_povezane.xlsx"):
             code = file.stem.split("_")[0]

@@ -26,3 +26,20 @@ def test_load_supplier_map_from_folders(tmp_path: Path):
     assert result["KVIBO"]["ime"] == "Kvibo"
     assert result["ACM"]["ime"] == "Acme Corp"
     assert result["ACM"]["vat"] == "SI123"
+
+
+def test_load_supplier_map_renames_vat_folder(tmp_path: Path):
+    links_dir = tmp_path / "links"
+    links_dir.mkdir()
+
+    old = links_dir / "Old Name"
+    old.mkdir()
+    info = {"sifra": "SUP", "ime": "Old Name", "vat": "SI555"}
+    (old / "supplier.json").write_text(json.dumps(info))
+
+    result = _load_supplier_map(links_dir)
+
+    new_folder = links_dir / "SI555"
+    assert new_folder.exists()
+    assert not old.exists()
+    assert result["SUP"]["vat"] == "SI555"
