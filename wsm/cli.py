@@ -8,7 +8,7 @@ from decimal import Decimal
 from wsm.parsing.eslog import parse_invoice, validate_invoice, get_supplier_name
 from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
 from wsm.parsing.money import detect_round_step, round_to_step
-from wsm.utils import sanitize_folder_name
+from wsm.utils import sanitize_folder_name, _load_supplier_map
 from wsm.analyze import analyze_invoice
 
 @click.group()
@@ -124,6 +124,8 @@ def review(invoice, wsm_codes, suppliers, keywords):
     from wsm.utils import main_supplier_code
 
     supplier_code = main_supplier_code(df) or "unknown"
+    sup_map = _load_supplier_map(Path(suppliers_path))
+    map_vat = sup_map.get(supplier_code, {}).get("vat") if sup_map else None
     vat = None
     if invoice_path.suffix.lower() == ".xml":
         from wsm.parsing.eslog import get_supplier_info_vat
@@ -136,6 +138,8 @@ def review(invoice, wsm_codes, suppliers, keywords):
         name = get_supplier_name_from_pdf(invoice_path) or supplier_code
     else:
         name = supplier_code
+    if not vat and map_vat:
+        vat = map_vat
     safe_id = sanitize_folder_name(vat or name)
     base = Path(suppliers_path)
     links_dir = base / safe_id

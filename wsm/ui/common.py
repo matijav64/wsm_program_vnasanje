@@ -14,7 +14,7 @@ from tkinter import filedialog, messagebox
 from wsm.analyze import analyze_invoice
 from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
 from wsm.parsing.eslog import get_supplier_name
-from wsm.utils import sanitize_folder_name
+from wsm.utils import sanitize_folder_name, _load_supplier_map
 from wsm.ui.review_links import review_links
 
 logging.basicConfig(level=logging.INFO)
@@ -76,6 +76,8 @@ def open_invoice_gui(
     from wsm.utils import main_supplier_code
 
     supplier_code = main_supplier_code(df) or "unknown"
+    sup_map = _load_supplier_map(Path(suppliers))
+    map_vat = sup_map.get(supplier_code, {}).get("vat") if sup_map else None
     vat = None
     if invoice_path.suffix.lower() == ".xml":
         from wsm.parsing.eslog import get_supplier_info_vat
@@ -88,6 +90,8 @@ def open_invoice_gui(
         name = get_supplier_name_from_pdf(invoice_path) or supplier_code
     else:
         name = supplier_code
+    if not vat and map_vat:
+        vat = map_vat
     safe_id = sanitize_folder_name(vat or name)
     links_dir = suppliers / safe_id
     links_dir.mkdir(parents=True, exist_ok=True)
