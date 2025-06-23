@@ -561,6 +561,28 @@ def review_links(
     invoice_total: Decimal,
     invoice_path: Path | None = None,
 ) -> pd.DataFrame:
+    """Interactively map supplier invoice rows to WSM items.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        DataFrame with invoice line details which will be modified in-place.
+    wsm_df : pandas.DataFrame
+        Table of available WSM articles with codes and names.
+    links_file : pathlib.Path
+        Excel file containing saved mappings for the supplier.
+    invoice_total : decimal.Decimal
+        Net total of the invoice used for validating the amounts.
+    invoice_path : pathlib.Path, optional
+        Path to the invoice document from which additional metadata (date,
+        invoice number, supplier name) may be extracted.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The reviewed invoice lines including any document-level correction
+        rows.
+    """
     df = df.copy()
     supplier_code = links_file.stem.split("_")[0]
     suppliers_file = links_file.parent.parent
