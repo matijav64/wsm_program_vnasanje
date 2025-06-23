@@ -109,3 +109,7 @@ stalno maso pakiranja, jo dodajte v ta slovar.
 - **Bolj zmogljiv GUI**: Tkinter je enostaven, a za obsežnejše tabele bi lahko razmislili o prehodu na `PyQt5`, ki omogoča naprednejše filtriranje in iskanje.
 - **Testne enote za GUI**: poleg obstoječih testov za parsanje XML je smiselno dodati teste, ki preverijo logiko povezovanja (npr. ali `_save_and_close` pravilno posodobi Excel). Osnovne funkcije GUI se da avtomatizirati z unit testi.
 
+
+## Licenca
+Ta projekt uporablja licenco MIT. Celotno besedilo najdete v datoteki [LICENSE](LICENSE).
+
