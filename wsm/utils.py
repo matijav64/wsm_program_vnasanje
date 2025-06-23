@@ -399,7 +399,8 @@ def log_price_history(
         if invoice_id is not None:
             mask = (old["invoice_id"] == invoice_id) & (old["key"].isin(df_hist["key"]))
             old = old[~mask]
-        df_hist = pd.concat([old, df_hist], ignore_index=True)
+        if not old.empty:
+            df_hist = pd.concat([old, df_hist], ignore_index=True)
 
     df_hist = (
         df_hist.sort_values("time", ascending=False)
