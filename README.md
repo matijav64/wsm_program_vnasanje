@@ -56,9 +56,12 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    python -m wsm.cli review <invoice.xml>
    ```
   (po želji dodajte `--wsm-codes pot/do/sifre_wsm.xlsx`)
-  Program odpre grafični vmesnik, kjer povezave shranjujete v podmapo
-  `links/<ime_dobavitelja>/`. Posodobljene tabele najdete v datotekah
-  `<koda>_<ime>_povezane.xlsx` in `price_history.xlsx`.
+   Program odpre grafični vmesnik, kjer povezave shranjujete v podmapo
+   `links/<davcna_stevilka>/` (oziroma `links/<ime_dobavitelja>`,
+   če davčna številka ni znana). Posodobljene tabele najdete v datotekah
+   `<koda>_<ime>_povezane.xlsx` in `price_history.xlsx`.
+   Če davčna številka ni navedena na računu, jo lahko program prebere iz
+   obstoječe datoteke `supplier.json` v ustrezni mapi povezav.
   Okno se privzeto odpre v običajni velikosti. S tipko F11 ga lahko
   ročno preklopite v celozaslonski način, iz katerega izstopite s
   tipko Esc.
