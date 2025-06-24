@@ -30,6 +30,11 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    pip install -r requirements.txt
    ```
    Med glavnimi odvisnostmi so `pandas`, `pdfplumber` in `openpyxl`.
+   Za razvoj in poganjanje testov namestite tudi dodatne odvisnosti:
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+
 
 3. (Opcijsko) namestite paket v razvojni načini:
    ```bash
