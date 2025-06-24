@@ -12,7 +12,7 @@ import logging
 
 log = logging.getLogger(__name__)
 
-from wsm.ui.review_links import _load_supplier_map
+from wsm.supplier_store import load_suppliers as _load_supplier_map
 from wsm.utils import sanitize_folder_name
 
 

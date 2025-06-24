@@ -18,8 +18,8 @@ log = logging.getLogger(__name__)
 
 
 def _load_supplier_map(path: Path) -> dict:
-    """Lazy import wrapper for :func:`wsm.ui.review_links._load_supplier_map`."""
-    from wsm.ui.review_links import _load_supplier_map as real
+    """Lazy import wrapper for :func:`wsm.supplier_store.load_suppliers`."""
+    from wsm.supplier_store import load_suppliers as real
     return real(path)
 
 # ────────────────────────── skupna orodja ───────────────────────────
