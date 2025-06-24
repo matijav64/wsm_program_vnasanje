@@ -11,6 +11,7 @@ from wsm.parsing.money import detect_round_step
 from pathlib import Path
 from typing import Tuple
 from wsm.utils import short_supplier_name
+from wsm.supplier_store import load_suppliers as _load_supplier_map, save_supplier as _write_supplier_map
 
 import pandas as pd
 import tkinter as tk
@@ -179,187 +180,6 @@ def _norm_unit(
     return q_norm, base_unit
 
 
-# File handling functions
-def _load_supplier_map(sup_file: Path) -> dict[str, dict]:
-    """Load supplier info from per-supplier JSON files or a legacy Excel."""
-    log.debug(f"Branje datoteke ali mape dobaviteljev: {sup_file}")
-    sup_map: dict[str, dict] = {}
-
-    if not sup_file.exists():
-        log.info(f"Mapa ali datoteka dobaviteljev {sup_file} ne obstaja")
-        return sup_map
-
-    if sup_file.is_file():
-        try:
-            df_sup = pd.read_excel(sup_file, dtype=str)
-            log.info(f"Število prebranih dobaviteljev iz {sup_file}: {len(df_sup)}")
-            for _, row in df_sup.iterrows():
-                sifra = str(row["sifra"]).strip()
-                ime = str(row["ime"]).strip()
-                vat = str(row.get("vat") or row.get("davcna") or "").strip()
-                sup_map[sifra] = {
-                    "ime": ime or sifra,
-                    "vat": vat,
-                }
-                log.debug(f"Dodan v sup_map: sifra={sifra}, ime={ime}")
-            return sup_map
-        except Exception as e:
-            log.error(f"Napaka pri branju suppliers.xlsx: {e}")
-            return {}
-
-    links_dir = sup_file if sup_file.is_dir() else sup_file.parent
-    log.info(f"Pregledujem mapo dobaviteljev: {links_dir}")
-    for folder in links_dir.iterdir():
-        log.info(f"\u2192 mapa: {folder}")
-        if not folder.is_dir():
-            continue
-        info_path = folder / "supplier.json"
-        data = {}
-        if info_path.exists():
-            try:
-                data = json.loads(info_path.read_text())
-            except Exception as e:
-                log.error(f"Napaka pri branju {info_path}: {e}")
-        else:
-            log.info(f"Ni datoteke supplier.json v {folder}")
-
-        sifra = str(data.get("sifra", "")).strip()
-        ime = str(data.get("ime", "")).strip() or folder.name
-        vat = str(data.get("vat") or data.get("davcna") or "").strip()
-
-        if vat:
-            from wsm.utils import sanitize_folder_name
-
-            safe_vat = sanitize_folder_name(vat)
-            if safe_vat != folder.name:
-                new_folder = links_dir / safe_vat
-                try:
-                    if not new_folder.exists():
-                        folder.rename(new_folder)
-                    else:
-                        for p in folder.iterdir():
-                            target = new_folder / p.name
-                            if not target.exists():
-                                p.rename(target)
-                        try:
-                            folder.rmdir()
-                        except OSError:
-                            pass
-                    folder = new_folder
-                    info_path = folder / "supplier.json"
-                except Exception as exc:
-                    log.warning(
-                        f"Napaka pri preimenovanju {folder} v {new_folder}: {exc}"
-                    )
-
-        if sifra:
-            sup_map[sifra] = {"ime": ime, "vat": vat}
-            log.debug(f"Dodan iz JSON: sifra={sifra}, ime={ime}")
-            continue
-        # fallback when supplier.json is missing or neveljaven
-        for file in folder.glob("*_povezane.xlsx"):
-            code = file.stem.split("_")[0]
-            if not code:
-                continue
-            if code not in sup_map:
-                sup_map[code] = {
-                    "ime": folder.name,
-                    "vat": "",
-                }
-                log.debug(f"Dodan iz mape: sifra={code}, ime={folder.name}")
-            break
-
-        # as a final fallback, allow folders that only contain
-        # ``price_history.xlsx`` without ``supplier.json`` or
-        # ``*_povezane.xlsx`` files.  In this case we try to infer the
-        # supplier code from the history file.
-        hist_path = folder / "price_history.xlsx"
-        if hist_path.exists():
-            try:
-                df_hist = pd.read_excel(hist_path)
-                if "code" in df_hist.columns:
-                    code = str(df_hist["code"].dropna().astype(str).iloc[0])
-                elif "key" in df_hist.columns:
-                    code = str(df_hist["key"].dropna().astype(str).iloc[0]).split("_")[0]
-                else:
-                    code = None
-            except Exception as exc:
-                log.error(f"Napaka pri branju {hist_path}: {exc}")
-                code = None
-            if code and code not in sup_map:
-                sup_map[code] = {"ime": folder.name, "vat": ""}
-                log.debug(
-                    f"Dodan iz price_history: sifra={code}, ime={folder.name}"
-                )
-
-        # if none of the known files exist, still expose the folder name so the
-        # user can select it in the dropdown.  Use a sanitized version of the
-        # folder name as the code to keep it stable across runs.
-        if folder.name and folder.name not in {info.get("ime") for info in sup_map.values()}:
-            from wsm.utils import sanitize_folder_name
-
-            code = sanitize_folder_name(folder.name)
-            if code not in sup_map:
-                sup_map[code] = {"ime": folder.name, "vat": ""}
-                log.debug(f"Dodan iz imena mape: sifra={code}, ime={folder.name}")
-
-
-    log.info(f"Najdeni dobavitelji: {list(sup_map.keys())}")
-    return sup_map
-
-
-def _write_supplier_map(sup_map: dict, sup_file: Path):
-    """Write supplier info to JSON files or legacy Excel."""
-    log.debug(f"Pisanje podatkov dobaviteljev v {sup_file}")
-    if sup_file.suffix == ".xlsx" or sup_file.is_file():
-        sup_file.parent.mkdir(parents=True, exist_ok=True)
-        df = pd.DataFrame(
-            [
-                {
-                    "sifra": k,
-                    "ime": v["ime"],
-                    "vat": v.get("vat", ""),
-                }
-                for k, v in sup_map.items()
-            ]
-        )
-        df.to_excel(sup_file, index=False)
-        log.info(f"Datoteka uspešno zapisana: {sup_file}")
-        return
-
-    # Determine whether `sup_file` represents a directory (existing or
-    # intended).  When the directory does not exist yet, create it before
-    # writing supplier data.  Otherwise fall back to the parent directory only
-    # when a file path is supplied.
-    is_dir_path = sup_file.is_dir() or sup_file.suffix == ""
-    if is_dir_path:
-        if not sup_file.exists():
-            sup_file.mkdir(parents=True, exist_ok=True)
-        links_dir = sup_file
-    else:
-        links_dir = sup_file.parent
-
-    for code, info in sup_map.items():
-        from wsm.utils import sanitize_folder_name
-
-        folder = links_dir / sanitize_folder_name(info.get("vat") or info["ime"])
-        folder.mkdir(parents=True, exist_ok=True)
-        info_path = folder / "supplier.json"
-        try:
-            info_path.write_text(
-                json.dumps(
-                    {
-                        "sifra": code,
-                        "ime": info["ime"],
-                        "vat": info.get("vat"),
-                    },
-                    ensure_ascii=False,
-                )
-            )
-            log.debug(f"Zapisano {info_path}")
-        except Exception as exc:
-            log.error(f"Napaka pri zapisu {info_path}: {exc}")
-
 
 # Save and close function
 def _save_and_close(
@@ -393,10 +213,7 @@ def _save_and_close(
         log.debug(
             f"Primer vrstic s prazno sifra_dobavitelja: {df[empty_sifra][['naziv', 'sifra_dobavitelja']].head().to_dict()}"
         )
-        df.loc[empty_sifra, "sifra_dobavitelja"] = df.loc[empty_sifra, "naziv"].apply(
-            lambda x: hashlib.md5(str(x).encode()).hexdigest()[:8]
-        )
-        log.info(f"Generirane začasne šifre za {empty_sifra.sum()} vrstic")
+        pass
 
     # Posodobi zemljevid dobaviteljev, če se je ime ali nastavitev spremenila
     old_info = sup_map.get(supplier_code, {})
@@ -649,11 +466,8 @@ def review_links(
             log.warning(
                 f"Prazne vrednosti v sifra_dobavitelja v manual_old za {empty_sifra_old.sum()} vrstic"
             )
-            manual_old.loc[empty_sifra_old, "sifra_dobavitelja"] = manual_old.loc[
-                empty_sifra_old, "naziv"
-            ].apply(lambda x: hashlib.md5(str(x).encode()).hexdigest()[:8])
-            log.info(
-                f"Generirane začasne šifre za {empty_sifra_old.sum()} vrstic v manual_old"
+            log.debug(
+                f"Primer vrstic s prazno sifra_dobavitelja: {manual_old[empty_sifra_old][['naziv', 'sifra_dobavitelja']].head().to_dict()}"
             )
     except Exception as e:
         manual_old = pd.DataFrame(
@@ -680,10 +494,9 @@ def review_links(
     # Generate sifra_dobavitelja for empty cases before lookup
     empty_sifra = df["sifra_dobavitelja"].isna() | (df["sifra_dobavitelja"] == "")
     if empty_sifra.any():
-        df.loc[empty_sifra, "sifra_dobavitelja"] = df.loc[empty_sifra, "naziv"].apply(
-            lambda x: hashlib.md5(str(x).encode()).hexdigest()[:8]
+        log.warning(
+            f"Prazne vrednosti v sifra_dobavitelja za {empty_sifra.sum()} vrstic v df"
         )
-        log.info(f"Generirane začasne šifre za {empty_sifra.sum()} vrstic v df")
 
     # Create a dictionary for quick lookup
     old_map_dict = manual_old.set_index(["sifra_dobavitelja"])["wsm_sifra"].to_dict()
@@ -1255,9 +1068,7 @@ def review_links(
             pd.isna(df.at[idx, "sifra_dobavitelja"])
             or df.at[idx, "sifra_dobavitelja"] == ""
         ):
-            df.at[idx, "sifra_dobavitelja"] = hashlib.md5(
-                str(df.at[idx, "naziv"]).encode()
-            ).hexdigest()[:8]
+            log.warning("Prazna sifra_dobavitelja pri vnosu vrstice")
         new_vals = [
             (
                 _fmt(df.at[idx, c])
