@@ -22,3 +22,7 @@ def test_control_chars_replaced():
 
 def test_empty_returns_unknown():
     assert sanitize_folder_name("") == "unknown"
+
+
+def test_space_only_returns_unknown():
+    assert sanitize_folder_name("   ") == "unknown"
