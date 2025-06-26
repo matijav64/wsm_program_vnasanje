@@ -111,6 +111,16 @@ stalno maso pakiranja, jo dodajte v ta slovar.
    Ukaz izpiše povzetek po WSM šifrah in preveri, ali se vsota ujema z
    vrednostjo na računu.
 
+### Poganjanje testov
+
+Za poganjanje avtomatiziranih testov morate namestiti dodatne odvisnosti iz
+datoteke `requirements-dev.txt` in nato zagnati `pytest`:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
 ## Možne izboljšave
 
 - **Izboljšano samodejno povezovanje**: poleg iskanja po ključnih besedah bi lahko uporabili knjižnice za "bližnje ujemanje" (npr. `rapidfuzz`), ali pa vektorsko iskanje, kot nakazuje mapa `wsm_vector_embedding`. Tako bi sistem lažje našel ustrezno WSM šifro tudi pri rahlo različnih nazivih artiklov.
