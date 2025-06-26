@@ -214,7 +214,6 @@ def _save_and_close(
         log.debug(
             f"Primer vrstic s prazno sifra_dobavitelja: {df[empty_sifra][['naziv', 'sifra_dobavitelja']].head().to_dict()}"
         )
-        pass
 
     # Posodobi zemljevid dobaviteljev, če se je ime ali nastavitev spremenila
     old_info = sup_map.get(supplier_code, {})
