@@ -85,10 +85,15 @@ def load_suppliers(sup_file: Path) -> dict[str, dict]:
         if hist_path.exists():
             try:
                 df_hist = pd.read_excel(hist_path)
+                if df_hist.empty:
+                    log.debug("Prazna datoteka zgodovine cen: %s", hist_path)
+                    continue
                 if "code" in df_hist.columns:
-                    code = str(df_hist["code"].dropna().astype(str).iloc[0])
+                    codes = df_hist["code"].dropna().astype(str)
+                    code = str(codes.iloc[0]) if not codes.empty else None
                 elif "key" in df_hist.columns:
-                    code = str(df_hist["key"].dropna().astype(str).iloc[0]).split("_")[0]
+                    keys = df_hist["key"].dropna().astype(str)
+                    code = str(keys.iloc[0]).split("_")[0] if not keys.empty else None
                 else:
                     code = None
             except Exception as exc:
