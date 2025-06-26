@@ -95,9 +95,13 @@ def open_invoice_gui(
 
     # Če že obstaja mapa za tega dobavitelja (npr. "unknown"), jo najprej
     # uporabimo, da se datoteke ob shranjevanju pravilno preimenujejo.
-    old_info = sup_map.get(supplier_code, {})
-    old_folder = sanitize_folder_name(old_info.get("vat") or old_info.get("ime", ""))
-    if old_folder and old_folder != safe_id and (suppliers / old_folder).exists():
+    old_info = sup_map.get(supplier_code)
+    old_folder = (
+        sanitize_folder_name(old_info.get("vat") or old_info.get("ime", ""))
+        if old_info
+        else ""
+    )
+    if old_info and old_folder != safe_id and (suppliers / old_folder).exists():
         links_dir = suppliers / old_folder
         links_file = links_dir / f"{supplier_code}_{old_folder}_povezane.xlsx"
     else:
