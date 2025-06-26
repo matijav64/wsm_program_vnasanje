@@ -142,11 +142,21 @@ def review(invoice, wsm_codes, suppliers, keywords):
         name = supplier_code
     if not vat and map_vat:
         vat = map_vat
+
     safe_id = sanitize_folder_name(vat or name)
     base = Path(suppliers_path)
-    links_dir = base / safe_id
-    links_dir.mkdir(parents=True, exist_ok=True)
-    links_file = links_dir / f"{supplier_code}_{safe_id}_povezane.xlsx"
+
+    # Če obstaja stara mapa (npr. "unknown") za isto sifro, jo uporabimo,
+    # da se ob shranjevanju prenesejo vse datoteke.
+    old_info = sup_map.get(supplier_code, {})
+    old_folder = sanitize_folder_name(old_info.get("vat") or old_info.get("ime", ""))
+    if old_folder and old_folder != safe_id and (base / old_folder).exists():
+        links_dir = base / old_folder
+        links_file = links_dir / f"{supplier_code}_{old_folder}_povezane.xlsx"
+    else:
+        links_dir = base / safe_id
+        links_dir.mkdir(parents=True, exist_ok=True)
+        links_file = links_dir / f"{supplier_code}_{safe_id}_povezane.xlsx"
 
     if sifre_path.exists():
         try:
