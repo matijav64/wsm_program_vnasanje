@@ -17,8 +17,6 @@ from wsm.parsing.eslog import get_supplier_name
 from wsm.utils import sanitize_folder_name, _load_supplier_map
 from wsm.ui.review_links import review_links
 
-logging.basicConfig(level=logging.INFO)
-
 
 def select_invoice() -> Path | None:
     """Open a file dialog and return the chosen path."""

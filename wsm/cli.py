@@ -4,6 +4,7 @@ import pandas as pd
 import os
 from pathlib import Path
 from decimal import Decimal
+import logging
 
 from wsm.parsing.eslog import parse_invoice, validate_invoice, get_supplier_name
 from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
@@ -14,6 +15,7 @@ from wsm.analyze import analyze_invoice
 @click.group()
 def main():
     """WSM – CLI za validacijo in pregled e-računov."""
+    logging.basicConfig(level=logging.INFO)
     pass
 
 @main.command()
