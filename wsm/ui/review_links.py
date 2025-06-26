@@ -215,15 +215,16 @@ def _save_and_close(
             f"Primer vrstic s prazno sifra_dobavitelja: {df[empty_sifra][['naziv', 'sifra_dobavitelja']].head().to_dict()}"
         )
 
-    # Posodobi zemljevid dobaviteljev, če se je ime ali nastavitev spremenila
-    old_info = sup_map.get(supplier_code, {})
-    new_info = old_info.copy()
+    # -------------------------------------------------------------
+    # posodobi zapise, da ALWAYS vsebujejo vat + ime
+    # -------------------------------------------------------------
+    new_info = sup_map.setdefault(supplier_code, {}).copy()
     changed = False
-    if supplier_name and old_info.get("ime") != supplier_name:
-        new_info["ime"] = supplier_name
-        changed = True
-    if vat and old_info.get("vat") != vat:
+    if vat and new_info.get("vat") != vat:
         new_info["vat"] = vat
+        changed = True
+    if supplier_name and new_info.get("ime") != supplier_name:
+        new_info["ime"] = supplier_name
         changed = True
     from wsm.utils import sanitize_folder_name
 
@@ -358,6 +359,9 @@ def _save_and_close(
                 log.warning(f"Napaka pri izračunu hash: {exc}")
 
     try:
+        # -------------------------------------------------------------
+        # log_price_history pokličemo ZADNJI, ko je supplier.json že OK
+        # -------------------------------------------------------------
         from wsm.utils import log_price_history
 
         log_price_history(
