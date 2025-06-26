@@ -104,3 +104,62 @@ def test_supplier_folder_renamed_on_vat_change(tmp_path, monkeypatch):
     assert json.loads(info_file.read_text())["vat"] == "SI111"
 
 
+def test_unknown_folder_removed_when_vat_exists(tmp_path, monkeypatch):
+    df = pd.DataFrame(
+        {
+            "sifra_dobavitelja": ["SUP"],
+            "naziv": ["Item"],
+            "kolicina": [Decimal("1")],
+            "enota": ["kg"],
+            "cena_bruto": [Decimal("5")],
+            "cena_netto": [Decimal("5")],
+            "vrednost": [Decimal("5")],
+            "rabata": [Decimal("0")],
+            "wsm_sifra": [pd.NA],
+            "dobavitelj": ["Unknown"],
+            "kolicina_norm": [1.0],
+            "enota_norm": ["kg"],
+        }
+    )
+
+    manual_old = pd.DataFrame(
+        columns=["sifra_dobavitelja", "naziv", "wsm_sifra", "dobavitelj", "enota_norm"]
+    )
+    wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
+
+    base_dir = tmp_path / "suppliers"
+    old_dir = base_dir / "unknown"
+    old_dir.mkdir(parents=True)
+    links_file = old_dir / "SUP_unknown_povezane.xlsx"
+    links_file.write_text("dummy")
+    extra = old_dir / "extra.txt"
+    extra.write_text("x")
+
+    new_dir = base_dir / "SI111"
+    new_dir.mkdir(parents=True)
+    (new_dir / "SUP_SI111_povezane.xlsx").write_text("existing")
+
+    sup_map = {"SUP": {"ime": "Unknown", "vat": ""}}
+
+    monkeypatch.setattr("wsm.utils.log_price_history", lambda *a, **k: None)
+
+    _save_and_close(
+        df,
+        manual_old,
+        wsm_df,
+        links_file,
+        DummyRoot(),
+        "Unknown",
+        "SUP",
+        sup_map,
+        base_dir,
+        vat="SI111",
+    )
+
+    assert not old_dir.exists()
+    assert new_dir.exists()
+    files = {p.name for p in new_dir.iterdir()}
+    assert "extra.txt" in files or "extra_old.txt" in files
+    assert "SUP_SI111_povezane.xlsx" in files
+
+
