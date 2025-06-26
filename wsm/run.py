@@ -7,10 +7,9 @@ import sys
 from wsm.cli import main as cli_main
 from wsm.ui.main_menu import launch_main_menu
 
-logging.basicConfig(level=logging.INFO)
-
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO)
     if len(sys.argv) > 1:
         cli_main()
     else:
