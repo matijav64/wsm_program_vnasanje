@@ -18,3 +18,7 @@ def test_reserved_name_modified():
 
 def test_control_chars_replaced():
     assert sanitize_folder_name("bad\x05name") == "bad_name"
+
+
+def test_empty_returns_unknown():
+    assert sanitize_folder_name("") == "unknown"
