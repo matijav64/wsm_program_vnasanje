@@ -108,6 +108,7 @@ def short_supplier_name(name: str) -> str:
 # ignored when determining the main supplier.
 def main_supplier_code(df: pd.DataFrame) -> str:
     """Return the first ``sifra_dobavitelja`` that isn't ``"_DOC_"``, blank or NaN."""
+
     if df.empty or "sifra_dobavitelja" not in df.columns:
         return ""
 
