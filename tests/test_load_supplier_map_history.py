@@ -20,3 +20,17 @@ def test_load_supplier_map_from_history(tmp_path: Path) -> None:
 
     assert "H1" in result
     assert result["H1"]["ime"] == "HistOnly"
+
+
+def test_load_supplier_map_skips_empty_history(tmp_path: Path) -> None:
+    links_dir = tmp_path / "links"
+    links_dir.mkdir()
+    hist_folder = links_dir / "EmptyHist"
+    hist_folder.mkdir()
+    pd.DataFrame(columns=["code", "name", "cena", "time"]).to_excel(
+        hist_folder / "price_history.xlsx", index=False
+    )
+
+    result = _load_supplier_map(links_dir)
+
+    assert result == {}
