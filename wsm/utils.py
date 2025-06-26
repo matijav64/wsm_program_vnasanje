@@ -29,7 +29,8 @@ def sanitize_folder_name(name: str) -> str:
     Prepovedane znake zamenja z ``_`` in odstrani končne presledke ali pike.
     Odstrani tudi kontrolne znake (ASCII < 32). Poleg tega prepozna
     rezervirana imena v Windows (npr. ``CON``, ``PRN``) in jim doda ``_`` na
-    konec, da se izogne napakam pri ustvarjanju map.
+    konec, da se izogne napakam pri ustvarjanju map.  Če je po čiščenju
+    rezultat prazen, vrne ``"unknown"``.
     """
 
     if not isinstance(name, str):
@@ -70,6 +71,9 @@ def sanitize_folder_name(name: str) -> str:
     if cleaned.upper() in reserved:
         cleaned += "_"
 
+
+    if cleaned == "":
+        return "unknown"
 
     return cleaned
 
