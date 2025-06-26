@@ -10,6 +10,7 @@ from decimal import Decimal
 from wsm.parsing.money import detect_round_step
 from pathlib import Path
 from typing import Tuple
+import shutil
 from wsm.utils import short_supplier_name
 from wsm.supplier_store import load_suppliers as _load_supplier_map, save_supplier as _write_supplier_map
 
@@ -238,17 +239,20 @@ def _save_and_close(
             else:
                 target = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
                 if links_file.exists():
+                    if target.exists():
+                        target = target.with_stem(target.stem + "_old")
                     links_file.rename(target)
                 for p in old_folder.iterdir():
-                    if not (new_folder / p.name).exists():
-                        p.rename(new_folder / p.name)
-                try:
-                    old_folder.rmdir()
-                except OSError:
-                    pass
+                    dest = new_folder / p.name
+                    if dest.exists():
+                        dest = dest.with_stem(dest.stem + "_old")
+                    p.rename(dest)
+                shutil.rmtree(old_folder, ignore_errors=True)
             links_file = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
         except Exception as exc:
-            log.warning(f"Napaka pri preimenovanju {old_folder} v {new_folder}: {exc}")
+            log.warning(
+                f"Napaka pri preimenovanju {old_folder} v {new_folder}: {exc}"
+            )
 
     if changed:
         sup_map[supplier_code] = new_info
