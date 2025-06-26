@@ -2,6 +2,8 @@ import json
 from decimal import Decimal
 
 from wsm import analyze
+from wsm.utils import main_supplier_code
+import pandas as pd
 
 DOC_XML = (
     "<Invoice xmlns='urn:eslog:2.00'>"
@@ -47,3 +49,8 @@ def test_analyze_ignores_doc_row_for_supplier(tmp_path):
     assert row["kolicina"] == Decimal("2.5")
     assert total == Decimal("9")
     assert ok
+
+
+def test_main_supplier_code_skips_blank_and_nan():
+    df = pd.DataFrame({"sifra_dobavitelja": ["", pd.NA, "_DOC_", "A1"]})
+    assert main_supplier_code(df) == "A1"

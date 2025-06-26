@@ -107,14 +107,16 @@ def short_supplier_name(name: str) -> str:
 # rows appear in some invoices due to document-level discounts and should be
 # ignored when determining the main supplier.
 def main_supplier_code(df: pd.DataFrame) -> str:
-    """Return the first ``sifra_dobavitelja`` value that isn't ``"_DOC_"``."""
+    """Return the first ``sifra_dobavitelja`` that isn't ``"_DOC_"``, blank or NaN."""
     if df.empty or "sifra_dobavitelja" not in df.columns:
         return ""
 
     for code in df["sifra_dobavitelja"]:
-        if str(code) != "_DOC_":
-            return str(code)
-    return str(df["sifra_dobavitelja"].iloc[0])
+        if pd.isna(code) or str(code).strip() == "" or str(code) == "_DOC_":
+            continue
+        return str(code)
+
+    return ""
 
 # ────────────────────────── združevanje postavk ─────────────────────
 def zdruzi_artikle(df: pd.DataFrame) -> pd.DataFrame:
