@@ -29,7 +29,7 @@ def launch_main_menu() -> None:
     btn_invoice = tk.Button(root, text="Vnesi račun", width=20, command=_enter_invoice)
     btn_invoice.pack(pady=20)
 
-    btn_prices = tk.Button(root, text="spremljanje cen", width=20, command=_watch_prices)
+    btn_prices = tk.Button(root, text="Spremljaj cene", width=20, command=_watch_prices)
     btn_prices.pack(pady=10)
 
     root.mainloop()
