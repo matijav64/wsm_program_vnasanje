@@ -368,7 +368,14 @@ def log_price_history(
         else df["supplier_name"].iloc[0]
     )
     vat_id = info.get("vat") if isinstance(info, dict) else None
+    if not vat_id:
+        folder_name = Path(history_file).parent.name
+        if folder_name.startswith("SI") and folder_name[2:].isdigit():
+            vat_id = folder_name
+
     safe_id = sanitize_folder_name(vat_id or primary_name)
+    if safe_id == "unknown" and vat_id:
+        safe_id = sanitize_folder_name(vat_id)
 
     history_path = suppliers_path / safe_id / "price_history.xlsx"
     history_path.parent.mkdir(parents=True, exist_ok=True)
