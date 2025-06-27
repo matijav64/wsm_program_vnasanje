@@ -269,6 +269,7 @@ def _save_and_close(
     # -------------------------------------------------------------
     if "unknown" in sup_map and supplier_code != "unknown":
         sup_map.pop("unknown", None)                    # odstrani ključ
+        changed = True
         unk_folder = Path(sup_file) / "unknown"
         if unk_folder.exists():
             shutil.rmtree(unk_folder, ignore_errors=True)
