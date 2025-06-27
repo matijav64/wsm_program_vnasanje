@@ -110,7 +110,10 @@ def open_invoice_gui(
     else:
         links_dir = suppliers / safe_id
         links_dir.mkdir(parents=True, exist_ok=True)
-        links_file = links_dir / f"{supplier_code}_{safe_id}_povezane.xlsx"
+        if supplier_code == safe_id:
+            links_file = links_dir / f"{supplier_code}_povezane.xlsx"
+        else:
+            links_file = links_dir / f"{supplier_code}_{safe_id}_povezane.xlsx"
 
     sifre_file = wsm_codes
     if sifre_file.exists():
