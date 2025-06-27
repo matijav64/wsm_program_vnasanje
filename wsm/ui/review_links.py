@@ -16,7 +16,7 @@ from wsm.supplier_store import load_suppliers as _load_supplier_map, save_suppli
 
 import pandas as pd
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 
 # Logger setup
 log = logging.getLogger(__name__)
@@ -406,6 +406,30 @@ def _save_and_close(
                 invoice_hash = hashlib.md5(invoice_path.read_bytes()).hexdigest()
             except Exception as exc:
                 log.warning(f"Napaka pri izračunu hash: {exc}")
+
+    if invoice_hash:
+        from wsm.utils import history_contains
+
+        history_file = new_folder / "price_history.xlsx"
+        try:
+            exists = history_contains(invoice_hash, history_file)
+        except Exception as exc:
+            log.warning(f"Napaka pri preverjanju podvojenega računa: {exc}")
+            exists = False
+        if exists:
+            proceed = messagebox.askyesno(
+                "Opozorilo",
+                "Račun je že zabeležen v price_history.xlsx. Shranim vseeno?",
+            )
+            if not proceed:
+                unk = Path(sup_file) / "unknown"
+                if unk.exists():
+                    try:
+                        shutil.rmtree(unk, ignore_errors=True)
+                    except Exception:
+                        pass
+                root.quit()
+                return
 
     try:
         # -------------------------------------------------------------

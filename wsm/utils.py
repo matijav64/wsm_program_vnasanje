@@ -425,3 +425,25 @@ def log_price_history(
         ["key", "code", "name", "cena", "time", "service_date", "invoice_id"]
     ]
     df_hist.to_excel(history_path, index=False)
+
+
+def history_contains(invoice_id: str, history_path: Union[str, Path]) -> bool:
+    """Return ``True`` if ``price_history.xlsx`` already contains ``invoice_id``."""
+
+    if not invoice_id:
+        return False
+
+    path = Path(history_path)
+    if not path.exists():
+        return False
+
+    try:
+        hist = pd.read_excel(path, dtype=str)
+    except Exception as exc:
+        log.warning(f"Napaka pri branju {path}: {exc}")
+        return False
+
+    if "invoice_id" not in hist.columns:
+        return False
+
+    return hist["invoice_id"].astype(str).eq(str(invoice_id)).any()
