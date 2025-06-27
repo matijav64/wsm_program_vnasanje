@@ -249,11 +249,20 @@ def _save_and_close(
                         dest = dest.with_stem(dest.stem + "_old")
                     p.rename(dest)
                 shutil.rmtree(old_folder, ignore_errors=True)
-            links_file = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
+            if supplier_code == new_safe:
+                links_file = new_folder / f"{supplier_code}_povezane.xlsx"
+            else:
+                links_file = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
         except Exception as exc:
             log.warning(
                 f"Napaka pri preimenovanju {old_folder} v {new_folder}: {exc}"
             )
+    else:
+        new_folder = Path(sup_file) / new_safe
+        if supplier_code == new_safe:
+            links_file = new_folder / f"{supplier_code}_povezane.xlsx"
+        else:
+            links_file = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
 
     # Zapiši supplier.json, če smo posodobili podatke ali je to prvi vnos
     if changed or supplier_code not in sup_map:
