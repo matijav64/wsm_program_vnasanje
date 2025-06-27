@@ -21,7 +21,7 @@ def _load_price_histories(suppliers_dir: Path) -> dict[str, dict[str, pd.DataFra
     suppliers_map = _load_supplier_map(suppliers_dir)
     items_by_supplier: dict[str, dict[str, pd.DataFrame]] = {}
     for code, info in suppliers_map.items():
-        safe_id = sanitize_folder_name(info.get("ime", code))
+        safe_id = sanitize_folder_name(info.get("vat") or info.get("ime", code))
         hist_path = suppliers_dir / safe_id / "price_history.xlsx"
         log.debug("Checking history file for %s at %s", code, hist_path)
         if not hist_path.exists():

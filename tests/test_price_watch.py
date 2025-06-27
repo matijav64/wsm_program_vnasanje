@@ -41,3 +41,25 @@ def test_load_price_histories_missing_file(tmp_path):
     items = _load_price_histories(links)
     assert items == {}
 
+
+def test_load_price_histories_vat_dir(tmp_path):
+    links = tmp_path / "links"
+    sup = links / "SI123"
+    sup.mkdir(parents=True)
+    (sup / "supplier.json").write_text(
+        json.dumps({"sifra": "SUP", "ime": "Supplier", "vat": "SI123"})
+    )
+
+    df = pd.DataFrame(
+        {
+            "key": ["SUP_ItemA"],
+            "cena": [1],
+            "time": [pd.Timestamp("2023-01-01")],
+        }
+    )
+    df.to_excel(sup / "price_history.xlsx", index=False)
+
+    items = _load_price_histories(links)
+    assert set(items.keys()) == {"SUP"}
+    assert set(items["SUP"].keys()) == {"SUP - ItemA"}
+
