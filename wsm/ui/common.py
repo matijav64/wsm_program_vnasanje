@@ -90,6 +90,9 @@ def open_invoice_gui(
         name = supplier_code
     if not vat and map_vat:
         vat = map_vat
+    # Če je koda še "unknown" in VAT obstaja, uporabi kar davčno številko
+    if supplier_code == "unknown" and vat:
+        supplier_code = vat
 
     safe_id = sanitize_folder_name(vat or name)
 
