@@ -415,6 +415,13 @@ def _save_and_close(
     except Exception as exc:
         log.warning(f"Napaka pri beleženju zgodovine cen: {exc}")
 
+    unk = Path(sup_file) / "unknown"
+    if unk.exists():
+        try:
+            shutil.rmtree(unk, ignore_errors=True)
+        except Exception:
+            pass
+
     root.quit()
 
 
