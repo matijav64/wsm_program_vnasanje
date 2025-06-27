@@ -453,3 +453,89 @@ def history_contains(invoice_id: str, history_path: Union[str, Path]) -> bool:
         return False
 
     return hist["invoice_id"].astype(str).eq(str(invoice_id)).any()
+
+
+def last_price_stats(item_df: pd.DataFrame) -> dict:
+    """Return last price statistics for a single article history.
+
+    Parameters
+    ----------
+    item_df : pandas.DataFrame
+        DataFrame with columns ``cena`` and ``time`` representing one
+        article's price history sorted by time.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys ``last_price``, ``last_dt``, ``min`` and ``max``.
+        Values are :class:`~decimal.Decimal` for prices and
+        :class:`pandas.Timestamp` for the date. ``None`` values are returned
+        when mandatory columns are missing or the input frame is empty.
+    """
+
+    required = {"cena", "time"}
+    if not required.issubset(item_df.columns) or item_df.empty:
+        return {"last_price": None, "last_dt": None, "min": None, "max": None}
+
+    df = item_df.dropna(subset=["cena", "time"]).copy()
+    if df.empty:
+        return {"last_price": None, "last_dt": None, "min": None, "max": None}
+
+    df.sort_values("time", inplace=True)
+    prices = df["cena"].apply(lambda x: Decimal(str(x)))
+    times = pd.to_datetime(df["time"])
+
+    return {
+        "last_price": prices.iloc[-1],
+        "last_dt": times.iloc[-1],
+        "min": prices.min(),
+        "max": prices.max(),
+    }
+
+
+def load_last_price(label: str, suppliers_dir: Path) -> Decimal | None:
+    """Return the most recent price for ``label`` from all suppliers.
+
+    The function scans all ``price_history.xlsx`` files below ``suppliers_dir``
+    and returns the price from the newest entry matching ``label``.  ``label``
+    should be in the form ``"<code> - <name>"`` as produced by
+    :func:`log_price_history`.
+    """
+
+    latest_dt: pd.Timestamp | None = None
+    latest_price: Decimal | None = None
+
+    for hist_file in suppliers_dir.glob("*/price_history.xlsx"):
+        try:
+            df = pd.read_excel(hist_file)
+        except Exception as exc:  # pragma: no cover - invalid file
+            log.warning("Napaka pri branju %s: %s", hist_file, exc)
+            continue
+
+        if "key" not in df.columns:
+            continue
+
+        if "code" not in df.columns or "name" not in df.columns:
+            parts = df["key"].str.split("_", n=1, expand=True)
+            if "code" not in df.columns:
+                df["code"] = parts[0]
+            if "name" not in df.columns:
+                df["name"] = parts[1].fillna("")
+
+        if {"cena", "time"}.difference(df.columns):
+            continue
+
+        df["label"] = df["code"].astype(str) + " - " + df["name"].astype(str)
+        sub = df[df["label"] == label].dropna(subset=["cena", "time"])
+        if sub.empty:
+            continue
+
+        sub.sort_values("time", inplace=True)
+        row = sub.iloc[-1]
+        dt = pd.to_datetime(row["time"])
+        price = Decimal(str(row["cena"]))
+        if latest_dt is None or dt > latest_dt:
+            latest_dt = dt
+            latest_price = price
+
+    return latest_price
