@@ -110,7 +110,7 @@ def open_invoice_gui(
     else:
         links_dir = suppliers / safe_id
         links_dir.mkdir(parents=True, exist_ok=True)
-        if supplier_code == safe_id:
+        if supplier_code.casefold() == safe_id.casefold():
             links_file = links_dir / f"{supplier_code}_povezane.xlsx"
         else:
             links_file = links_dir / f"{supplier_code}_{safe_id}_povezane.xlsx"

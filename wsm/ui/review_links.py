@@ -249,7 +249,7 @@ def _save_and_close(
                         dest = dest.with_stem(dest.stem + "_old")
                     p.rename(dest)
                 shutil.rmtree(old_folder, ignore_errors=True)
-            if supplier_code == new_safe:
+            if supplier_code.casefold() == new_safe.casefold():
                 links_file = new_folder / f"{supplier_code}_povezane.xlsx"
             else:
                 links_file = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
@@ -259,7 +259,7 @@ def _save_and_close(
             )
     else:
         new_folder = Path(sup_file) / new_safe
-        if supplier_code == new_safe:
+        if supplier_code.casefold() == new_safe.casefold():
             links_file = new_folder / f"{supplier_code}_povezane.xlsx"
         else:
             links_file = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
