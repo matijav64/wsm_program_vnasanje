@@ -77,6 +77,11 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
   "Kopiraj številko računa", ki ustrezne vrednosti hitro prenesejo na odložišče.
   Gumbi so zdaj tik pod zgornjo vrstico, pod njimi pa je nekaj dodatnega
   prostora, da se ločijo od tabele.
+  Ob potrditvi vrstice program primerja ceno s prejšnjimi zapisi v
+  `price_history.xlsx`. Če je odstopanje večje od nastavljenega praga
+  (privzeto 5&nbsp;% oz. vrednost spremenljivke `WSM_PRICE_WARN_PCT`), se
+  vrstica obarva oranžno in prikaže se namig z zadnjo ceno ter razliko v
+  odstotkih.
 
 
 
@@ -104,8 +109,13 @@ stalno maso pakiranja, jo dodajte v ta slovar.
 6. Za spremljanje cen že povezanih artiklov odprite vmesnik **Price Watch**.
    V glavnem meniju (`python -m wsm.run`) je na voljo gumb "Spremljaj cene",
    vmesnik pa lahko po potrebi zaženete tudi neposredno s funkcijo
-   `launch_price_watch`. V oknu izberite dobavitelja in preglejte grafe, ki
-   prikazujejo gibanje cen za posamezne artikle.
+   `launch_price_watch`.
+
+   V zgornjem delu okna je iskalnik za hitro filtriranje dobaviteljev. Spodaj
+   se nahaja dodatno polje za iskanje po nazivih artiklov. Rezultati so
+   prikazani v tabeli s stolpci "Artikel", "Zadnja cena", "Zadnji datum",
+   "Min" in "Max". Po posameznem stolpcu lahko razvrstite s klikom na glavo.
+   Dvojni klik na vrstico odpre graf gibanja cen iz `price_history.xlsx`.
 
 7. Analizo in združevanje postavk lahko izvedete z:
    ```bash
