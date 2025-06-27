@@ -353,6 +353,12 @@ def log_price_history(
     Zapiše zgodovino cen v ``links/<ime_dobavitelja>/price_history.xlsx``.
     Shranjeni so identifikator artikla (``sifra_dobavitelja + naziv``), cena,
     trenutni čas in opcijsko datum opravljene storitve.
+
+    Parameters
+    ----------
+    overwrite : bool, optional
+        When ``True`` all rows with the same ``invoice_id`` are removed
+        before appending new data.
     """
     suppliers_path = Path(suppliers_dir) if suppliers_dir is not None else Path(history_file).parent
     sup_map = _load_supplier_map(suppliers_path)
