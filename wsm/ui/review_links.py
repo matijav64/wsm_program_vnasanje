@@ -208,7 +208,8 @@ def _save_and_close(
     )
 
     # Preverimo prazne sifra_dobavitelja
-    empty_sifra = df["sifra_dobavitelja"].isna() | (df["sifra_dobavitelja"] == "")
+    df["sifra_dobavitelja"] = df["sifra_dobavitelja"].fillna("").astype(str)
+    empty_sifra = df["sifra_dobavitelja"] == ""
     if empty_sifra.any():
         log.warning(
             f"Prazne vrednosti v sifra_dobavitelja za {empty_sifra.sum()} vrstic"
@@ -331,6 +332,7 @@ def _save_and_close(
         log.info("Manual_old je prazen, ustvarjam nov DataFrame")
 
     # Ustvari df_links z istim indeksom
+    df["sifra_dobavitelja"] = df["sifra_dobavitelja"].fillna("").astype(str)
     df["naziv_ckey"] = df["naziv"].map(_clean)
     df_links = df.set_index(["sifra_dobavitelja", "naziv_ckey"])[
         ["naziv", "wsm_sifra", "dobavitelj", "enota_norm"]
@@ -549,9 +551,8 @@ def review_links(
         log.info("Processing complete")
         log.info(f"Število prebranih povezav iz {links_file}: {len(manual_old)}")
         log.debug(f"Primer povezav iz {links_file}: {manual_old.head().to_dict()}")
-        empty_sifra_old = manual_old["sifra_dobavitelja"].isna() | (
-            manual_old["sifra_dobavitelja"] == ""
-        )
+        manual_old["sifra_dobavitelja"] = manual_old["sifra_dobavitelja"].fillna("").astype(str)
+        empty_sifra_old = manual_old["sifra_dobavitelja"].eq("")
         if empty_sifra_old.any():
             log.warning(
                 f"Prazne vrednosti v sifra_dobavitelja v manual_old za {empty_sifra_old.sum()} vrstic"
@@ -588,8 +589,9 @@ def review_links(
     df["dobavitelj"] = supplier_name
     log.debug(f"Supplier name nastavljen na: {supplier_name}")
 
-    # Generate sifra_dobavitelja for empty cases before lookup
-    empty_sifra = df["sifra_dobavitelja"].isna() | (df["sifra_dobavitelja"] == "")
+    # Normalize codes before lookup
+    df["sifra_dobavitelja"] = df["sifra_dobavitelja"].fillna("").astype(str)
+    empty_sifra = df["sifra_dobavitelja"] == ""
     if empty_sifra.any():
         log.warning(
             f"Prazne vrednosti v sifra_dobavitelja za {empty_sifra.sum()} vrstic v df"
