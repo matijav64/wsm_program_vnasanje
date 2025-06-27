@@ -163,3 +163,53 @@ def test_unknown_folder_removed_when_vat_exists(tmp_path, monkeypatch):
     assert "SUP_SI111_povezane.xlsx" in files
 
 
+def test_unknown_folder_cleaned_after_save(tmp_path, monkeypatch):
+    df = pd.DataFrame(
+        {
+            "sifra_dobavitelja": ["SUP"],
+            "naziv": ["Item"],
+            "kolicina": [Decimal("1")],
+            "enota": ["kg"],
+            "cena_bruto": [Decimal("5")],
+            "cena_netto": [Decimal("5")],
+            "vrednost": [Decimal("5")],
+            "rabata": [Decimal("0")],
+            "wsm_sifra": [pd.NA],
+            "dobavitelj": ["Test"],
+            "kolicina_norm": [1.0],
+            "enota_norm": ["kg"],
+        }
+    )
+
+    manual_old = pd.DataFrame(
+        columns=["sifra_dobavitelja", "naziv", "wsm_sifra", "dobavitelj", "enota_norm"]
+    )
+    wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
+
+    base_dir = tmp_path / "suppliers"
+    unknown_dir = base_dir / "unknown"
+    unknown_dir.mkdir(parents=True)
+    (unknown_dir / "junk.txt").write_text("x")
+
+    links_dir = base_dir / "SI999"
+    links_dir.mkdir(parents=True)
+    links_file = links_dir / "SUP_SI999_povezane.xlsx"
+
+    monkeypatch.setattr("wsm.utils.log_price_history", lambda *a, **k: None)
+
+    _save_and_close(
+        df,
+        manual_old,
+        wsm_df,
+        links_file,
+        DummyRoot(),
+        "Test",
+        "SUP",
+        {},
+        base_dir,
+        vat="SI999",
+    )
+
+    assert not unknown_dir.exists()
+
+
