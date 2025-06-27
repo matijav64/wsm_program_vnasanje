@@ -254,6 +254,7 @@ def _save_and_close(
                 f"Napaka pri preimenovanju {old_folder} v {new_folder}: {exc}"
             )
 
+    # V datoteko zapiši le, če smo posodobili ime ali VAT
     if changed:
         sup_map[supplier_code] = new_info
         _write_supplier_map(sup_map, sup_file)
