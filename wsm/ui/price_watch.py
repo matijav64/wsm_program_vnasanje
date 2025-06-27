@@ -1,5 +1,6 @@
 # File: wsm/ui/price_watch.py
-"""Simple GUI for watching price history of items."""
+"""GUI for browsing price history of supplier items."""
+
 from __future__ import annotations
 
 import os
@@ -18,6 +19,7 @@ from wsm.utils import sanitize_folder_name
 
 def _load_price_histories(suppliers_dir: Path) -> dict[str, dict[str, pd.DataFrame]]:
     """Return price history grouped by supplier and item label."""
+
     suppliers_map = _load_supplier_map(suppliers_dir)
     items_by_supplier: dict[str, dict[str, pd.DataFrame]] = {}
     for code, info in suppliers_map.items():
@@ -43,117 +45,185 @@ def _load_price_histories(suppliers_dir: Path) -> dict[str, dict[str, pd.DataFra
     return items_by_supplier
 
 
+class PriceWatch(tk.Tk):
+    """Window for browsing historic prices."""
+
+    def __init__(self, suppliers: Path | str | None = None) -> None:
+        super().__init__()
+        self.title("Spremljanje cen")
+        self.geometry("600x400")
+
+        self.suppliers_dir = Path(suppliers or os.getenv("WSM_SUPPLIERS", "links"))
+        if not self.suppliers_dir.exists():
+            self.withdraw()
+            messagebox.showerror(
+                "Napaka", f"Mapa dobaviteljev ni najdena: {self.suppliers_dir}"
+            )
+            self.destroy()
+            return
+
+        self.suppliers_map = _load_supplier_map(self.suppliers_dir)
+        self.items_by_supplier = _load_price_histories(self.suppliers_dir)
+        self.supplier_codes = {
+            f"{code} - {info['ime']}": code for code, info in self.suppliers_map.items()
+        }
+
+        self._sort_col: str | None = None
+        self._sort_reverse = False
+
+        self._build_supplier_search()
+        self._build_article_table()
+        self._build_back_button()
+
+        self.bind("<Escape>", lambda e: self.destroy())
+        self._refresh_table()
+
+    # ------------------------------------------------------------------
+    def _build_supplier_search(self) -> None:
+        frame = tk.Frame(self)
+        frame.pack(pady=5, fill=tk.X)
+
+        self.sup_search_var = tk.StringVar()
+        entry = ttk.Entry(frame, textvariable=self.sup_search_var, width=20)
+        entry.pack(side=tk.LEFT, padx=5)
+
+        self.sup_var = tk.StringVar()
+        self.sup_box = ttk.Combobox(frame, textvariable=self.sup_var, state="readonly", width=45)
+        self.sup_box.pack(side=tk.LEFT, padx=5)
+
+        self._supplier_names = list(self.supplier_codes)
+        self._update_supplier_list()
+
+        entry.bind("<KeyRelease>", lambda e: self._update_supplier_list())
+        self.sup_box.bind("<<ComboboxSelected>>", lambda e: self._refresh_table())
+
+    def _build_article_table(self) -> None:
+        self.search_var = tk.StringVar()
+        entry = ttk.Entry(self, textvariable=self.search_var)
+        entry.pack(pady=5, fill=tk.X)
+        entry.bind("<KeyRelease>", lambda e: self._refresh_table())
+
+        columns = ("label", "last_price", "last_dt", "min", "max")
+        self.tree = ttk.Treeview(self, columns=columns, show="headings")
+        headings = {
+            "label": "Artikel",
+            "last_price": "Zadnja cena",
+            "last_dt": "Zadnji datum",
+            "min": "Min",
+            "max": "Max",
+        }
+        for col in columns:
+            self.tree.heading(col, text=headings[col], command=lambda c=col: self._sort_by(c))
+            width = 220 if col == "label" else 80
+            anchor = tk.W if col == "label" else tk.E
+            self.tree.column(col, width=width, anchor=anchor)
+
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscroll=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.tree.bind("<Double-1>", self._on_double_click)
+
+    def _build_back_button(self) -> None:
+        ttk.Button(self, text="Nazaj", command=self.destroy).pack(pady=5)
+
+    # ------------------------------------------------------------------
+    def _update_supplier_list(self) -> None:
+        query = self.sup_search_var.get().lower()
+        opts = [s for s in self._supplier_names if query in s.lower()]
+        self.sup_box["values"] = opts
+        if opts:
+            if self.sup_var.get() not in opts:
+                self.sup_box.current(0)
+                self.sup_var.set(opts[0])
+        else:
+            self.sup_var.set("")
+        self._refresh_table()
+
+    def _refresh_table(self) -> None:
+        if not hasattr(self, "tree"):
+            return
+        self.tree.delete(*self.tree.get_children())
+        code = self.supplier_codes.get(self.sup_var.get())
+        if not code:
+            return
+        items = self.items_by_supplier.get(code, {})
+        rows: list[dict] = []
+        query = self.search_var.get().lower()
+        for label, df in items.items():
+            if query and query not in label.lower():
+                continue
+            prices = df["cena"].astype(float)
+            rows.append(
+                {
+                    "label": label,
+                    "last_price": float(prices.iloc[-1]),
+                    "last_dt": pd.to_datetime(df["time"].iloc[-1]),
+                    "min": float(prices.min()),
+                    "max": float(prices.max()),
+                    "df": df,
+                }
+            )
+        if self._sort_col:
+            rows.sort(key=lambda r: r[self._sort_col], reverse=self._sort_reverse)
+        for r in rows:
+            self.tree.insert(
+                "",
+                "end",
+                values=(
+                    r["label"],
+                    f"{r['last_price']}",
+                    r["last_dt"].strftime("%Y-%m-%d"),
+                    f"{r['min']}",
+                    f"{r['max']}",
+                ),
+            )
+
+    def _sort_by(self, column: str) -> None:
+        if self._sort_col == column:
+            self._sort_reverse = not self._sort_reverse
+        else:
+            self._sort_col = column
+            self._sort_reverse = False
+        self._refresh_table()
+
+    def _on_double_click(self, event: tk.Event | None = None) -> None:
+        item_id = self.tree.focus()
+        if not item_id:
+            return
+        label = self.tree.item(item_id)["values"][0]
+        code = self.supplier_codes.get(self.sup_var.get())
+        df_item = self.items_by_supplier.get(code, {}).get(label)
+        if df_item is not None and not df_item.empty:
+            self._show_graph(label, df_item)
+
+    def _show_graph(self, label: str, df: pd.DataFrame) -> None:
+        try:
+            import matplotlib.pyplot as plt
+            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        except Exception as exc:  # pragma: no cover - optional dependency
+            messagebox.showerror("Napaka", f"Matplotlib ni na voljo: {exc}")
+            return
+
+        top = tk.Toplevel(self)
+        top.title(label)
+
+        fig, ax = plt.subplots(figsize=(5, 3))
+        ax.plot(pd.to_datetime(df["time"]), df["cena"].astype(float), marker="o")
+        ax.set_xlabel("Datum")
+        ax.set_ylabel("Cena")
+        ax.grid(True)
+
+        canvas = FigureCanvasTkAgg(fig, master=top)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        ttk.Button(top, text="Zapri", command=top.destroy).pack(pady=5)
+        top.bind("<Escape>", lambda e: top.destroy())
+
+
 def launch_price_watch(suppliers: Path | str | None = None) -> None:
-    """Launch the price watch window.
+    """Launch the price watch window."""
 
-    When ``suppliers`` is ``None`` it will read the path from the
-    ``WSM_SUPPLIERS`` environment variable and fall back to ``links`` in the
-    current working directory.
-    """
-    suppliers_dir = Path(suppliers or os.getenv("WSM_SUPPLIERS", "links"))
-    if not suppliers_dir.exists():
-        log.info(
-            "Supplier path %s does not exist (WSM_SUPPLIERS=%s)",
-            suppliers_dir,
-            os.getenv("WSM_SUPPLIERS"),
-        )
-        root = tk.Tk()
-        root.withdraw()
-        messagebox.showerror(
-            "Napaka", f"Mapa dobaviteljev ni najdena: {suppliers_dir}"
-        )
-        root.destroy()
-        return
+    PriceWatch(suppliers).mainloop()
 
-    root = tk.Tk()
-    root.title("Spremljanje cen")
-    root.geometry("500x400")
-
-    suppliers_map = _load_supplier_map(suppliers_dir)
-
-    # Preberemo price_history.xlsx po posameznih dobaviteljih
-    items_by_supplier = _load_price_histories(suppliers_dir)
-
-    supplier_var = tk.StringVar()
-    supplier_codes = {
-        f"{code} - {info['ime']}": code for code, info in suppliers_map.items()
-    }
-    supplier_box = ttk.Combobox(
-        root, values=list(supplier_codes), textvariable=supplier_var, state="readonly", width=47
-    )
-    supplier_box.pack(pady=5)
-
-    if supplier_codes:
-        supplier_box.current(0)
-        # populate initial item list
-        supplier_var.set(list(supplier_codes)[0])
-
-    search_var = tk.StringVar()
-    entry = ttk.Entry(root, textvariable=search_var, width=45)
-    entry.pack(pady=5)
-
-    listbox = tk.Listbox(root, width=60)
-    listbox.pack(pady=10, fill=tk.BOTH, expand=True)
-
-    canvas = tk.Canvas(root, width=450, height=150)
-    canvas.pack(pady=10)
-    info_label = tk.Label(root, text="")
-    info_label.pack()
-
-    def update_list(event=None):
-        code = supplier_codes.get(supplier_var.get())
-        query = search_var.get().lower()
-        listbox.delete(0, tk.END)
-        if not code:
-            return
-        items = items_by_supplier.get(code, {})
-        if not items:
-            listbox.insert(tk.END, "(ni zgodovine)")
-            return
-        for key in sorted(items):
-            if query in key.lower():
-                listbox.insert(tk.END, key)
-
-    def on_item_selected(event=None):
-        if not listbox.curselection():
-            return
-        key = listbox.get(listbox.curselection()[0])
-        code = supplier_codes.get(supplier_var.get())
-        if not code:
-            return
-        df_item = items_by_supplier.get(code, {}).get(key)
-        if df_item is None or df_item.empty:
-            return
-        canvas.delete("all")
-        prices = df_item["cena"].astype(float).tolist()
-        min_p, max_p = min(prices), max(prices)
-        width, height = 450, 150
-        margin = 20
-        scale = (height - 2 * margin) / (max_p - min_p) if max_p != min_p else 1
-        for i in range(1, len(prices)):
-            x1 = margin + (i - 1) * (width - 2 * margin) / max(1, len(prices) - 1)
-            y1 = height - margin - (prices[i - 1] - min_p) * scale
-            x2 = margin + i * (width - 2 * margin) / max(1, len(prices) - 1)
-            y2 = height - margin - (prices[i] - min_p) * scale
-            canvas.create_line(x1, y1, x2, y2, fill="blue", width=2)
-        if len(prices) >= 2:
-            last, prev = prices[-1], prices[-2]
-            if last > prev:
-                arrow = "↑"
-            elif last < prev:
-                arrow = "↓"
-            else:
-                arrow = "→"
-            canvas.create_text(width - margin, margin, text=arrow, font=("Arial", 16))
-        last_time = pd.to_datetime(df_item["time"].iloc[-1])
-        info_label.config(text=f"Zadnja cena: {prices[-1]} (\u010das: {last_time:%Y-%m-%d})")
-
-    entry.bind("<KeyRelease>", update_list)
-    supplier_box.bind("<<ComboboxSelected>>", update_list)
-    listbox.bind("<<ListboxSelect>>", on_item_selected)
-
-    update_list()
-
-    tk.Button(root, text="Nazaj", command=root.destroy).pack(pady=5)
-
-    root.mainloop()
