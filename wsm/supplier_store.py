@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import logging
+import shutil
 import pandas as pd
 
 from .utils import sanitize_folder_name
@@ -55,7 +56,19 @@ def load_suppliers(sup_file: Path) -> dict[str, dict]:
                 new_folder = links_dir / safe_vat
                 try:
                     if not new_folder.exists():
-                        folder.rename(new_folder)
+                        try:
+                            shutil.move(str(folder), str(new_folder))
+                        except Exception as move_exc:
+                            log.debug("Fallback to per-file move: %s", move_exc)
+                            new_folder.mkdir(parents=True, exist_ok=True)
+                            for p in folder.iterdir():
+                                target = new_folder / p.name
+                                if not target.exists():
+                                    p.rename(target)
+                            try:
+                                folder.rmdir()
+                            except OSError:
+                                pass
                     else:
                         for p in folder.iterdir():
                             target = new_folder / p.name
