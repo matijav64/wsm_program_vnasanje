@@ -218,7 +218,8 @@ def _save_and_close(
     # -------------------------------------------------------------
     # posodobi zapise, da ALWAYS vsebujejo vat + ime
     # -------------------------------------------------------------
-    new_info = sup_map.setdefault(supplier_code, {}).copy()
+    # Ne ustvarjaj ključa vnaprej; poglej le, kaj že obstaja
+    new_info = sup_map.get(supplier_code, {}).copy()
     changed = False
     if vat and new_info.get("vat") != vat:
         new_info["vat"] = vat
@@ -254,8 +255,8 @@ def _save_and_close(
                 f"Napaka pri preimenovanju {old_folder} v {new_folder}: {exc}"
             )
 
-    # V datoteko zapiši le, če smo posodobili ime ali VAT
-    if changed:
+    # Zapiši supplier.json, če smo posodobili podatke ali je to prvi vnos
+    if changed or supplier_code not in sup_map:
         sup_map[supplier_code] = new_info
         _write_supplier_map(sup_map, sup_file)
 
