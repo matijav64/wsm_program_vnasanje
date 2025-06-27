@@ -264,6 +264,28 @@ def _save_and_close(
         else:
             links_file = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
 
+    # -------------------------------------------------------------
+    #  Če smo pravkar prešli z "unknown" na VAT, izbrišemo stare
+    #  sledi (ključ "unknown" + morebitna mapa) – sicer ga bo
+    #  log_price_history znova oživel.
+    # -------------------------------------------------------------
+    if supplier_code != "unknown" and "unknown" in sup_map:
+        old_unknown = sup_map["unknown"]
+        # isti dobavitelj, samo brez VAT
+        same = (
+            (vat and old_unknown.get("vat") == vat) or
+            (supplier_name and old_unknown.get("ime") == supplier_name)
+        )
+        if same:
+            sup_map.pop("unknown", None)          # odstrani ključ
+            # izbriši še mapo, če slučajno obstaja
+            from wsm.utils import sanitize_folder_name
+            unk_folder = Path(sup_file) / sanitize_folder_name(
+                old_unknown.get("vat") or old_unknown.get("ime", "")
+            )
+            if unk_folder.exists():
+                shutil.rmtree(unk_folder, ignore_errors=True)
+
     # Zapiši supplier.json, če smo posodobili podatke ali je to prvi vnos
     if changed or supplier_code not in sup_map:
         sup_map[supplier_code] = new_info
