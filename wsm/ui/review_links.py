@@ -284,6 +284,14 @@ def _save_and_close(
         else:
             links_file = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
 
+    # pospravi stare _VAT_VAT_povezane.xlsx v isti mapi
+    for p in links_file.parent.glob(f"{supplier_code}_{supplier_code}_povezane.xlsx"):
+        try:
+            if p != links_file:
+                p.unlink()
+        except Exception:
+            pass
+
     # -------------------------------------------------------------
     #  Trdno počisti stare sledi "unknown"
     # -------------------------------------------------------------
