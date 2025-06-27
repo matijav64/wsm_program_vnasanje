@@ -11,8 +11,11 @@ from wsm.parsing.money import detect_round_step
 from pathlib import Path
 from typing import Tuple
 import shutil
-from wsm.utils import short_supplier_name
-from wsm.supplier_store import load_suppliers as _load_supplier_map, save_supplier as _write_supplier_map
+from wsm.utils import short_supplier_name, _clean
+from wsm.supplier_store import (
+    load_suppliers as _load_supplier_map,
+    save_supplier as _write_supplier_map,
+)
 
 import pandas as pd
 import tkinter as tk
@@ -181,7 +184,6 @@ def _norm_unit(
     return q_norm, base_unit
 
 
-
 # Save and close function
 def _save_and_close(
     df,
@@ -253,9 +255,7 @@ def _save_and_close(
                 shutil.rmtree(old_folder, ignore_errors=True)
                 moved = True
         except Exception as exc:
-            log.warning(
-                f"Napaka pri preimenovanju {old_folder} v {new_folder}: {exc}"
-            )
+            log.warning(f"Napaka pri preimenovanju {old_folder} v {new_folder}: {exc}")
             try:
                 new_folder.mkdir(exist_ok=True)
                 for p in old_folder.iterdir():
@@ -296,7 +296,7 @@ def _save_and_close(
     #  Trdno počisti stare sledi "unknown"
     # -------------------------------------------------------------
     if "unknown" in sup_map and supplier_code != "unknown":
-        sup_map.pop("unknown", None)                    # odstrani ključ
+        sup_map.pop("unknown", None)  # odstrani ključ
         changed = True
         unk_folder = Path(sup_file) / "unknown"
         if unk_folder.exists():
@@ -311,7 +311,8 @@ def _save_and_close(
     if not manual_old.empty:
         # Odstrani prazne ali neveljavne vrstice
         manual_old = manual_old.dropna(subset=["sifra_dobavitelja", "naziv"], how="all")
-        manual_new = manual_old.set_index(["sifra_dobavitelja"])
+        manual_old["naziv_ckey"] = manual_old["naziv"].map(_clean)
+        manual_new = manual_old.set_index(["sifra_dobavitelja", "naziv_ckey"])
         if "enota_norm" not in manual_new.columns:
             manual_new["enota_norm"] = pd.NA
         log.info(f"Število prebranih povezav iz manual_old: {len(manual_old)}")
@@ -321,15 +322,17 @@ def _save_and_close(
             columns=[
                 "sifra_dobavitelja",
                 "naziv",
+                "naziv_ckey",
                 "wsm_sifra",
                 "dobavitelj",
                 "enota_norm",
             ]
-        ).set_index(["sifra_dobavitelja"])
+        ).set_index(["sifra_dobavitelja", "naziv_ckey"])
         log.info("Manual_old je prazen, ustvarjam nov DataFrame")
 
     # Ustvari df_links z istim indeksom
-    df_links = df.set_index(["sifra_dobavitelja"])[
+    df["naziv_ckey"] = df["naziv"].map(_clean)
+    df_links = df.set_index(["sifra_dobavitelja", "naziv_ckey"])[
         ["naziv", "wsm_sifra", "dobavitelj", "enota_norm"]
     ]
 
@@ -556,9 +559,16 @@ def review_links(
             log.debug(
                 f"Primer vrstic s prazno sifra_dobavitelja: {manual_old[empty_sifra_old][['naziv', 'sifra_dobavitelja']].head().to_dict()}"
             )
+        manual_old["naziv_ckey"] = manual_old["naziv"].map(_clean)
     except Exception as e:
         manual_old = pd.DataFrame(
-            columns=["sifra_dobavitelja", "naziv", "wsm_sifra", "dobavitelj"]
+            columns=[
+                "sifra_dobavitelja",
+                "naziv",
+                "wsm_sifra",
+                "dobavitelj",
+                "naziv_ckey",
+            ]
         )
         log.debug(
             f"Manual_old ni obstajal ali napaka pri branju: {e}, ustvarjam prazen DataFrame"
@@ -586,15 +596,19 @@ def review_links(
         )
 
     # Create a dictionary for quick lookup
-    old_map_dict = manual_old.set_index(["sifra_dobavitelja"])["wsm_sifra"].to_dict()
+    old_map_dict = manual_old.set_index(["sifra_dobavitelja", "naziv_ckey"])[
+        "wsm_sifra"
+    ].to_dict()
     old_unit_dict = {}
     if "enota_norm" in manual_old.columns:
-        old_unit_dict = manual_old.set_index(["sifra_dobavitelja"])[
+        old_unit_dict = manual_old.set_index(["sifra_dobavitelja", "naziv_ckey"])[
             "enota_norm"
         ].to_dict()
 
+    df["naziv_ckey"] = df["naziv"].map(_clean)
     df["wsm_sifra"] = df.apply(
-        lambda r: old_map_dict.get((r["sifra_dobavitelja"]), pd.NA), axis=1
+        lambda r: old_map_dict.get((r["sifra_dobavitelja"], r["naziv_ckey"]), pd.NA),
+        axis=1,
     )
     df["wsm_naziv"] = df["wsm_sifra"].map(wsm_df.set_index("wsm_sifra")["wsm_naziv"])
     df["status"] = df["wsm_sifra"].notna().map({True: "POVEZANO", False: pd.NA})
@@ -640,7 +654,9 @@ def review_links(
         log.debug(f"Old unit mapping loaded: {old_unit_dict}")
 
         def _restore_unit(r):
-            return old_unit_dict.get(r["sifra_dobavitelja"], r["enota_norm"])
+            return old_unit_dict.get(
+                (r["sifra_dobavitelja"], r["naziv_ckey"]), r["enota_norm"]
+            )
 
         before = df["enota_norm"].copy()
         df["enota_norm"] = df.apply(_restore_unit, axis=1)
@@ -741,9 +757,7 @@ def review_links(
         log.debug(
             f"_refresh_header: supplier_var={supplier_var.get()}, "
             f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
-
         )
-
 
     header_lbl = tk.Label(
         root,
@@ -759,7 +773,6 @@ def review_links(
     info_frame = tk.Frame(root)
     # Keep the buttons tight to the header but leave extra room below
     info_frame.pack(anchor="w", padx=8, pady=(0, 12))
-
 
     def _copy(val: str) -> None:
         root.clipboard_clear()
@@ -781,20 +794,16 @@ def review_links(
         command=lambda: _copy(invoice_var.get()),
     ).grid(row=0, column=2, sticky="w")
 
-
     # Refresh header once widgets exist. ``after_idle`` ensures widgets are
     # fully initialized before values are set so the entries show up
     root.after_idle(_refresh_header)
     log.debug(
         f"after_idle scheduled: supplier_var={supplier_var.get()}, "
         f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
-
     )
-
 
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
-
 
     frame = tk.Frame(root)
     frame.pack(fill="both", expand=True)
