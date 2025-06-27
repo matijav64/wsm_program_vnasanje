@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import math
+import os
 import re
 from decimal import Decimal
 from wsm.parsing.money import detect_round_step
@@ -23,6 +24,9 @@ from tkinter import ttk, messagebox
 
 # Logger setup
 log = logging.getLogger(__name__)
+
+# Threshold for price change warnings in percent
+PRICE_DIFF_THRESHOLD = Decimal(os.getenv("WSM_PRICE_WARN_PCT", "5"))
 
 
 # Helper functions
@@ -49,6 +53,35 @@ _rx_mass = re.compile(
 def _dec(x: str) -> Decimal:
     """Convert a comma-separated string to ``Decimal``."""
     return Decimal(x.replace(",", "."))
+
+
+def _apply_price_warning(
+    tree: ttk.Treeview,
+    item_id: str,
+    new_price: Decimal | float | int,
+    prev_price: Decimal | None,
+    *,
+    threshold: Decimal = PRICE_DIFF_THRESHOLD,
+) -> str | None:
+    """Apply tag if price difference exceeds ``threshold`` percent.
+
+    Returns the tooltip text or ``None`` when no warning is needed.
+    """
+    if prev_price is None or prev_price == 0:
+        tree.item(item_id, tags=())
+        return None
+
+    new_val = Decimal(str(new_price))
+    diff_pct = ((new_val - prev_price) / prev_price * Decimal("100")).quantize(
+        Decimal("0.01")
+    )
+
+    if abs(diff_pct) > threshold:
+        tree.item(item_id, tags=("price_warn",))
+        return f"Prejšnja cena: {_fmt(prev_price)} ({_fmt(diff_pct)} %)"
+
+    tree.item(item_id, tags=())
+    return None
 
 
 def _norm_unit(
@@ -832,6 +865,7 @@ def review_links(
         "Dobavitelj",
     ]
     tree = ttk.Treeview(frame, columns=cols, show="headings", height=27)
+    tree.tag_configure("price_warn", background="orange")
     vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
     tree.configure(yscrollcommand=vsb.set)
     vsb.pack(side="right", fill="y")
@@ -1150,6 +1184,39 @@ def review_links(
         cb.focus_set()
         return "break"
 
+    price_tip: tk.Toplevel | None = None
+    last_warn_item: str | None = None
+
+    def _hide_tooltip(_=None):
+        nonlocal price_tip, last_warn_item
+        if price_tip is not None:
+            price_tip.destroy()
+            price_tip = None
+        if last_warn_item is not None:
+            tree.item(last_warn_item, tags=())
+            last_warn_item = None
+
+    def _show_tooltip(item_id: str, text: str | None) -> None:
+        nonlocal price_tip, last_warn_item
+        _hide_tooltip()
+        if not text:
+            return
+        bbox = tree.bbox(item_id)
+        if not bbox:
+            return
+        x, y, w, h = bbox
+        price_tip = tk.Toplevel(root)
+        price_tip.wm_overrideredirect(True)
+        tk.Label(
+            price_tip,
+            text=text,
+            background="#ffe6b3",
+            relief="solid",
+            borderwidth=1,
+        ).pack()
+        price_tip.geometry(f"+{tree.winfo_rootx()+x+w}+{tree.winfo_rooty()+y}")
+        last_warn_item = item_id
+
     def _confirm(_=None):
         sel_i = tree.focus()
         if not sel_i:
@@ -1167,6 +1234,24 @@ def review_links(
             or df.at[idx, "sifra_dobavitelja"] == ""
         ):
             log.warning("Prazna sifra_dobavitelja pri vnosu vrstice")
+        label = f"{df.at[idx, 'sifra_dobavitelja']} - {df.at[idx, 'naziv']}"
+        try:
+            from wsm.utils import load_last_price
+
+            prev_price = load_last_price(label, suppliers_file)
+        except Exception as exc:  # pragma: no cover - robust against IO errors
+            log.warning("Napaka pri branju zadnje cene: %s", exc)
+            prev_price = None
+
+        tooltip = _apply_price_warning(
+            tree,
+            sel_i,
+            df.at[idx, "cena_po_rabatu"],
+            prev_price,
+        )
+
+        _show_tooltip(sel_i, tooltip)
+
         new_vals = [
             (
                 _fmt(df.at[idx, c])
@@ -1236,6 +1321,7 @@ def review_links(
     tree.bind("<Up>", _tree_nav_up)
     tree.bind("<Down>", _tree_nav_down)
     tree.bind("<Double-Button-1>", _edit_unit)
+    tree.bind("<<TreeviewSelect>>", _hide_tooltip)
 
     # Vezave za entry in lb
     entry.bind("<KeyRelease>", _suggest)
