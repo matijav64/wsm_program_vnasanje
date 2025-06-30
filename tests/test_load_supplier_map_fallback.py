@@ -1,6 +1,6 @@
 
 from pathlib import Path
-from wsm.ui.review_links import _load_supplier_map
+from wsm.ui.review.io import _load_supplier_map
 from wsm.utils import sanitize_folder_name
 
 

@@ -99,7 +99,7 @@ def analyze(invoice, suppliers):
 def review(invoice, wsm_codes, suppliers, keywords):
     """Odpri GUI za ročno povezovanje WSM šifer."""
     try:
-        from wsm.ui.review_links import review_links
+        from wsm.ui.review.gui import review_links
     except ImportError as ie:
         click.echo(f"[NAPAKA] Ne morem uvoziti funkcije review_links: {ie}")
         return

@@ -4,7 +4,7 @@ from decimal import Decimal
 import pandas as pd
 
 from wsm.parsing.eslog import parse_eslog_invoice
-from wsm.ui.review_links import _norm_unit
+from wsm.ui.review.helpers import _norm_unit
 from wsm.supplier_store import load_suppliers as _load_supplier_map
 from wsm.parsing.eslog import extract_header_net
 from wsm.parsing.money import detect_round_step, round_to_step

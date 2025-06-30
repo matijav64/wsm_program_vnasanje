@@ -3,7 +3,7 @@ import pandas as pd
 import inspect
 import textwrap
 
-import wsm.ui.review_links as rl
+import wsm.ui.review as rl
 from wsm.utils import last_price_stats, load_last_price
 
 
