@@ -387,16 +387,34 @@ def log_price_history(
     history_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Ustvari ključ iz sifra_dobavitelja in naziv
-    df_hist = df[["sifra_dobavitelja", "naziv", "cena_bruto"]].copy()
+    df_hist = df[
+        [
+            "sifra_dobavitelja",
+            "naziv",
+            "cena_netto",
+            "kolicina_norm",
+            "enota_norm",
+        ]
+    ].copy()
     df_hist["key"] = df_hist["sifra_dobavitelja"].astype(str) + "_" + df_hist["naziv"].str.replace(r"[^\w\s]", "_", regex=True)
     df_hist.rename(
         columns={
             "sifra_dobavitelja": "code",
             "naziv": "name",
-            "cena_bruto": "cena",
+            "cena_netto": "line_netto",
         },
         inplace=True,
     )
+    df_hist["unit_price"] = df_hist.apply(
+        lambda r: (
+            Decimal(str(r["line_netto"]))
+            / Decimal(str(r["kolicina_norm"]))
+            if r["enota_norm"] in ("kg", "L") and r["kolicina_norm"]
+            else pd.NA
+        ),
+        axis=1,
+    )
+    df_hist.drop(columns=["kolicina_norm"], inplace=True)
     df_hist["time"] = pd.Timestamp.now()
     df_hist["service_date"] = service_date
     df_hist["invoice_id"] = invoice_id
@@ -414,6 +432,12 @@ def log_price_history(
                 old["code"] = parts[0]
             if "name" not in old.columns:
                 old["name"] = parts[1].fillna("")
+        if "line_netto" not in old.columns and "cena" in old.columns:
+            old.rename(columns={"cena": "line_netto"}, inplace=True)
+        if "unit_price" not in old.columns:
+            old["unit_price"] = pd.NA
+        if "enota_norm" not in old.columns:
+            old["enota_norm"] = pd.NA
         if "invoice_id" not in old.columns:
             old["invoice_id"] = pd.NA
         if invoice_id is not None:
@@ -428,7 +452,17 @@ def log_price_history(
         .head(max_entries_per_code)
     )
     df_hist = df_hist[
-        ["key", "code", "name", "cena", "time", "service_date", "invoice_id"]
+        [
+            "key",
+            "code",
+            "name",
+            "line_netto",
+            "unit_price",
+            "enota_norm",
+            "time",
+            "service_date",
+            "invoice_id",
+        ]
     ]
     df_hist.to_excel(history_path, index=False)
 
@@ -522,18 +556,27 @@ def load_last_price(label: str, suppliers_dir: Path) -> Decimal | None:
             if "name" not in df.columns:
                 df["name"] = parts[1].fillna("")
 
-        if {"cena", "time"}.difference(df.columns):
+        if "line_netto" not in df.columns and "cena" in df.columns:
+            df.rename(columns={"cena": "line_netto"}, inplace=True)
+        if "unit_price" not in df.columns:
+            df["unit_price"] = pd.NA
+
+        if "time" not in df.columns:
+            continue
+
+        df["price"] = df["unit_price"].fillna(df["line_netto"])
+        if df["price"].isna().all():
             continue
 
         df["label"] = df["code"].astype(str) + " - " + df["name"].astype(str)
-        sub = df[df["label"] == label].dropna(subset=["cena", "time"])
+        sub = df[df["label"] == label].dropna(subset=["price", "time"])
         if sub.empty:
             continue
 
         sub.sort_values("time", inplace=True)
         row = sub.iloc[-1]
         dt = pd.to_datetime(row["time"])
-        price = Decimal(str(row["cena"]))
+        price = Decimal(str(row["price"]))
         if latest_dt is None or dt > latest_dt:
             latest_dt = dt
             latest_price = price

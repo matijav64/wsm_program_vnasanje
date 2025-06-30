@@ -8,7 +8,9 @@ def test_log_price_history_avoids_duplicates(tmp_path, monkeypatch):
     df = pd.DataFrame({
         'sifra_dobavitelja': ['SUP'],
         'naziv': ['Artikel'],
-        'cena_bruto': [Decimal('10')],
+        'cena_netto': [Decimal('10')],
+        'kolicina_norm': [1],
+        'enota_norm': ['kg'],
     })
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(utils, '_load_supplier_map', lambda path: {'SUP': {'ime': 'Test', }})
@@ -18,14 +20,16 @@ def test_log_price_history_avoids_duplicates(tmp_path, monkeypatch):
     hist_path = hist_base.parent / 'Test' / 'price_history.xlsx'
     hist = pd.read_excel(hist_path, dtype=str)
     assert len(hist) == 1
-    assert {'code', 'name', 'cena'}.issubset(set(hist.columns))
+    assert {'code', 'name', 'line_netto', 'unit_price', 'enota_norm'}.issubset(set(hist.columns))
 
 
 def test_log_price_history_folder_vat(tmp_path, monkeypatch):
     df = pd.DataFrame({
         'sifra_dobavitelja': ['SUP'],
         'naziv': ['Artikel'],
-        'cena_bruto': [Decimal('10')],
+        'cena_netto': [Decimal('10')],
+        'kolicina_norm': [2],
+        'enota_norm': ['kg'],
     })
     links_dir = tmp_path / 'links'
     history_file = links_dir / 'SI999' / 'SUP_SI999_povezane.xlsx'
@@ -36,4 +40,4 @@ def test_log_price_history_folder_vat(tmp_path, monkeypatch):
     hist_path = links_dir / 'SI999' / 'price_history.xlsx'
     hist = pd.read_excel(hist_path, dtype=str)
     assert not hist.empty
-    assert {'code', 'name', 'cena'}.issubset(set(hist.columns))
+    assert {'code', 'name', 'line_netto', 'unit_price', 'enota_norm'}.issubset(set(hist.columns))
