@@ -109,8 +109,14 @@ def review_links_qt(
     df["total_net"] = df["vrednost"]
     df["kolicina_norm"], df["enota_norm"] = zip(
         *[
-            _norm_unit(Decimal(str(q)), u, n, vat)
-            for q, u, n, vat in zip(df["kolicina"], df["enota"], df["naziv"], df["ddv_stopnja"])
+            _norm_unit(Decimal(str(q)), u, n, vat, code)
+            for q, u, n, vat, code in zip(
+                df["kolicina"],
+                df["enota"],
+                df["naziv"],
+                df["ddv_stopnja"],
+                df.get("sifra_artikla")
+            )
         ]
     )
     df["kolicina_norm"] = df["kolicina_norm"].astype(float)
