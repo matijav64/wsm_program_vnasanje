@@ -1,6 +1,10 @@
 import json
 import pandas as pd
-from wsm.ui.price_watch import _load_price_histories, clear_price_cache
+from wsm.ui.price_watch import (
+    _load_price_histories,
+    clear_price_cache,
+    PriceWatch,
+)
 
 
 def test_load_price_histories(tmp_path):
@@ -65,4 +69,114 @@ def test_load_price_histories_vat_dir(tmp_path):
     items = _load_price_histories(links)
     assert set(items.keys()) == {"SUP"}
     assert set(items["SUP"].keys()) == {"SUP - ItemA"}
+
+
+def test_show_graph_sets_xticks(monkeypatch):
+    df = pd.DataFrame(
+        {
+            "time": [
+                pd.Timestamp("2023-01-01"),
+                pd.Timestamp("2023-01-02"),
+                pd.Timestamp("2023-01-03"),
+            ],
+            "cena": [1, 2, 3],
+        }
+    )
+
+    import types, sys
+
+    xticks_capture = {}
+
+    class FakeFig:
+        def __init__(self):
+            self.autofmt_called = False
+
+        def autofmt_xdate(self):
+            self.autofmt_called = True
+
+    class FakeAx:
+        def __init__(self):
+            self.xticks = None
+
+        def plot(self, *a, **k):
+            pass
+
+        def set_xlabel(self, *a):
+            pass
+
+        def set_ylabel(self, *a):
+            pass
+
+        def grid(self, *a, **k):
+            pass
+
+        def set_xticks(self, ticks):
+            self.xticks = list(ticks)
+
+        def margins(self, *a, **k):
+            pass
+
+    def fake_subplots(*args, **kwargs):
+        fig = FakeFig()
+        ax = FakeAx()
+        xticks_capture["fig"] = fig
+        xticks_capture["ax"] = ax
+        return fig, ax
+
+    class FakeCanvas:
+        def __init__(self, fig, master=None):
+            pass
+
+        def draw(self):
+            pass
+
+        def get_tk_widget(self):
+            class W:
+                def pack(self, *a, **k):
+                    pass
+
+            return W()
+
+    fake_plt = types.SimpleNamespace(subplots=fake_subplots)
+    fake_backend = types.SimpleNamespace(FigureCanvasTkAgg=FakeCanvas)
+    fake_backends = types.SimpleNamespace(**{"backend_tkagg": fake_backend})
+    fake_matplotlib = types.ModuleType("matplotlib")
+    fake_matplotlib.pyplot = fake_plt
+    fake_matplotlib.backends = fake_backends
+    monkeypatch.setitem(sys.modules, "matplotlib", fake_matplotlib)
+    monkeypatch.setitem(sys.modules, "matplotlib.pyplot", fake_plt)
+    monkeypatch.setitem(sys.modules, "matplotlib.backends", fake_backends)
+    monkeypatch.setitem(sys.modules, "matplotlib.backends.backend_tkagg", fake_backend)
+
+    class FakeTop:
+        def __init__(self, master=None):
+            pass
+
+        def title(self, t):
+            pass
+
+        def bind(self, *a, **k):
+            pass
+
+        def destroy(self):
+            pass
+
+    class FakeButton:
+        def __init__(self, master, text=None, command=None):
+            pass
+
+        def pack(self, *a, **k):
+            pass
+
+    monkeypatch.setattr("wsm.ui.price_watch.tk.Toplevel", FakeTop)
+    monkeypatch.setattr("wsm.ui.price_watch.ttk.Button", FakeButton)
+    monkeypatch.setattr("wsm.ui.price_watch.tk.BOTH", "both", raising=False)
+    monkeypatch.setattr("wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None)
+
+    pw = PriceWatch.__new__(PriceWatch)
+    pw._show_graph("Item", df)
+
+    expected_ticks = pd.to_datetime(df["time"]).tolist()
+    assert xticks_capture["ax"].xticks == expected_ticks
+    assert xticks_capture["fig"].autofmt_called
 

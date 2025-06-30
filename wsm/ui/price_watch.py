@@ -218,9 +218,14 @@ class PriceWatch(tk.Tk):
 
         fig, ax = plt.subplots(figsize=(5, 3))
         ax.plot(pd.to_datetime(df["time"]), df["cena"].astype(float), marker="o")
+        # Ensure each timestamp appears on the x-axis for clarity
+        ax.set_xticks(pd.to_datetime(df["time"]))
+        fig.autofmt_xdate()
         ax.set_xlabel("Datum")
         ax.set_ylabel("Cena")
         ax.grid(True)
+        # Add a little horizontal padding so points at the edges are visible
+        ax.margins(x=0.05)
 
         canvas = FigureCanvasTkAgg(fig, master=top)
         canvas.draw()
