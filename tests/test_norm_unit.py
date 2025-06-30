@@ -14,10 +14,16 @@ def test_norm_unit_mg_in_name_with_kos():
     assert q == Decimal('0.00025')
 
 
-def test_norm_unit_vat_fallback():
+def test_norm_unit_vat_fraction_to_liter():
     q, unit = _norm_unit(Decimal('36'), 'H87', 'KREMA rast. za kuhanje  1/1', Decimal('9.5'), None)
-    assert unit == 'kos'
+    assert unit == 'L'
     assert q == Decimal('36')
+
+
+def test_norm_unit_vat_default_kg():
+    q, unit = _norm_unit(Decimal('2'), 'H87', 'Artikel brez mere', Decimal('9.5'), None)
+    assert unit == 'kg'
+    assert q == Decimal('2')
 
 
 def test_norm_unit_weight_table():
