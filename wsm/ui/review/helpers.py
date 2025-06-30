@@ -35,6 +35,7 @@ _rx_mass = re.compile(
     r"(?:teža|masa|weight)?\s*[:\s]?\s*([0-9]+[\.,]?[0-9]*)\s*((?:kgm?)|kgr|g|gr|gram|grams|mg|milligram|milligrams)\b",
     re.I,
 )
+_rx_fraction = re.compile(r"(\d+(?:[.,]\d+)?)/1\b", re.I)
 
 
 def _dec(x: str) -> Decimal:
@@ -164,6 +165,21 @@ def _norm_unit(
                     f"Teža iz tabele WEIGHTS_PER_PIECE: {code} {clean_name} -> {weight} kg"
                 )
                 return q_norm * weight, "kg"
+    try:
+        vat = Decimal(str(vat_rate)) if vat_rate is not None else Decimal("0")
+    except Exception:
+        vat = Decimal("0")
+
+    if base_unit == "kos" and vat == Decimal("9.5"):
+        m_frac = _rx_fraction.search(name)
+        if m_frac:
+            val = _dec(m_frac.group(1))
+            log.debug(
+                f"Fractional volume detected: {val}/1 -> using {val} L"
+            )
+            return q_norm * val, "L"
+        log.debug("VAT rate 9.5% detected -> using 'kg' as fallback unit")
+        base_unit = "kg"
 
     log.debug(f"Končna normalizacija: q_norm={q_norm}, base_unit={base_unit}")
     return q_norm, base_unit
