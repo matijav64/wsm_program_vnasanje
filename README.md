@@ -123,6 +123,10 @@ stalno maso pakiranja, jo dodajte v ta slovar.
    "Zadnji datum", "Min" in "Max". Po posameznem stolpcu lahko razvrstite
    s klikom na glavo.
    Dvojni klik na vrstico odpre graf gibanja cen iz `price_history.xlsx`.
+   Zgodovina se beleži v **neto** vrednostih brez DDV. Pri artiklih, kjer je
+   enota `kg` ali `L`, se cena shrani tudi kot cena na kilogram oziroma liter
+   in je prikazana v stolpcu "€/kg|€/L". Graf pri dvokliku uporabi to
+   vrednost, če je na voljo.
 
 7. Analizo in združevanje postavk lahko izvedete z:
    ```bash
