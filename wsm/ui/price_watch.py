@@ -51,10 +51,13 @@ def _load_price_histories(suppliers_dir: Path | str) -> dict[str, dict[str, pd.D
         df["unit_price"] = pd.to_numeric(df.get("unit_price"), errors="coerce")
         df["cena"] = df["unit_price"].fillna(df["line_netto"])
 
-        # Convert time to datetime and drop rows that fail conversion
-        if "time" in df.columns:
+        # Use service_date when available for the timeline
+        if "service_date" in df.columns:
+            df["service_date"] = pd.to_datetime(df["service_date"], errors="coerce")
+            df["time"] = df["service_date"].combine_first(pd.to_datetime(df.get("time"), errors="coerce"))
+        elif "time" in df.columns:
             df["time"] = pd.to_datetime(df["time"], errors="coerce")
-            df = df.dropna(subset=["time"])
+        df = df.dropna(subset=["time"])
 
         df["label"] = df["code"].astype(str) + " - " + df["name"].astype(str)
         for label in df["label"].unique():

@@ -415,7 +415,14 @@ def log_price_history(
         axis=1,
     )
     df_hist.drop(columns=["kolicina_norm"], inplace=True)
-    df_hist["time"] = pd.Timestamp.now()
+    if service_date:
+        try:
+            dt = pd.to_datetime(service_date)
+        except Exception:
+            dt = pd.Timestamp.now()
+        df_hist["time"] = dt
+    else:
+        df_hist["time"] = pd.Timestamp.now()
     df_hist["service_date"] = service_date
     df_hist["invoice_id"] = invoice_id
 
