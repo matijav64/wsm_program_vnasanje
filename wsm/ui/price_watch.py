@@ -59,11 +59,11 @@ def clear_price_cache() -> None:
     _load_price_histories.cache_clear()
 
 
-class PriceWatch(tk.Tk):
+class PriceWatch(tk.Toplevel):
     """Window for browsing historic prices."""
 
-    def __init__(self, suppliers: Path | str | None = None) -> None:
-        super().__init__()
+    def __init__(self, master: tk.Misc | None = None, suppliers: Path | str | None = None) -> None:
+        super().__init__(master)
         self.title("Spremljanje cen")
         self.geometry("600x400")
 
@@ -244,8 +244,8 @@ class PriceWatch(tk.Tk):
         top.bind("<Escape>", lambda e: top.destroy())
 
 
-def launch_price_watch(suppliers: Path | str | None = None) -> None:
+def launch_price_watch(master: tk.Misc, suppliers: Path | str | None = None) -> None:
     """Launch the price watch window."""
 
-    PriceWatch(suppliers).mainloop()
+    PriceWatch(master, suppliers).mainloop()
 

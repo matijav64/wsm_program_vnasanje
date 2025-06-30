@@ -23,7 +23,7 @@ def launch_main_menu() -> None:
 
     def _watch_prices() -> None:
         root.withdraw()
-        launch_price_watch()
+        launch_price_watch(root)
         root.deiconify()
 
     btn_invoice = tk.Button(root, text="Vnesi račun", width=20, command=_enter_invoice)
