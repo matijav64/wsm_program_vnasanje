@@ -95,7 +95,7 @@ class DummyListbox:
         pass
 
 
-def _extract_confirm():
+def _extract_confirm(threshold=Decimal("5")):
     src = inspect.getsource(rl.review_links).splitlines()
     start = next(i for i, l in enumerate(src) if "def _confirm" in l)
     end = next(i for i, l in enumerate(src[start:], start) if l.strip().startswith("def _clear"))
@@ -107,6 +107,7 @@ def _extract_confirm():
         "_show_tooltip": lambda *a, **k: None,
         "_fmt": rl._fmt,
         "log": rl.log,
+        "price_warn_threshold": threshold,
     }
     exec(snippet, ns)
     return ns["_confirm"], ns
@@ -157,4 +158,51 @@ def test_confirm_applies_price_warning(monkeypatch, tmp_path):
     monkeypatch.setattr("wsm.utils.load_last_price", lambda *a, **k: Decimal("10"))
     _confirm()
     assert ns["tree"].tags.get("0") == ("price_warn",)
+
+
+def test_confirm_respects_threshold(monkeypatch, tmp_path):
+    _confirm, ns = _extract_confirm(threshold=Decimal("20"))
+    df = pd.DataFrame(
+        {
+            "naziv": ["Item"],
+            "sifra_dobavitelja": ["SUP"],
+            "cena_po_rabatu": [Decimal("11")],
+            "kolicina_norm": [1],
+            "enota_norm": ["kg"],
+            "rabata_pct": [0],
+            "cena_pred_rabatom": [10],
+            "total_net": [11],
+            "wsm_naziv": [pd.NA],
+            "dobavitelj": [pd.NA],
+            "wsm_sifra": [pd.NA],
+            "status": [pd.NA],
+        }
+    )
+    ns.update(
+        {
+            "tree": DummyTree(),
+            "entry": DummyEntry("X"),
+            "lb": DummyListbox(),
+            "df": df,
+            "n2s": {"X": "X1"},
+            "supplier_name": "Test",
+            "suppliers_file": tmp_path,
+            "cols": [
+                "naziv",
+                "kolicina_norm",
+                "enota_norm",
+                "rabata_pct",
+                "cena_pred_rabatom",
+                "cena_po_rabatu",
+                "total_net",
+                "wsm_naziv",
+                "dobavitelj",
+            ],
+            "_update_summary": lambda: None,
+            "_update_totals": lambda: None,
+        }
+    )
+    monkeypatch.setattr("wsm.utils.load_last_price", lambda *a, **k: Decimal("10"))
+    _confirm()
+    assert ns["tree"].tags.get("0") == ()
 

@@ -96,7 +96,13 @@ def analyze(invoice, suppliers):
     default=None,
     help="Pot do kljucne_besede_wsm_kode.xlsx",
 )
-def review(invoice, wsm_codes, suppliers, keywords):
+@click.option(
+    "--price-warn-pct",
+    type=float,
+    default=None,
+    help="Prag za opozorilo pri spremembi cene (v odstotkih)",
+)
+def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct):
     """Odpri GUI za ročno povezovanje WSM šifer."""
     try:
         from wsm.ui.review.gui import review_links
@@ -180,7 +186,14 @@ def review(invoice, wsm_codes, suppliers, keywords):
         click.echo(f"[NAPAKA] Samodejno povezovanje ni uspelo: {exc}")
 
     try:
-        review_links(df, wsm_df, links_file, total, Path(invoice))
+        review_links(
+            df,
+            wsm_df,
+            links_file,
+            total,
+            Path(invoice),
+            price_warn_pct,
+        )
     except Exception as e:
         click.echo(f"[NAPAKA GUI] {e}")
 
