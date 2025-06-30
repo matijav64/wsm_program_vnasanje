@@ -132,13 +132,18 @@ stalno maso pakiranja, jo dodajte v ta slovar.
 
 ### Poganjanje testov
 
-Za poganjanje avtomatiziranih testov morate namestiti dodatne odvisnosti iz
-datoteke `requirements-dev.txt` in nato zagnati `pytest`:
+Pri poganjanju testov se naložijo tudi moduli, ki niso del samega paketa.
+Zato je treba namestiti razvojne odvisnosti, sicer lahko `pytest` med
+zbiranjem testov javi napake. Med pomembnejšimi paketih so
+`pandas`, `openpyxl`, `pdfplumber`, `pytest`, `pytest-cov` in `matplotlib`.
+Najlažje jih dodate z namestitvijo datoteke `requirements-dev.txt`:
 
 ```bash
 pip install -r requirements-dev.txt
 pytest
 ```
+
+Brez teh paketov se testi ne bodo pravilno zagnali.
 
 ## Možne izboljšave
 
