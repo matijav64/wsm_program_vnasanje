@@ -12,6 +12,9 @@ name = "wsm"
 version = "0.1.0"
 dependencies = ["pandas", "pdfplumber", "openpyxl"]
 
+[project.optional-dependencies]
+pyqt = ["PyQt5>=5.15"]
+
 [project.scripts]
 wsm = "wsm.cli:main"
 wsm-gui = "wsm.run:main"

@@ -102,12 +102,21 @@ def analyze(invoice, suppliers):
     default=None,
     help="Prag za opozorilo pri spremembi cene (v odstotkih)",
 )
-def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct):
+@click.option(
+    "--use-pyqt",
+    is_flag=True,
+    default=False,
+    help="Uporabi PyQt GUI namesto Tkinterja, če je na voljo",
+)
+def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct, use_pyqt):
     """Odpri GUI za ročno povezovanje WSM šifer."""
     try:
-        from wsm.ui.review.gui import review_links
+        if use_pyqt:
+            from wsm.ui_qt.review_links_qt import review_links_qt as review_links
+        else:
+            from wsm.ui.review.gui import review_links
     except ImportError as ie:
-        click.echo(f"[NAPAKA] Ne morem uvoziti funkcije review_links: {ie}")
+        click.echo(f"[NAPAKA] Ne morem uvoziti GUI-ja: {ie}")
         return
 
     invoice_path = Path(invoice)
