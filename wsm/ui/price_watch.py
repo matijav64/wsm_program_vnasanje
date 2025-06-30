@@ -41,6 +41,12 @@ def _load_price_histories(suppliers_dir: Path | str) -> dict[str, dict[str, pd.D
                 df["code"] = parts[0]
             if "name" not in df.columns:
                 df["name"] = parts[1].fillna("")
+
+        # Convert time to datetime and drop rows that fail conversion
+        if "time" in df.columns:
+            df["time"] = pd.to_datetime(df["time"], errors="coerce")
+            df = df.dropna(subset=["time"])
+
         df["label"] = df["code"].astype(str) + " - " + df["name"].astype(str)
         for label in df["label"].unique():
             sub = df[df["label"] == label].sort_values("time")
