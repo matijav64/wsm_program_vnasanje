@@ -10,7 +10,7 @@ exclude = ["wsm_vector_embedding*", "tests*"]
 [project]
 name = "wsm"
 version = "0.1.0"
-dependencies = ["pandas", "pdfplumber", "openpyxl"]
+dependencies = ["pandas", "pdfplumber", "openpyxl", "click"]
 
 [project.optional-dependencies]
 pyqt = ["PyQt5>=5.15"]
