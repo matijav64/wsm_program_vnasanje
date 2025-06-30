@@ -60,7 +60,8 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    ```bash
    python -m wsm.cli review <invoice.xml>
    ```
-  (po želji dodajte `--wsm-codes pot/do/sifre_wsm.xlsx`)
+  (po želji dodajte `--wsm-codes pot/do/sifre_wsm.xlsx` ali
+  `--price-warn-pct <odstotek>`)
    Program odpre grafični vmesnik, kjer povezave shranjujete v podmapo
   `links/<davcna_stevilka>/` (oziroma `links/<ime_dobavitelja>`,
   če davčna številka ni znana). Posodobljene tabele najdete v datotekah
@@ -82,6 +83,7 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
   (privzeto 5&nbsp;% oz. vrednost spremenljivke `WSM_PRICE_WARN_PCT`), se
   vrstica obarva oranžno in prikaže se namig z zadnjo ceno ter razliko v
   odstotkih.
+  Parameter `--price-warn-pct` omogoča začasno nastavitev drugega praga.
 
 
 

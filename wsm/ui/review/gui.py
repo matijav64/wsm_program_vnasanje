@@ -62,6 +62,7 @@ def review_links(
     links_file: Path,
     invoice_total: Decimal,
     invoice_path: Path | None = None,
+    price_warn_pct: float | int | Decimal | None = None,
 ) -> pd.DataFrame:
     """Interactively map supplier invoice rows to WSM items.
 
@@ -78,6 +79,9 @@ def review_links(
     invoice_path : pathlib.Path, optional
         Path to the invoice document from which additional metadata (date,
         invoice number, supplier name) may be extracted.
+    price_warn_pct : float | int | Decimal, optional
+        Threshold for price change warnings expressed in percent. When not
+        provided, the value of ``PRICE_DIFF_THRESHOLD`` is used.
 
     Returns
     -------
@@ -86,6 +90,11 @@ def review_links(
         rows.
     """
     df = df.copy()
+    price_warn_threshold = (
+        Decimal(str(price_warn_pct))
+        if price_warn_pct is not None
+        else PRICE_DIFF_THRESHOLD
+    )
     supplier_code = links_file.stem.split("_")[0]
     suppliers_file = links_file.parent.parent
     log.debug(f"Pot do mape links: {suppliers_file}")
@@ -808,6 +817,7 @@ def review_links(
             sel_i,
             df.at[idx, "cena_po_rabatu"],
             prev_price,
+            threshold=price_warn_threshold,
         )
 
         _show_tooltip(sel_i, tooltip)
