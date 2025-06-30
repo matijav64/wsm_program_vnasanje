@@ -37,6 +37,29 @@ def test_load_price_histories(tmp_path):
     assert set(items["S2"].keys()) == {"S2 - ItemB"}
 
 
+def test_load_price_histories_non_datetime(tmp_path):
+    clear_price_cache()
+    links = tmp_path / "links"
+    s1 = links / "Sup1"
+    s1.mkdir(parents=True)
+
+    (s1 / "supplier.json").write_text(json.dumps({"sifra": "S1", "ime": "Sup1"}))
+
+    df = pd.DataFrame(
+        {
+            "key": ["S1_ItemA", "S1_ItemA"],
+            "cena": [1, 2],
+            "time": [pd.Timestamp("2023-01-01"), "not-a-date"],
+        }
+    )
+    df.to_excel(s1 / "price_history.xlsx", index=False)
+
+    items = _load_price_histories(links)
+    item_df = items["S1"]["S1 - ItemA"]
+    assert len(item_df) == 1
+    assert item_df["time"].iloc[0] == pd.Timestamp("2023-01-01")
+
+
 def test_load_price_histories_missing_file(tmp_path):
     clear_price_cache()
     links = tmp_path / "links"
