@@ -9,6 +9,7 @@ def test_log_price_history_avoids_duplicates(tmp_path, monkeypatch):
         'sifra_dobavitelja': ['SUP'],
         'naziv': ['Artikel'],
         'cena_netto': [Decimal('10')],
+        'total_net': [Decimal('10')],
         'kolicina_norm': [1],
         'enota_norm': ['kg'],
     })
@@ -28,6 +29,7 @@ def test_log_price_history_folder_vat(tmp_path, monkeypatch):
         'sifra_dobavitelja': ['SUP'],
         'naziv': ['Artikel'],
         'cena_netto': [Decimal('10')],
+        'total_net': [Decimal('20')],
         'kolicina_norm': [2],
         'enota_norm': ['kg'],
     })
