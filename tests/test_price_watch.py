@@ -1,9 +1,10 @@
 import json
 import pandas as pd
-from wsm.ui.price_watch import _load_price_histories
+from wsm.ui.price_watch import _load_price_histories, clear_price_cache
 
 
 def test_load_price_histories(tmp_path):
+    clear_price_cache()
     links = tmp_path / "links"
     s1 = links / "Sup1"
     s2 = links / "Sup2"
@@ -33,6 +34,7 @@ def test_load_price_histories(tmp_path):
 
 
 def test_load_price_histories_missing_file(tmp_path):
+    clear_price_cache()
     links = tmp_path / "links"
     s1 = links / "Sup1"
     s1.mkdir(parents=True)
@@ -43,6 +45,7 @@ def test_load_price_histories_missing_file(tmp_path):
 
 
 def test_load_price_histories_vat_dir(tmp_path):
+    clear_price_cache()
     links = tmp_path / "links"
     sup = links / "SI123"
     sup.mkdir(parents=True)

@@ -5,14 +5,17 @@ import json
 import logging
 import shutil
 import pandas as pd
+from functools import lru_cache
 
 from .utils import sanitize_folder_name
 
 log = logging.getLogger(__name__)
 
 
-def load_suppliers(sup_file: Path) -> dict[str, dict]:
+@lru_cache(maxsize=None)
+def load_suppliers(sup_file: Path | str) -> dict[str, dict]:
     """Load supplier info from per-supplier JSON files or a legacy Excel."""
+    sup_file = Path(sup_file).resolve()
     log.debug("Branje datoteke ali mape dobaviteljev: %s", sup_file)
     sup_map: dict[str, dict] = {}
 
@@ -155,5 +158,10 @@ def save_supplier(sup_map: dict, sup_file: Path) -> None:
             log.debug("Zapisano %s", info_path)
         except Exception as exc:
             log.error("Napaka pri zapisu %s: %s", info_path, exc)
+
+
+def clear_supplier_cache() -> None:
+    """Clear the cached supplier map."""
+    load_suppliers.cache_clear()
 
 

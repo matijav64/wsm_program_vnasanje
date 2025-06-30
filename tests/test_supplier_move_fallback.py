@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from wsm.ui.review_links import _save_and_close
-from wsm.supplier_store import load_suppliers
+from wsm.supplier_store import load_suppliers, clear_supplier_cache
 
 
 class DummyRoot:
@@ -62,6 +62,8 @@ def test_supplier_move_fallback(tmp_path, monkeypatch):
         base_dir,
         vat="SI111",
     )
+
+    clear_supplier_cache()
 
     assert new_dir.exists()
     assert not old_dir.exists()
