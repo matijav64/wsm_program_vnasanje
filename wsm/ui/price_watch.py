@@ -47,6 +47,8 @@ def _load_price_histories(suppliers_dir: Path | str) -> dict[str, dict[str, pd.D
             df["unit_price"] = pd.NA
         if "enota_norm" not in df.columns:
             df["enota_norm"] = pd.NA
+        df["line_netto"] = pd.to_numeric(df.get("line_netto"), errors="coerce")
+        df["unit_price"] = pd.to_numeric(df.get("unit_price"), errors="coerce")
         df["cena"] = df["unit_price"].fillna(df["line_netto"])
 
         # Convert time to datetime and drop rows that fail conversion
@@ -124,18 +126,19 @@ class PriceWatch(tk.Toplevel):
         entry.pack(pady=5, fill=tk.X)
         entry.bind("<KeyRelease>", lambda e: self._refresh_table())
 
-        columns = ("label", "last_price", "last_dt", "min", "max")
+        columns = ("label", "line_netto", "unit_price", "last_dt", "min", "max")
         self.tree = ttk.Treeview(self, columns=columns, show="headings")
         headings = {
             "label": "Artikel",
-            "last_price": "Zadnja cena",
+            "line_netto": "Neto cena",
+            "unit_price": "€/kg|€/L",
             "last_dt": "Zadnji datum",
             "min": "Min",
             "max": "Max",
         }
         for col in columns:
             self.tree.heading(col, text=headings[col], command=lambda c=col: self._sort_by(c))
-            width = 220 if col == "label" else 80
+            width = 220 if col == "label" else 90
             anchor = tk.W if col == "label" else tk.E
             self.tree.column(col, width=width, anchor=anchor)
 
@@ -174,14 +177,30 @@ class PriceWatch(tk.Toplevel):
         for label, df in items.items():
             if query and query not in label.lower():
                 continue
-            prices = df["cena"].astype(float)
+
+            line_prices = pd.to_numeric(df.get("line_netto"), errors="coerce")
+            unit_prices = pd.to_numeric(df.get("unit_price"), errors="coerce")
+
+            last_line = line_prices.dropna()
+            last_unit = unit_prices.dropna()
+
+            stats_series = unit_prices.dropna()
+            if stats_series.empty:
+                stats_series = line_prices.dropna()
+
+            if stats_series.empty:
+                continue
+
+            last_idx = stats_series.index[-1]
+
             rows.append(
                 {
                     "label": label,
-                    "last_price": float(prices.iloc[-1]),
-                    "last_dt": pd.to_datetime(df["time"].iloc[-1]),
-                    "min": float(prices.min()),
-                    "max": float(prices.max()),
+                    "line_netto": float(last_line.iloc[-1]) if not last_line.empty else None,
+                    "unit_price": float(last_unit.iloc[-1]) if not last_unit.empty else None,
+                    "last_dt": pd.to_datetime(df["time"].iloc[last_idx]),
+                    "min": float(stats_series.min()),
+                    "max": float(stats_series.max()),
                     "df": df,
                 }
             )
@@ -189,14 +208,18 @@ class PriceWatch(tk.Toplevel):
             messagebox.showinfo("Ni podatkov", "Ni zadetkov za izbrane filtre.")
             return
         if self._sort_col:
-            rows.sort(key=lambda r: r[self._sort_col], reverse=self._sort_reverse)
+            rows.sort(
+                key=lambda r: (r[self._sort_col] is None, r[self._sort_col]),
+                reverse=self._sort_reverse,
+            )
         for r in rows:
             self.tree.insert(
                 "",
                 "end",
                 values=(
                     r["label"],
-                    f"{r['last_price']}",
+                    "" if r["line_netto"] is None else f"{r['line_netto']}",
+                    "" if r["unit_price"] is None else f"{r['unit_price']}",
                     r["last_dt"].strftime("%Y-%m-%d"),
                     f"{r['min']}",
                     f"{r['max']}",
@@ -233,7 +256,12 @@ class PriceWatch(tk.Toplevel):
         top.title(label)
 
         fig, ax = plt.subplots(figsize=(5, 3))
-        ax.plot(pd.to_datetime(df["time"]), df["cena"].astype(float), marker="o")
+        unit_series = pd.to_numeric(df.get("unit_price"), errors="coerce")
+        if unit_series.notna().any():
+            price_series = unit_series
+        else:
+            price_series = pd.to_numeric(df.get("line_netto"), errors="coerce")
+        ax.plot(pd.to_datetime(df["time"]), price_series, marker="o")
         # Ensure each timestamp appears on the x-axis for clarity
         ax.set_xticks(pd.to_datetime(df["time"]))
         fig.autofmt_xdate()

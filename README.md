@@ -119,8 +119,9 @@ stalno maso pakiranja, jo dodajte v ta slovar.
 
    V zgornjem delu okna je iskalnik za hitro filtriranje dobaviteljev. Spodaj
    se nahaja dodatno polje za iskanje po nazivih artiklov. Rezultati so
-   prikazani v tabeli s stolpci "Artikel", "Zadnja cena", "Zadnji datum",
-   "Min" in "Max". Po posameznem stolpcu lahko razvrstite s klikom na glavo.
+   prikazani v tabeli s stolpci "Artikel", "Neto cena", "€/kg|€/L",
+   "Zadnji datum", "Min" in "Max". Po posameznem stolpcu lahko razvrstite
+   s klikom na glavo.
    Dvojni klik na vrstico odpre graf gibanja cen iz `price_history.xlsx`.
 
 7. Analizo in združevanje postavk lahko izvedete z:
