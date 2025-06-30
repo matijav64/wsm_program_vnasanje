@@ -203,3 +203,47 @@ def test_show_graph_sets_xticks(monkeypatch):
     assert xticks_capture["ax"].xticks == expected_ticks
     assert xticks_capture["fig"].autofmt_called
 
+
+def test_refresh_table_empty(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "wsm.ui.price_watch.messagebox.showinfo",
+        lambda *a, **k: calls.append(a),
+    )
+
+    class DummyVar:
+        def __init__(self, value=""):
+            self.val = value
+
+        def get(self):
+            return self.val
+
+    class DummyTree:
+        def __init__(self):
+            self.inserted = []
+
+        def get_children(self):
+            return []
+
+        def delete(self, *a):
+            pass
+
+        def insert(self, parent, index, values):
+            self.inserted.append(values)
+
+    df = pd.DataFrame({"cena": [1], "time": [pd.Timestamp("2023-01-01")]})
+
+    pw = PriceWatch.__new__(PriceWatch)
+    pw.tree = DummyTree()
+    pw.supplier_codes = {"S1 - Sup": "S1"}
+    pw.sup_var = DummyVar("S1 - Sup")
+    pw.search_var = DummyVar("missing")
+    pw.items_by_supplier = {"S1": {"Item": df}}
+    pw._sort_col = None
+    pw._sort_reverse = False
+
+    pw._refresh_table()
+
+    assert calls and calls[0][0] == "Ni podatkov"
+    assert pw.tree.inserted == []
+
