@@ -30,6 +30,10 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    pip install -r requirements.txt
    ```
    Med glavnimi odvisnostmi so `pandas`, `pdfplumber` in `openpyxl`.
+   Za PyQt različico GUI lahko namestite tudi `PyQt5` preko
+   ```bash
+   pip install 'wsm[pyqt]'
+   ```
    Za razvoj in poganjanje testov namestite tudi dodatne odvisnosti:
    ```bash
    pip install -r requirements-dev.txt
@@ -60,8 +64,8 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    ```bash
    python -m wsm.cli review <invoice.xml>
    ```
-  (po želji dodajte `--wsm-codes pot/do/sifre_wsm.xlsx` ali
-  `--price-warn-pct <odstotek>`)
+  (po želji dodajte `--wsm-codes pot/do/sifre_wsm.xlsx`,
+  `--price-warn-pct <odstotek>` ali `--use-pyqt` za Qt različico)
    Program odpre grafični vmesnik, kjer povezave shranjujete v podmapo
   `links/<davcna_stevilka>/` (oziroma `links/<ime_dobavitelja>`,
   če davčna številka ni znana). Posodobljene tabele najdete v datotekah
