@@ -7,6 +7,8 @@ import re
 from decimal import Decimal
 from typing import Tuple
 
+from wsm.constants import WEIGHTS_PER_PIECE
+
 import pandas as pd
 
 log = logging.getLogger(__name__)
@@ -45,6 +47,7 @@ def _norm_unit(
     u: str,
     name: str,
     vat_rate: Decimal | float | str | None = None,
+    code: str | None = None,
 ) -> Tuple[Decimal, str]:
     """Normalize quantity and unit to (kg / L / ``kos``)."""
     log.debug(f"Normalizacija: q={q}, u={u}, name={name}")
@@ -153,14 +156,14 @@ def _norm_unit(
             else:
                 return q_norm, "kos"
 
-    try:
-        vat = Decimal(str(vat_rate)) if vat_rate is not None else Decimal("0")
-    except Exception:
-        vat = Decimal("0")
-
-    if base_unit == "kos" and vat == Decimal("9.5"):
-        log.debug("VAT rate 9.5% detected -> using 'kg' as fallback unit")
-        base_unit = "kg"
+        clean_name = re.sub(r"\s+", " ", name.strip().lower())
+        if code is not None:
+            weight = WEIGHTS_PER_PIECE.get((str(code), clean_name))
+            if weight:
+                log.debug(
+                    f"Teža iz tabele WEIGHTS_PER_PIECE: {code} {clean_name} -> {weight} kg"
+                )
+                return q_norm * weight, "kg"
 
     log.debug(f"Končna normalizacija: q_norm={q_norm}, base_unit={base_unit}")
     return q_norm, base_unit

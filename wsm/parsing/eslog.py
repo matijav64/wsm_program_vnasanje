@@ -240,10 +240,11 @@ def parse_eslog_invoice(
                 qual = _text(pia.find("./e:C_C212/e:D_7143", NS))
                 code = _text(pia.find("./e:C_C212/e:D_7140", NS))
                 digits = re.sub(r"\D+", "", code)
-                if qual == "SA" and digits:
+                if qual in {"SA", "SRV"} and digits and not art_code:
                     art_code = digits
-                    break
-                if not art_code and digits:
+                    if qual == "SA":
+                        break
+                elif not art_code and digits:
                     art_code = digits
             if not art_code:
                 art_code = lin_digits

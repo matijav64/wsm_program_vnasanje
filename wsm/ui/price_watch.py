@@ -136,17 +136,20 @@ class PriceWatch(tk.Toplevel):
             "min": "Min",
             "max": "Max",
         }
+        numeric_cols = {"line_netto", "unit_price", "min", "max"}
         for col in columns:
             self.tree.heading(col, text=headings[col], command=lambda c=col: self._sort_by(c))
             width = 220 if col == "label" else 90
             anchor = tk.W if col == "label" else tk.E
-            self.tree.column(col, width=width, anchor=anchor)
+            fmt = "%.2f" if col in numeric_cols else ""
+            self.tree.column(col, width=width, anchor=anchor, format=fmt)
 
         scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.tree.bind("<Double-1>", self._on_double_click)
+        self.tree.bind("<BackSpace>", lambda e: self.destroy())
 
     def _build_back_button(self) -> None:
         ttk.Button(self, text="Nazaj", command=self.destroy).pack(pady=5)
