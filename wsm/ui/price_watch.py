@@ -15,11 +15,14 @@ log = logging.getLogger(__name__)
 
 from wsm.supplier_store import load_suppliers as _load_supplier_map
 from wsm.utils import sanitize_folder_name
+from functools import lru_cache
 
 
-def _load_price_histories(suppliers_dir: Path) -> dict[str, dict[str, pd.DataFrame]]:
+@lru_cache(maxsize=None)
+def _load_price_histories(suppliers_dir: Path | str) -> dict[str, dict[str, pd.DataFrame]]:
     """Return price history grouped by supplier and item label."""
 
+    suppliers_dir = Path(suppliers_dir).resolve()
     suppliers_map = _load_supplier_map(suppliers_dir)
     items_by_supplier: dict[str, dict[str, pd.DataFrame]] = {}
     for code, info in suppliers_map.items():
@@ -43,6 +46,11 @@ def _load_price_histories(suppliers_dir: Path) -> dict[str, dict[str, pd.DataFra
             sub = df[df["label"] == label].sort_values("time")
             items_by_supplier.setdefault(code, {})[label] = sub
     return items_by_supplier
+
+
+def clear_price_cache() -> None:
+    """Clear cached price histories."""
+    _load_price_histories.cache_clear()
 
 
 class PriceWatch(tk.Tk):
