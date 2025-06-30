@@ -18,6 +18,7 @@ def _sample_df():
             "cena_bruto": [Decimal("5")],
             "cena_netto": [Decimal("5")],
             "vrednost": [Decimal("5")],
+            "total_net": [Decimal("5")],
             "rabata": [Decimal("0")],
             "wsm_sifra": [pd.NA],
             "dobavitelj": ["Test"],

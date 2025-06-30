@@ -392,6 +392,7 @@ def log_price_history(
             "sifra_dobavitelja",
             "naziv",
             "cena_netto",
+            "total_net",
             "kolicina_norm",
             "enota_norm",
         ]
@@ -407,13 +408,13 @@ def log_price_history(
     )
     df_hist["unit_price"] = df_hist.apply(
         lambda r: (
-            Decimal(str(r["line_netto"]))
-            / Decimal(str(r["kolicina_norm"]))
+            Decimal(str(r["total_net"])) / Decimal(str(r["kolicina_norm"]))
             if r["enota_norm"] in ("kg", "L") and r["kolicina_norm"]
             else pd.NA
         ),
         axis=1,
     )
+    df_hist.drop(columns=["total_net"], inplace=True)
     df_hist.drop(columns=["kolicina_norm"], inplace=True)
     if service_date:
         try:

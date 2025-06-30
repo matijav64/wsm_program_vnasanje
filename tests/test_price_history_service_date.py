@@ -11,6 +11,7 @@ def test_log_price_history_uses_service_date(tmp_path, monkeypatch):
         'sifra_dobavitelja': ['SUP'],
         'naziv': ['Artikel'],
         'cena_netto': [Decimal('10')],
+        'total_net': [Decimal('10')],
         'kolicina_norm': [1],
         'enota_norm': ['kg'],
     })
