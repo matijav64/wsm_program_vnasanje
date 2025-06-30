@@ -33,7 +33,8 @@ def test_load_last_price_single_supplier(tmp_path):
         "key": ["A_Item", "A_Item"],
         "code": ["A", "A"],
         "name": ["Item", "Item"],
-        "cena": [1, 2],
+        "line_netto": [1, 2],
+        "unit_price": [pd.NA, pd.NA],
         "time": [pd.Timestamp("2023-01-01"), pd.Timestamp("2023-02-01")],
     })
     df.to_excel(sup / "price_history.xlsx", index=False)
