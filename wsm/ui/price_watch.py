@@ -198,7 +198,7 @@ class PriceWatch(tk.Toplevel):
                     "label": label,
                     "line_netto": float(last_line.iloc[-1]) if not last_line.empty else None,
                     "unit_price": float(last_unit.iloc[-1]) if not last_unit.empty else None,
-                    "last_dt": pd.to_datetime(df["time"].iloc[last_idx]),
+                    "last_dt": pd.to_datetime(df.loc[last_idx, "time"]),
                     "min": float(stats_series.min()),
                     "max": float(stats_series.max()),
                     "df": df,
