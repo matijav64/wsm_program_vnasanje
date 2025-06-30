@@ -178,8 +178,10 @@ def _norm_unit(
                 f"Fractional volume detected: {val}/1 -> using {val} L"
             )
             return q_norm * val, "L"
-        log.debug("VAT rate 9.5% detected -> using 'kg' as fallback unit")
-        base_unit = "kg"
+        log.debug(
+            "VAT rate 9.5% with piece unit but no weight/volume info -> keeping 'kos'"
+        )
+        return q_norm, base_unit
 
     log.debug(f"Končna normalizacija: q_norm={q_norm}, base_unit={base_unit}")
     return q_norm, base_unit
