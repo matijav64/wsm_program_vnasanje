@@ -247,3 +247,71 @@ def test_refresh_table_empty(monkeypatch):
     assert calls and calls[0][0] == "Ni podatkov"
     assert pw.tree.inserted == []
 
+
+def test_show_graph_with_real_matplotlib(monkeypatch):
+    import matplotlib
+    matplotlib.use("Agg")
+
+    df = pd.DataFrame(
+        {
+            "time": [pd.Timestamp("2023-01-01"), pd.Timestamp("2023-01-02")],
+            "cena": [1, 2],
+        }
+    )
+
+    captured = {}
+
+    class FakeCanvas:
+        def __init__(self, fig, master=None):
+            captured["fig"] = fig
+
+        def draw(self):
+            pass
+
+        def get_tk_widget(self):
+            class W:
+                def pack(self, *a, **k):
+                    pass
+
+            return W()
+
+    class FakeTop:
+        def __init__(self, master=None):
+            pass
+
+        def title(self, t):
+            pass
+
+        def bind(self, *a, **k):
+            pass
+
+        def destroy(self):
+            pass
+
+    class FakeButton:
+        def __init__(self, master=None, text=None, command=None):
+            pass
+
+        def pack(self, *a, **k):
+            pass
+
+    monkeypatch.setattr(
+        "matplotlib.backends.backend_tkagg.FigureCanvasTkAgg", FakeCanvas
+    )
+    monkeypatch.setattr("wsm.ui.price_watch.tk.Toplevel", FakeTop)
+    monkeypatch.setattr("wsm.ui.price_watch.ttk.Button", FakeButton)
+    monkeypatch.setattr("wsm.ui.price_watch.tk.BOTH", "both", raising=False)
+    monkeypatch.setattr("wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None)
+
+    pw = PriceWatch.__new__(PriceWatch)
+    pw._show_graph("Item", df)
+
+    fig = captured.get("fig")
+    assert fig is not None
+    ax = fig.axes[0]
+    line = ax.lines[0]
+    assert len(line.get_xdata()) == len(df)
+    assert len(line.get_ydata()) == len(df)
+    assert ax.get_xlabel() == "Datum"
+    assert ax.get_ylabel() == "Cena"
+
