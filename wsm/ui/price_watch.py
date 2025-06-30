@@ -178,6 +178,9 @@ class PriceWatch(tk.Tk):
                     "df": df,
                 }
             )
+        if not rows:
+            messagebox.showinfo("Ni podatkov", "Ni zadetkov za izbrane filtre.")
+            return
         if self._sort_col:
             rows.sort(key=lambda r: r[self._sort_col], reverse=self._sort_reverse)
         for r in rows:
