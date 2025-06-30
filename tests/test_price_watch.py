@@ -35,6 +35,8 @@ def test_load_price_histories(tmp_path):
     assert set(items.keys()) == {"S1", "S2"}
     assert set(items["S1"].keys()) == {"S1 - ItemA"}
     assert set(items["S2"].keys()) == {"S2 - ItemB"}
+    df_loaded = items["S1"]["S1 - ItemA"]
+    assert {"line_netto", "unit_price", "enota_norm"}.issubset(df_loaded.columns)
 
 
 def test_load_price_histories_non_datetime(tmp_path):
@@ -102,7 +104,7 @@ def test_show_graph_sets_xticks(monkeypatch):
                 pd.Timestamp("2023-01-02"),
                 pd.Timestamp("2023-01-03"),
             ],
-            "cena": [1, 2, 3],
+            "unit_price": [1, 2, 3],
         }
     )
 
@@ -231,7 +233,7 @@ def test_refresh_table_empty(monkeypatch):
         def insert(self, parent, index, values):
             self.inserted.append(values)
 
-    df = pd.DataFrame({"cena": [1], "time": [pd.Timestamp("2023-01-01")]})
+    df = pd.DataFrame({"line_netto": [1], "time": [pd.Timestamp("2023-01-01")]})
 
     pw = PriceWatch.__new__(PriceWatch)
     pw.tree = DummyTree()
@@ -255,7 +257,7 @@ def test_show_graph_with_real_matplotlib(monkeypatch):
     df = pd.DataFrame(
         {
             "time": [pd.Timestamp("2023-01-01"), pd.Timestamp("2023-01-02")],
-            "cena": [1, 2],
+            "unit_price": [1, 2],
         }
     )
 
