@@ -15,7 +15,7 @@ from wsm.analyze import analyze_invoice
 from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
 from wsm.parsing.eslog import get_supplier_name
 from wsm.utils import sanitize_folder_name, _load_supplier_map
-from wsm.ui.review_links import review_links
+from wsm.ui.review.gui import review_links
 
 
 def select_invoice() -> Path | None:

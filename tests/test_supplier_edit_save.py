@@ -1,7 +1,7 @@
 import json
 from decimal import Decimal
 import pandas as pd
-from wsm.ui.review_links import _save_and_close
+from wsm.ui.review.io import _save_and_close
 
 class DummyRoot:
     def quit(self):

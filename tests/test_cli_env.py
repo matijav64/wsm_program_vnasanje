@@ -71,7 +71,7 @@ def test_cli_review_uses_env_vars(monkeypatch, tmp_path):
 
     monkeypatch.setattr(cli, "analyze_invoice", fake_analyze)
     monkeypatch.setattr(cli.pd, "read_excel", fake_read_excel)
-    monkeypatch.setattr("wsm.ui.review_links.review_links", fake_review_links)
+    monkeypatch.setattr("wsm.ui.review.gui.review_links", fake_review_links)
     monkeypatch.setattr("wsm.utils.povezi_z_wsm", fake_povezi)
     monkeypatch.setattr(cli, "get_supplier_name", lambda p: "Test Supplier")
     monkeypatch.setattr(cli, "_load_supplier_map", lambda p: {})
@@ -185,7 +185,7 @@ def test_cli_review_prefers_vat_from_map(monkeypatch, tmp_path):
 
     monkeypatch.setattr(cli, "analyze_invoice", fake_analyze)
     monkeypatch.setattr(cli.pd, "read_excel", fake_read_excel)
-    monkeypatch.setattr("wsm.ui.review_links.review_links", fake_review_links)
+    monkeypatch.setattr("wsm.ui.review.gui.review_links", fake_review_links)
     monkeypatch.setattr("wsm.utils.povezi_z_wsm", fake_povezi)
     monkeypatch.setattr(cli, "get_supplier_name", lambda p: "Test Supplier")
     monkeypatch.setattr(cli, "_load_supplier_map", lambda p: {"SUP": {"ime": "Test Supplier", "vat": "SI777"}})

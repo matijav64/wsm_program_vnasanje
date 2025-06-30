@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from wsm.ui.review_links import _save_and_close
+from wsm.ui.review.io import _save_and_close
 from wsm.supplier_store import load_suppliers, clear_supplier_cache
 
 

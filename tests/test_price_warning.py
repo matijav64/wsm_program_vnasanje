@@ -1,5 +1,5 @@
 from decimal import Decimal
-from wsm.ui.review_links import _apply_price_warning
+from wsm.ui.review.gui import _apply_price_warning
 
 class DummyTree:
     def __init__(self):

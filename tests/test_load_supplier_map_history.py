@@ -1,6 +1,6 @@
 import pandas as pd
 from pathlib import Path
-from wsm.ui.review_links import _load_supplier_map
+from wsm.ui.review.io import _load_supplier_map
 
 
 def test_load_supplier_map_from_history(tmp_path: Path) -> None:

@@ -1,5 +1,5 @@
 from decimal import Decimal
-from wsm.ui.review_links import _norm_unit
+from wsm.ui.review.helpers import _norm_unit
 
 
 def test_norm_unit_mg_unit():

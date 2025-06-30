@@ -1,7 +1,7 @@
 import pandas as pd
 import json
 from pathlib import Path
-from wsm.ui.review_links import _load_supplier_map
+from wsm.ui.review.io import _load_supplier_map
 
 
 def test_load_supplier_map_from_folders(tmp_path: Path):
