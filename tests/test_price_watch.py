@@ -300,6 +300,53 @@ def test_refresh_table_with_data(monkeypatch):
     assert float(row[2]) == 0.6
 
 
+def test_refresh_table_with_non_contiguous_index(monkeypatch):
+    class DummyVar:
+        def __init__(self, value=""):
+            self.val = value
+
+        def get(self):
+            return self.val
+
+    class DummyTree:
+        def __init__(self):
+            self.inserted = []
+
+        def get_children(self):
+            return []
+
+        def delete(self, *a):
+            pass
+
+        def insert(self, parent, index, values):
+            self.inserted.append(values)
+
+    df = pd.DataFrame(
+        {
+            "line_netto": [1, 2],
+            "unit_price": [0.5, 0.6],
+            "time": [pd.Timestamp("2023-01-01"), pd.Timestamp("2023-01-02")],
+        }
+    )
+    df.index = [2, 5]
+
+    pw = PriceWatch.__new__(PriceWatch)
+    pw.tree = DummyTree()
+    pw.supplier_codes = {"S1 - Sup": "S1"}
+    pw.sup_var = DummyVar("S1 - Sup")
+    pw.search_var = DummyVar("")
+    pw.items_by_supplier = {"S1": {"Item": df}}
+    pw._sort_col = None
+    pw._sort_reverse = False
+
+    pw._refresh_table()
+
+    assert pw.tree.inserted
+    row = pw.tree.inserted[0]
+    assert float(row[1]) == 2.0
+    assert float(row[2]) == 0.6
+
+
 def test_show_graph_with_real_matplotlib(monkeypatch):
     import matplotlib
     matplotlib.use("Agg")
