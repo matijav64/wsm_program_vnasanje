@@ -327,6 +327,8 @@ class PriceWatch(tk.Toplevel):
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
+        pct_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(top, text="%", variable=pct_var).pack(pady=5)
         ttk.Button(top, text="Zapri", command=top.destroy).pack(pady=5)
         top.bind("<Escape>", lambda e: top.destroy())
 

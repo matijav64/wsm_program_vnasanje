@@ -190,6 +190,8 @@ def test_show_graph_sets_xticks(monkeypatch):
     fake_dates = types.SimpleNamespace(
         AutoDateLocator=lambda: "LOC",
         ConciseDateFormatter=lambda loc: f"FMT-{loc}",
+        date2num=lambda d: d,
+        num2date=lambda n: n,
     )
     fake_ticker = types.SimpleNamespace(FuncFormatter=lambda func: ("FF", func))
     fake_mplcursors = types.SimpleNamespace(
@@ -227,9 +229,26 @@ def test_show_graph_sets_xticks(monkeypatch):
 
         def pack(self, *a, **k):
             pass
+    toggle_capture = {}
+
+    class FakeVar:
+        def __init__(self, value=False):
+            toggle_capture["var"] = self
+
+        def get(self):
+            return False
+
+    class FakeCheck:
+        def __init__(self, master=None, text=None, variable=None, command=None):
+            toggle_capture["variable"] = variable
+
+        def pack(self, *a, **k):
+            toggle_capture["packed"] = True
 
     monkeypatch.setattr("wsm.ui.price_watch.tk.Toplevel", FakeTop)
     monkeypatch.setattr("wsm.ui.price_watch.ttk.Button", FakeButton)
+    monkeypatch.setattr("wsm.ui.price_watch.tk.BooleanVar", FakeVar)
+    monkeypatch.setattr("wsm.ui.price_watch.ttk.Checkbutton", FakeCheck)
     monkeypatch.setattr("wsm.ui.price_watch.tk.BOTH", "both", raising=False)
     monkeypatch.setattr("wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None)
 
@@ -244,6 +263,8 @@ def test_show_graph_sets_xticks(monkeypatch):
         df["unit_price"].min() - expected_pad,
         df["unit_price"].max() + expected_pad,
     )
+    assert toggle_capture["variable"] is toggle_capture["var"]
+    assert toggle_capture.get("packed")
 
 
 def test_show_graph_single_value(monkeypatch):
@@ -325,6 +346,8 @@ def test_show_graph_single_value(monkeypatch):
     fake_dates = types.SimpleNamespace(
         AutoDateLocator=lambda: "LOC",
         ConciseDateFormatter=lambda loc: f"FMT-{loc}",
+        date2num=lambda d: d,
+        num2date=lambda n: n,
     )
     fake_ticker = types.SimpleNamespace(FuncFormatter=lambda func: ("FF", func))
     fake_mplcursors = types.SimpleNamespace(
@@ -362,9 +385,26 @@ def test_show_graph_single_value(monkeypatch):
 
         def pack(self, *a, **k):
             pass
+    toggle_capture = {}
+
+    class FakeVar:
+        def __init__(self, value=False):
+            toggle_capture["var"] = self
+
+        def get(self):
+            return False
+
+    class FakeCheck:
+        def __init__(self, master=None, text=None, variable=None, command=None):
+            toggle_capture["variable"] = variable
+
+        def pack(self, *a, **k):
+            toggle_capture["packed"] = True
 
     monkeypatch.setattr("wsm.ui.price_watch.tk.Toplevel", FakeTop)
     monkeypatch.setattr("wsm.ui.price_watch.ttk.Button", FakeButton)
+    monkeypatch.setattr("wsm.ui.price_watch.tk.BooleanVar", FakeVar)
+    monkeypatch.setattr("wsm.ui.price_watch.ttk.Checkbutton", FakeCheck)
     monkeypatch.setattr("wsm.ui.price_watch.tk.BOTH", "both", raising=False)
     monkeypatch.setattr("wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None)
 
@@ -376,6 +416,8 @@ def test_show_graph_single_value(monkeypatch):
     if pad == 0:
         pad = 0.10
     assert ax.ylim == (float(df["unit_price"].iloc[0]) - pad, float(df["unit_price"].iloc[0]) + pad)
+    assert toggle_capture["variable"] is toggle_capture["var"]
+    assert toggle_capture.get("packed")
 
 
 def test_refresh_table_empty(monkeypatch):
@@ -563,6 +605,37 @@ def test_show_graph_with_real_matplotlib(monkeypatch):
 
         def pack(self, *a, **k):
             pass
+    toggle_capture = {}
+
+    class FakeVar:
+        def __init__(self, value=False):
+            toggle_capture["var"] = self
+
+        def get(self):
+            return False
+
+    class FakeCheck:
+        def __init__(self, master=None, text=None, variable=None, command=None):
+            toggle_capture["variable"] = variable
+
+        def pack(self, *a, **k):
+            toggle_capture["packed"] = True
+
+    toggle_capture = {}
+
+    class FakeVar:
+        def __init__(self, value=False):
+            toggle_capture["var"] = self
+
+        def get(self):
+            return False
+
+    class FakeCheck:
+        def __init__(self, master=None, text=None, variable=None, command=None):
+            toggle_capture["variable"] = variable
+
+        def pack(self, *a, **k):
+            toggle_capture["packed"] = True
 
     cursor_info = {}
 
@@ -581,6 +654,8 @@ def test_show_graph_with_real_matplotlib(monkeypatch):
     )
     monkeypatch.setattr("wsm.ui.price_watch.tk.Toplevel", FakeTop)
     monkeypatch.setattr("wsm.ui.price_watch.ttk.Button", FakeButton)
+    monkeypatch.setattr("wsm.ui.price_watch.tk.BooleanVar", FakeVar)
+    monkeypatch.setattr("wsm.ui.price_watch.ttk.Checkbutton", FakeCheck)
     monkeypatch.setattr("wsm.ui.price_watch.tk.BOTH", "both", raising=False)
     monkeypatch.setattr("wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None)
     monkeypatch.setitem(sys.modules, "mplcursors", types.SimpleNamespace(cursor=fake_cursor))
@@ -704,6 +779,8 @@ def test_show_graph_skips_zero_prices(monkeypatch):
     ydata = list(line.get_ydata())
     assert 0 not in ydata
     assert len(ydata) == 2
+    assert toggle_capture["variable"] is toggle_capture["var"]
+    assert toggle_capture.get("packed")
 
 
 def test_close_calls_destroy_and_quit():
