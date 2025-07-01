@@ -414,3 +414,22 @@ def test_show_graph_with_real_matplotlib(monkeypatch):
     assert ax.get_xlabel() == "Datum"
     assert ax.get_ylabel() == "Cena"
 
+
+def test_close_calls_destroy_and_quit():
+    calls = []
+
+    pw = PriceWatch.__new__(PriceWatch)
+
+    def fake_destroy():
+        calls.append("destroy")
+
+    def fake_quit():
+        calls.append("quit")
+
+    pw.destroy = fake_destroy
+    pw.quit = fake_quit
+
+    PriceWatch._close(pw)
+
+    assert calls == ["destroy", "quit"]
+
