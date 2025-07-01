@@ -31,3 +31,15 @@ def test_norm_unit_weight_table():
     assert unit == 'kg'
     assert q == Decimal('0.48')
 
+
+def test_norm_unit_fractional_kos_default_kg():
+    q, unit = _norm_unit(Decimal('4.2'), 'H87', 'Artikel brez mere', Decimal('22'), None)
+    assert unit == 'kg'
+    assert q == Decimal('4.2')
+
+
+def test_norm_unit_fractional_kos_to_liter():
+    q, unit = _norm_unit(Decimal('4.2'), 'H87', 'Sok 500 ml', Decimal('22'), None)
+    assert unit == 'L'
+    assert q == Decimal('2.1')
+
