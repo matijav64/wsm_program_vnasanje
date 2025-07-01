@@ -286,10 +286,14 @@ class PriceWatch(tk.Toplevel):
             formatter = ax.get_yaxis().get_major_formatter()
             if hasattr(formatter, "set_useOffset"):
                 formatter.set_useOffset(False)
-        ymin, ymax = price_series.min(), price_series.max()
-        if abs(ymax - ymin) < 0.02:
-            pad = 0.05
-            ax.set_ylim(ymin * (1 - pad), ymax * (1 + pad))
+        min_v, max_v = float(price_series.min()), float(price_series.max())
+        if min_v == max_v:
+            pad = abs(min_v) * 0.03
+            if pad == 0:
+                pad = 0.10
+        else:
+            pad = (max_v - min_v) * 0.10
+        ax.set_ylim(min_v - pad, max_v + pad)
         fig.autofmt_xdate()
         ax.set_xlabel("Datum")
         ax.set_ylabel("Cena")
