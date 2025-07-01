@@ -85,7 +85,7 @@ class PriceWatch(tk.Toplevel):
             messagebox.showerror(
                 "Napaka", f"Mapa dobaviteljev ni najdena: {self.suppliers_dir}"
             )
-            self.destroy()
+            self._close()
             return
 
         self.suppliers_map = _load_supplier_map(self.suppliers_dir)
@@ -101,8 +101,17 @@ class PriceWatch(tk.Toplevel):
         self._build_article_table()
         self._build_back_button()
 
-        self.bind("<Escape>", lambda e: self.destroy())
+        self.bind("<Escape>", lambda e: self._close())
         self._refresh_table()
+
+    # ------------------------------------------------------------------
+    def _close(self) -> None:
+        """Destroy the window and quit its event loop."""
+        try:
+            self.destroy()
+        finally:
+            if getattr(self, "quit", None):
+                self.quit()
 
     # ------------------------------------------------------------------
     def _build_supplier_search(self) -> None:
@@ -150,10 +159,10 @@ class PriceWatch(tk.Toplevel):
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.tree.bind("<Double-1>", self._on_double_click)
-        self.tree.bind("<BackSpace>", lambda e: self.destroy())
+        self.tree.bind("<BackSpace>", lambda e: self._close())
 
     def _build_back_button(self) -> None:
-        ttk.Button(self, text="Nazaj", command=self.destroy).pack(pady=5)
+        ttk.Button(self, text="Nazaj", command=self._close).pack(pady=5)
 
     # ------------------------------------------------------------------
     def _update_supplier_list(self) -> None:
