@@ -277,7 +277,16 @@ class PriceWatch(tk.Toplevel):
             price_series = unit_series
         else:
             price_series = pd.to_numeric(df.get("line_netto"), errors="coerce")
+
         dates = pd.to_datetime(df["time"])
+        # Ignore entries with zero price to avoid meaningless points on the
+        # graph.  ``price_series`` is the column that will be plotted, so we
+        # drop rows where its value is exactly ``0``.  ``time`` values are
+        # filtered with the same mask to keep data aligned.
+        mask = price_series.ne(0)
+        price_series = price_series[mask]
+        dates = dates[mask]
+
         ax.plot(dates, price_series, marker="o")
         cursor = mplcursors.cursor(ax.get_lines(), hover=True)
         cursor.connect(

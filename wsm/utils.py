@@ -416,6 +416,15 @@ def log_price_history(
     )
     df_hist.drop(columns=["total_net"], inplace=True)
     df_hist.drop(columns=["kolicina_norm"], inplace=True)
+
+    # Remove rows where the value that will be graphed is zero.  ``unit_price``
+    # is preferred when available; otherwise ``line_netto`` is used.  Entries
+    # with a zero price are not useful for plotting and can cause very skewed
+    # axis ranges.
+    price_col = pd.to_numeric(df_hist["unit_price"], errors="coerce")
+    fallback = pd.to_numeric(df_hist["line_netto"], errors="coerce")
+    df_hist = df_hist[price_col.fillna(fallback).ne(0)]
+
     if service_date:
         try:
             dt = pd.to_datetime(service_date)

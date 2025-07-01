@@ -618,6 +618,94 @@ def test_show_graph_with_real_matplotlib(monkeypatch):
     assert ann_text and "2023-01-01" in ann_text[0]
 
 
+def test_show_graph_skips_zero_prices(monkeypatch):
+    import matplotlib
+    matplotlib.use("Agg")
+    import types, sys
+
+    df = pd.DataFrame(
+        {
+            "time": [
+                pd.Timestamp("2023-01-01"),
+                pd.Timestamp("2023-01-02"),
+                pd.Timestamp("2023-01-03"),
+            ],
+            "unit_price": [1, 0, 2],
+        }
+    )
+
+    captured = {}
+
+    class FakeCanvas:
+        def __init__(self, fig, master=None):
+            captured["fig"] = fig
+
+        def draw(self):
+            pass
+
+        def get_tk_widget(self):
+            class W:
+                def pack(self, *a, **k):
+                    pass
+
+            return W()
+
+    class FakeTop:
+        def __init__(self, master=None):
+            pass
+
+        def title(self, t):
+            pass
+
+        def bind(self, *a, **k):
+            pass
+
+        def destroy(self):
+            pass
+
+    class FakeButton:
+        def __init__(self, master=None, text=None, command=None):
+            pass
+
+        def pack(self, *a, **k):
+            pass
+
+    cursor_info = {}
+
+    class FakeCursor:
+        def connect(self, event, func):
+            cursor_info["event"] = event
+            cursor_info["func"] = func
+
+    def fake_cursor(lines, hover=False):
+        cursor_info["lines"] = lines
+        cursor_info["hover"] = hover
+        return FakeCursor()
+
+    monkeypatch.setattr(
+        "matplotlib.backends.backend_tkagg.FigureCanvasTkAgg", FakeCanvas
+    )
+    monkeypatch.setattr("wsm.ui.price_watch.tk.Toplevel", FakeTop)
+    monkeypatch.setattr("wsm.ui.price_watch.ttk.Button", FakeButton)
+    monkeypatch.setattr("wsm.ui.price_watch.tk.BOTH", "both", raising=False)
+    monkeypatch.setattr(
+        "wsm.ui.price_watch.messagebox.showerror",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setitem(sys.modules, "mplcursors", types.SimpleNamespace(cursor=fake_cursor))
+
+    pw = PriceWatch.__new__(PriceWatch)
+    pw._show_graph("Item", df)
+
+    fig = captured.get("fig")
+    assert fig is not None
+    ax = fig.axes[0]
+    line = ax.lines[0]
+    ydata = list(line.get_ydata())
+    assert 0 not in ydata
+    assert len(ydata) == 2
+
+
 def test_close_calls_destroy_and_quit():
     calls = []
 
