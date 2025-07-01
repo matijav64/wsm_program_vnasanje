@@ -260,6 +260,8 @@ class PriceWatch(tk.Toplevel):
     def _show_graph(self, label: str, df: pd.DataFrame) -> None:
         try:
             import matplotlib.pyplot as plt
+            import matplotlib.dates as mdates
+            from matplotlib.ticker import FuncFormatter
             from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
         except Exception as exc:  # pragma: no cover - optional dependency
             messagebox.showerror("Napaka", f"Matplotlib ni na voljo: {exc}")
@@ -274,9 +276,11 @@ class PriceWatch(tk.Toplevel):
             price_series = unit_series
         else:
             price_series = pd.to_numeric(df.get("line_netto"), errors="coerce")
-        ax.plot(pd.to_datetime(df["time"]), price_series, marker="o")
-        # Ensure each timestamp appears on the x-axis for clarity
-        ax.set_xticks(pd.to_datetime(df["time"]))
+        dates = pd.to_datetime(df["time"])
+        ax.plot(dates, price_series, marker="o")
+        locator = mdates.AutoDateLocator()
+        ax.xaxis.set_major_locator(locator)
+        ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
         if hasattr(ax, "ticklabel_format"):
             try:
                 ax.ticklabel_format(useOffset=False, style="plain")
@@ -294,10 +298,11 @@ class PriceWatch(tk.Toplevel):
         else:
             pad = (max_v - min_v) * 0.10
         ax.set_ylim(min_v - pad, max_v + pad)
-        fig.autofmt_xdate()
+        fig.autofmt_xdate(rotation=25, ha="right")
         ax.set_xlabel("Datum")
         ax.set_ylabel("Cena")
-        ax.grid(True)
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.2f}"))
+        ax.grid(True, linestyle=":")
         # Add a little horizontal padding so points at the edges are visible
         ax.margins(x=0.05)
 

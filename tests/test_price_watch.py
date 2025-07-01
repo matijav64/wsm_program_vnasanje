@@ -120,13 +120,17 @@ def test_show_graph_sets_xticks(monkeypatch):
         def __init__(self):
             self.autofmt_called = False
 
-        def autofmt_xdate(self):
+        def autofmt_xdate(self, *a, **k):
             self.autofmt_called = True
 
     class FakeAx:
         def __init__(self):
             self.xticks = None
             self.ylim = None
+            self.locator = None
+            self.formatter = None
+            self.xaxis = self
+            self.yaxis = self
 
         def plot(self, *a, **k):
             pass
@@ -142,6 +146,12 @@ def test_show_graph_sets_xticks(monkeypatch):
 
         def set_xticks(self, ticks):
             self.xticks = list(ticks)
+
+        def set_major_locator(self, loc):
+            self.locator = loc
+
+        def set_major_formatter(self, fmt):
+            self.formatter = fmt
 
         def set_ylim(self, ymin, ymax):
             self.ylim = (ymin, ymax)
@@ -173,13 +183,22 @@ def test_show_graph_sets_xticks(monkeypatch):
     fake_plt = types.SimpleNamespace(subplots=fake_subplots)
     fake_backend = types.SimpleNamespace(FigureCanvasTkAgg=FakeCanvas)
     fake_backends = types.SimpleNamespace(**{"backend_tkagg": fake_backend})
+    fake_dates = types.SimpleNamespace(
+        AutoDateLocator=lambda: "LOC",
+        ConciseDateFormatter=lambda loc: f"FMT-{loc}",
+    )
+    fake_ticker = types.SimpleNamespace(FuncFormatter=lambda func: ("FF", func))
     fake_matplotlib = types.ModuleType("matplotlib")
     fake_matplotlib.pyplot = fake_plt
     fake_matplotlib.backends = fake_backends
+    fake_matplotlib.dates = fake_dates
+    fake_matplotlib.ticker = fake_ticker
     monkeypatch.setitem(sys.modules, "matplotlib", fake_matplotlib)
     monkeypatch.setitem(sys.modules, "matplotlib.pyplot", fake_plt)
     monkeypatch.setitem(sys.modules, "matplotlib.backends", fake_backends)
     monkeypatch.setitem(sys.modules, "matplotlib.backends.backend_tkagg", fake_backend)
+    monkeypatch.setitem(sys.modules, "matplotlib.dates", fake_dates)
+    monkeypatch.setitem(sys.modules, "matplotlib.ticker", fake_ticker)
 
     class FakeTop:
         def __init__(self, master=None):
@@ -209,8 +228,8 @@ def test_show_graph_sets_xticks(monkeypatch):
     pw = PriceWatch.__new__(PriceWatch)
     pw._show_graph("Item", df)
 
-    expected_ticks = pd.to_datetime(df["time"]).tolist()
-    assert xticks_capture["ax"].xticks == expected_ticks
+    assert xticks_capture["ax"].locator is not None
+    assert xticks_capture["ax"].formatter is not None
     assert xticks_capture["fig"].autofmt_called
     expected_pad = (df["unit_price"].max() - df["unit_price"].min()) * 0.10
     assert xticks_capture["ax"].ylim == (
@@ -230,12 +249,16 @@ def test_show_graph_single_value(monkeypatch):
         def __init__(self):
             pass
 
-        def autofmt_xdate(self):
+        def autofmt_xdate(self, *a, **k):
             cap["auto"] = True
 
     class FakeAx:
         def __init__(self):
             self.ylim = None
+            self.locator = None
+            self.formatter = None
+            self.xaxis = self
+            self.yaxis = self
 
         def plot(self, *a, **k):
             pass
@@ -254,6 +277,12 @@ def test_show_graph_single_value(monkeypatch):
 
         def set_ylim(self, ymin, ymax):
             self.ylim = (ymin, ymax)
+
+        def set_major_locator(self, loc):
+            self.locator = loc
+
+        def set_major_formatter(self, fmt):
+            self.formatter = fmt
 
         def margins(self, *a, **k):
             pass
@@ -281,13 +310,22 @@ def test_show_graph_single_value(monkeypatch):
     fake_plt = types.SimpleNamespace(subplots=fake_subplots)
     fake_backend = types.SimpleNamespace(FigureCanvasTkAgg=FakeCanvas)
     fake_backends = types.SimpleNamespace(**{"backend_tkagg": fake_backend})
+    fake_dates = types.SimpleNamespace(
+        AutoDateLocator=lambda: "LOC",
+        ConciseDateFormatter=lambda loc: f"FMT-{loc}",
+    )
+    fake_ticker = types.SimpleNamespace(FuncFormatter=lambda func: ("FF", func))
     fake_matplotlib = types.ModuleType("matplotlib")
     fake_matplotlib.pyplot = fake_plt
     fake_matplotlib.backends = fake_backends
+    fake_matplotlib.dates = fake_dates
+    fake_matplotlib.ticker = fake_ticker
     monkeypatch.setitem(sys.modules, "matplotlib", fake_matplotlib)
     monkeypatch.setitem(sys.modules, "matplotlib.pyplot", fake_plt)
     monkeypatch.setitem(sys.modules, "matplotlib.backends", fake_backends)
     monkeypatch.setitem(sys.modules, "matplotlib.backends.backend_tkagg", fake_backend)
+    monkeypatch.setitem(sys.modules, "matplotlib.dates", fake_dates)
+    monkeypatch.setitem(sys.modules, "matplotlib.ticker", fake_ticker)
 
     class FakeTop:
         def __init__(self, master=None):
