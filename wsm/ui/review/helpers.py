@@ -152,7 +152,7 @@ def _norm_unit(
                 f"Volumen najden v imenu: {val} {unit}, pretvorjeno v L: {volume_l}"
             )
 
-            if volume_l >= 1:
+            if volume_l >= 1 or q_norm != q_norm.to_integral_value():
                 return q_norm * volume_l, "L"
             else:
                 return q_norm, "kos"
@@ -180,6 +180,34 @@ def _norm_unit(
             return q_norm * val, "L"
         log.debug("VAT rate 9.5% detected -> using 'kg' as fallback unit")
         base_unit = "kg"
+
+    if base_unit == "kos" and q_norm != q_norm.to_integral_value():
+        name_l = name.lower()
+        m_frac = _rx_fraction.search(name_l)
+        if m_frac:
+            val = _dec(m_frac.group(1))
+            log.debug(
+                f"Fractional volume detected outside VAT 9.5: {val}/1 -> using {val} L"
+            )
+            return q_norm * val, "L"
+
+        m_vol = _rx_vol.search(name_l)
+        if m_vol:
+            val, typ = _dec(m_vol[1]), m_vol[2].lower()
+            conv = {
+                "ml": val / 1000,
+                "cl": val / 100,
+                "dl": val / 10,
+                "dcl": val / 10,
+                "l": val,
+            }[typ]
+            log.debug(
+                f"Volume detected for fractional pieces: {val} {typ}, converted to L: {conv}"
+            )
+            return q_norm * conv, "L"
+
+        log.debug("Fractional piece quantity detected -> using 'kg' as fallback unit")
+        return q_norm, "kg"
 
     log.debug(f"Končna normalizacija: q_norm={q_norm}, base_unit={base_unit}")
     return q_norm, base_unit

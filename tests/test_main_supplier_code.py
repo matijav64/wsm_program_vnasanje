@@ -45,7 +45,7 @@ def test_analyze_ignores_doc_row_for_supplier(tmp_path):
 
     df, total, ok = analyze.analyze_invoice(xml_path, str(links))
     row = df[df["sifra_dobavitelja"] == "SUP"].iloc[0]
-    assert row["enota"] == "kos"
+    assert row["enota"] == "kg"
     assert row["kolicina"] == Decimal("2.5")
     assert total == Decimal("9")
     assert ok
