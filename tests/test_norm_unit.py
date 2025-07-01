@@ -22,7 +22,7 @@ def test_norm_unit_vat_fraction_to_liter():
 
 def test_norm_unit_vat_default_kg():
     q, unit = _norm_unit(Decimal('2'), 'H87', 'Artikel brez mere', Decimal('9.5'), None)
-    assert unit == 'kos'
+    assert unit == 'kg'
     assert q == Decimal('2')
 
 
