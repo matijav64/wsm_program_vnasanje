@@ -268,6 +268,19 @@ class PriceWatch(tk.Toplevel):
         ax.plot(pd.to_datetime(df["time"]), price_series, marker="o")
         # Ensure each timestamp appears on the x-axis for clarity
         ax.set_xticks(pd.to_datetime(df["time"]))
+        if hasattr(ax, "ticklabel_format"):
+            try:
+                ax.ticklabel_format(useOffset=False, style="plain")
+            except Exception:  # pragma: no cover - depends on matplotlib version
+                pass
+        if hasattr(ax, "get_yaxis") and hasattr(ax.get_yaxis(), "get_major_formatter"):
+            formatter = ax.get_yaxis().get_major_formatter()
+            if hasattr(formatter, "set_useOffset"):
+                formatter.set_useOffset(False)
+        ymin, ymax = price_series.min(), price_series.max()
+        if abs(ymax - ymin) < 0.02:
+            pad = 0.05
+            ax.set_ylim(ymin * (1 - pad), ymax * (1 + pad))
         fig.autofmt_xdate()
         ax.set_xlabel("Datum")
         ax.set_ylabel("Cena")
