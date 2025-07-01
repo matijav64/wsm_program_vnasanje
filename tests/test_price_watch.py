@@ -131,9 +131,10 @@ def test_show_graph_sets_xticks(monkeypatch):
             self.formatter = None
             self.xaxis = self
             self.yaxis = self
+            self.lines = []
 
         def plot(self, *a, **k):
-            pass
+            self.lines.append("line")
 
         def set_xlabel(self, *a):
             pass
@@ -158,6 +159,9 @@ def test_show_graph_sets_xticks(monkeypatch):
 
         def margins(self, *a, **k):
             pass
+
+        def get_lines(self):
+            return self.lines
 
     def fake_subplots(*args, **kwargs):
         fig = FakeFig()
@@ -188,6 +192,9 @@ def test_show_graph_sets_xticks(monkeypatch):
         ConciseDateFormatter=lambda loc: f"FMT-{loc}",
     )
     fake_ticker = types.SimpleNamespace(FuncFormatter=lambda func: ("FF", func))
+    fake_mplcursors = types.SimpleNamespace(
+        cursor=lambda *a, **k: types.SimpleNamespace(connect=lambda *a, **k: None)
+    )
     fake_matplotlib = types.ModuleType("matplotlib")
     fake_matplotlib.pyplot = fake_plt
     fake_matplotlib.backends = fake_backends
@@ -199,6 +206,7 @@ def test_show_graph_sets_xticks(monkeypatch):
     monkeypatch.setitem(sys.modules, "matplotlib.backends.backend_tkagg", fake_backend)
     monkeypatch.setitem(sys.modules, "matplotlib.dates", fake_dates)
     monkeypatch.setitem(sys.modules, "matplotlib.ticker", fake_ticker)
+    monkeypatch.setitem(sys.modules, "mplcursors", fake_mplcursors)
 
     class FakeTop:
         def __init__(self, master=None):
@@ -259,9 +267,10 @@ def test_show_graph_single_value(monkeypatch):
             self.formatter = None
             self.xaxis = self
             self.yaxis = self
+            self.lines = []
 
         def plot(self, *a, **k):
-            pass
+            self.lines.append("line")
 
         def set_xlabel(self, *a):
             pass
@@ -286,6 +295,9 @@ def test_show_graph_single_value(monkeypatch):
 
         def margins(self, *a, **k):
             pass
+
+        def get_lines(self):
+            return self.lines
 
     def fake_subplots(*args, **kwargs):
         fig = FakeFig()
@@ -315,6 +327,9 @@ def test_show_graph_single_value(monkeypatch):
         ConciseDateFormatter=lambda loc: f"FMT-{loc}",
     )
     fake_ticker = types.SimpleNamespace(FuncFormatter=lambda func: ("FF", func))
+    fake_mplcursors = types.SimpleNamespace(
+        cursor=lambda *a, **k: types.SimpleNamespace(connect=lambda *a, **k: None)
+    )
     fake_matplotlib = types.ModuleType("matplotlib")
     fake_matplotlib.pyplot = fake_plt
     fake_matplotlib.backends = fake_backends
@@ -326,6 +341,7 @@ def test_show_graph_single_value(monkeypatch):
     monkeypatch.setitem(sys.modules, "matplotlib.backends.backend_tkagg", fake_backend)
     monkeypatch.setitem(sys.modules, "matplotlib.dates", fake_dates)
     monkeypatch.setitem(sys.modules, "matplotlib.ticker", fake_ticker)
+    monkeypatch.setitem(sys.modules, "mplcursors", fake_mplcursors)
 
     class FakeTop:
         def __init__(self, master=None):
@@ -501,6 +517,8 @@ def test_refresh_table_with_non_contiguous_index(monkeypatch):
 
 def test_show_graph_with_real_matplotlib(monkeypatch):
     import matplotlib
+    import matplotlib.dates as mdates
+    import types, sys
     matplotlib.use("Agg")
 
     df = pd.DataFrame(
@@ -546,6 +564,18 @@ def test_show_graph_with_real_matplotlib(monkeypatch):
         def pack(self, *a, **k):
             pass
 
+    cursor_info = {}
+
+    class FakeCursor:
+        def connect(self, event, func):
+            cursor_info["event"] = event
+            cursor_info["func"] = func
+
+    def fake_cursor(lines, hover=False):
+        cursor_info["lines"] = lines
+        cursor_info["hover"] = hover
+        return FakeCursor()
+
     monkeypatch.setattr(
         "matplotlib.backends.backend_tkagg.FigureCanvasTkAgg", FakeCanvas
     )
@@ -553,6 +583,7 @@ def test_show_graph_with_real_matplotlib(monkeypatch):
     monkeypatch.setattr("wsm.ui.price_watch.ttk.Button", FakeButton)
     monkeypatch.setattr("wsm.ui.price_watch.tk.BOTH", "both", raising=False)
     monkeypatch.setattr("wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None)
+    monkeypatch.setitem(sys.modules, "mplcursors", types.SimpleNamespace(cursor=fake_cursor))
 
     pw = PriceWatch.__new__(PriceWatch)
     pw._show_graph("Item", df)
@@ -565,6 +596,26 @@ def test_show_graph_with_real_matplotlib(monkeypatch):
     assert len(line.get_ydata()) == len(df)
     assert ax.get_xlabel() == "Datum"
     assert ax.get_ylabel() == "Cena"
+
+    # verify cursor was attached and annotation formatting works
+    assert cursor_info.get("lines") == ax.get_lines()
+    assert cursor_info.get("hover") is True
+    func = cursor_info.get("func")
+    assert callable(func)
+    ann_text = []
+
+    class Ann:
+        def set_text(self, t):
+            ann_text.append(t)
+
+    first_x = line.get_xdata()[0]
+    first_y = line.get_ydata()[0]
+    func(
+        types.SimpleNamespace(
+            target=(mdates.date2num(first_x), first_y), annotation=Ann()
+        )
+    )
+    assert ann_text and "2023-01-01" in ann_text[0]
 
 
 def test_close_calls_destroy_and_quit():

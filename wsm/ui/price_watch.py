@@ -263,6 +263,7 @@ class PriceWatch(tk.Toplevel):
             import matplotlib.dates as mdates
             from matplotlib.ticker import FuncFormatter
             from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+            import mplcursors
         except Exception as exc:  # pragma: no cover - optional dependency
             messagebox.showerror("Napaka", f"Matplotlib ni na voljo: {exc}")
             return
@@ -278,6 +279,13 @@ class PriceWatch(tk.Toplevel):
             price_series = pd.to_numeric(df.get("line_netto"), errors="coerce")
         dates = pd.to_datetime(df["time"])
         ax.plot(dates, price_series, marker="o")
+        cursor = mplcursors.cursor(ax.get_lines(), hover=True)
+        cursor.connect(
+            "add",
+            lambda sel: sel.annotation.set_text(
+                f"{sel.target[1]:.2f}\n{mdates.num2date(sel.target[0]).strftime('%Y-%m-%d')}"
+            ),
+        )
         locator = mdates.AutoDateLocator()
         ax.xaxis.set_major_locator(locator)
         ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
