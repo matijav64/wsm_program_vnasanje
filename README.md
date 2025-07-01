@@ -38,6 +38,10 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    ```bash
    pip install -r requirements-dev.txt
    ```
+   Namesto zgornjih ukazov lahko uporabite skripto, ki naloži vse pakete:
+   ```bash
+   ./scripts/setup_env.sh
+   ```
 
 
 3. (Opcijsko) namestite paket v razvojni načini:
@@ -137,18 +141,15 @@ stalno maso pakiranja, jo dodajte v ta slovar.
 
 ### Poganjanje testov
 
-Pri poganjanju testov se naložijo tudi moduli, ki niso del samega paketa.
-Zato je treba namestiti razvojne odvisnosti, sicer lahko `pytest` med
-zbiranjem testov javi napake. Med pomembnejšimi paketih so
-`pandas`, `openpyxl`, `pdfplumber`, `pytest`, `pytest-cov` in `matplotlib`.
-Najlažje jih dodate z namestitvijo datoteke `requirements-dev.txt`:
+Pred zagonom `pytest` zato namestite pakete iz `requirements.txt` in, če obstaja, še `requirements-dev.txt`:
 
 ```bash
+pip install -r requirements.txt
 pip install -r requirements-dev.txt
 pytest
 ```
 
-Brez teh paketov se testi ne bodo pravilno zagnali.
+Brez teh paketov se testi ne bodo pravilno zagnali. Namesto ročnega izvajanja lahko uporabite skripto `./scripts/setup_env.sh`.
 
 ## Možne izboljšave
 
