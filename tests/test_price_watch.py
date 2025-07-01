@@ -126,6 +126,7 @@ def test_show_graph_sets_xticks(monkeypatch):
     class FakeAx:
         def __init__(self):
             self.xticks = None
+            self.ylim = None
 
         def plot(self, *a, **k):
             pass
@@ -141,6 +142,9 @@ def test_show_graph_sets_xticks(monkeypatch):
 
         def set_xticks(self, ticks):
             self.xticks = list(ticks)
+
+        def set_ylim(self, ymin, ymax):
+            self.ylim = (ymin, ymax)
 
         def margins(self, *a, **k):
             pass
@@ -208,6 +212,116 @@ def test_show_graph_sets_xticks(monkeypatch):
     expected_ticks = pd.to_datetime(df["time"]).tolist()
     assert xticks_capture["ax"].xticks == expected_ticks
     assert xticks_capture["fig"].autofmt_called
+    expected_pad = (df["unit_price"].max() - df["unit_price"].min()) * 0.10
+    assert xticks_capture["ax"].ylim == (
+        df["unit_price"].min() - expected_pad,
+        df["unit_price"].max() + expected_pad,
+    )
+
+
+def test_show_graph_single_value(monkeypatch):
+    df = pd.DataFrame({"time": [pd.Timestamp("2023-01-01")], "unit_price": [5]})
+
+    import types, sys
+
+    cap = {}
+
+    class FakeFig:
+        def __init__(self):
+            pass
+
+        def autofmt_xdate(self):
+            cap["auto"] = True
+
+    class FakeAx:
+        def __init__(self):
+            self.ylim = None
+
+        def plot(self, *a, **k):
+            pass
+
+        def set_xlabel(self, *a):
+            pass
+
+        def set_ylabel(self, *a):
+            pass
+
+        def grid(self, *a, **k):
+            pass
+
+        def set_xticks(self, ticks):
+            cap["ticks"] = list(ticks)
+
+        def set_ylim(self, ymin, ymax):
+            self.ylim = (ymin, ymax)
+
+        def margins(self, *a, **k):
+            pass
+
+    def fake_subplots(*args, **kwargs):
+        fig = FakeFig()
+        ax = FakeAx()
+        cap["ax"] = ax
+        return fig, ax
+
+    class FakeCanvas:
+        def __init__(self, fig, master=None):
+            pass
+
+        def draw(self):
+            pass
+
+        def get_tk_widget(self):
+            class W:
+                def pack(self, *a, **k):
+                    pass
+
+            return W()
+
+    fake_plt = types.SimpleNamespace(subplots=fake_subplots)
+    fake_backend = types.SimpleNamespace(FigureCanvasTkAgg=FakeCanvas)
+    fake_backends = types.SimpleNamespace(**{"backend_tkagg": fake_backend})
+    fake_matplotlib = types.ModuleType("matplotlib")
+    fake_matplotlib.pyplot = fake_plt
+    fake_matplotlib.backends = fake_backends
+    monkeypatch.setitem(sys.modules, "matplotlib", fake_matplotlib)
+    monkeypatch.setitem(sys.modules, "matplotlib.pyplot", fake_plt)
+    monkeypatch.setitem(sys.modules, "matplotlib.backends", fake_backends)
+    monkeypatch.setitem(sys.modules, "matplotlib.backends.backend_tkagg", fake_backend)
+
+    class FakeTop:
+        def __init__(self, master=None):
+            pass
+
+        def title(self, t):
+            pass
+
+        def bind(self, *a, **k):
+            pass
+
+        def destroy(self):
+            pass
+
+    class FakeButton:
+        def __init__(self, master, text=None, command=None):
+            pass
+
+        def pack(self, *a, **k):
+            pass
+
+    monkeypatch.setattr("wsm.ui.price_watch.tk.Toplevel", FakeTop)
+    monkeypatch.setattr("wsm.ui.price_watch.ttk.Button", FakeButton)
+    monkeypatch.setattr("wsm.ui.price_watch.tk.BOTH", "both", raising=False)
+    monkeypatch.setattr("wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None)
+
+    pw = PriceWatch.__new__(PriceWatch)
+    pw._show_graph("Item", df)
+
+    ax = cap["ax"]
+    pad = abs(float(df["unit_price"].iloc[0])) * 0.03
+    if pad == 0:
+        pad = 0.10
+    assert ax.ylim == (float(df["unit_price"].iloc[0]) - pad, float(df["unit_price"].iloc[0]) + pad)
 
 
 def test_refresh_table_empty(monkeypatch):
