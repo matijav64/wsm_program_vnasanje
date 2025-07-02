@@ -125,8 +125,10 @@ stalno maso pakiranja, jo dodajte v ta slovar.
    vmesnik pa lahko po potrebi zaženete tudi neposredno s funkcijo
    `launch_price_watch`.
 
-   V zgornjem delu okna je iskalnik za hitro filtriranje dobaviteljev. Spodaj
-   se nahaja dodatno polje za iskanje po nazivih artiklov. Rezultati so
+   V zgornjem delu okna je iskalnik za hitro filtriranje dobaviteljev. Ob njem
+   je še polje za izbiro števila tednov (privzeto 10), ki določa, koliko
+   zgodovine se upošteva pri izračunu spremembe cene. Spodaj se nahaja
+   dodatno polje za iskanje po nazivih artiklov. Rezultati so
    prikazani v tabeli s stolpci "Artikel", "Neto cena", "€/kg|€/L",
    "Zadnji datum", "Min" in "Max". Po posameznem stolpcu lahko razvrstite
    s klikom na glavo.
