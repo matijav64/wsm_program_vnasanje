@@ -313,18 +313,18 @@ class PriceWatch(tk.Toplevel):
                     try:
                         messagebox.showinfo(
                             "Price change",
-                            f"{price_val} ({r['diff_pct']:.2f} %)",
+                            f"{price_val:.2f} ({r['diff_pct']:.2f} %)",
                         )
                     except Exception:  # pragma: no cover - optional GUI
                         pass
             vals = (
                 r["label"],
-                "" if r["line_netto"] is None else f"{r['line_netto']}",
-                "" if r["unit_price"] is None else f"{r['unit_price']}",
+                "" if r["line_netto"] is None else f"{r['line_netto']:.2f}",
+                "" if r["unit_price"] is None else f"{r['unit_price']:.2f}",
                 r["last_dt"].strftime("%Y-%m-%d"),
                 "" if r["diff_pct"] is None else f"{r['diff_pct']:.2f}",
-                f"{r['min']}",
-                f"{r['max']}",
+                f"{r['min']:.2f}",
+                f"{r['max']:.2f}",
             )
             kwargs = {"tags": (tag,)} if tag else {}
             try:
