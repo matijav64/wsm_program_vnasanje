@@ -333,21 +333,28 @@ class PriceWatch(tk.Toplevel):
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
         widget_parent = top
-        if tk._default_root is None or not hasattr(top, "tk"):
+        root_ok = tk._default_root is not None or hasattr(top, "tk")
+        if not root_ok:
+            # Attempt to create a root if none exists; may fail on headless systems
             try:  # pragma: no cover - depends on Tk availability
                 root = tk.Tk()
                 root.withdraw()
                 if not hasattr(top, "tk"):
                     top.tk = root.tk
                 widget_parent = root
+                root_ok = True
             except Exception as exc:  # noqa: BLE001 - just log failure
                 log.warning("Failed to create Tk root: %s", exc)
 
-        pct_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(widget_parent, text="%", variable=pct_var).pack(pady=5)
-        toggle_capture["var"] = pct_var
-        toggle_capture["variable"] = pct_var
-        toggle_capture["packed"] = True
+        if root_ok:
+            pct_var = tk.BooleanVar(value=False)
+            ttk.Checkbutton(widget_parent, text="%", variable=pct_var).pack(pady=5)
+            toggle_capture["var"] = pct_var
+            toggle_capture["variable"] = pct_var
+            toggle_capture["packed"] = True
+        else:
+            # Headless fallback: no toggle widget available
+            toggle_capture["packed"] = False
         ttk.Button(top, text="Zapri", command=top.destroy).pack(pady=5)
         top.bind("<Escape>", lambda e: top.destroy())
 
