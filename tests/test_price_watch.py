@@ -157,6 +157,9 @@ def test_show_graph_sets_xticks(monkeypatch):
         def set_ylim(self, ymin, ymax):
             self.ylim = (ymin, ymax)
 
+        def set_title(self, *a, **k):
+            pass
+
         def margins(self, *a, **k):
             pass
 
@@ -188,8 +191,8 @@ def test_show_graph_sets_xticks(monkeypatch):
     fake_backend = types.SimpleNamespace(FigureCanvasTkAgg=FakeCanvas)
     fake_backends = types.SimpleNamespace(**{"backend_tkagg": fake_backend})
     fake_dates = types.SimpleNamespace(
-        AutoDateLocator=lambda: "LOC",
-        ConciseDateFormatter=lambda loc: f"FMT-{loc}",
+        DayLocator=lambda: "LOC",
+        DateFormatter=lambda fmt: f"FMT-{fmt}",
         date2num=lambda d: d,
         num2date=lambda n: n,
     )
@@ -320,6 +323,9 @@ def test_show_graph_single_value(monkeypatch):
         def margins(self, *a, **k):
             pass
 
+        def set_title(self, *a, **k):
+            pass
+
         def get_lines(self):
             return self.lines
 
@@ -347,8 +353,8 @@ def test_show_graph_single_value(monkeypatch):
     fake_backend = types.SimpleNamespace(FigureCanvasTkAgg=FakeCanvas)
     fake_backends = types.SimpleNamespace(**{"backend_tkagg": fake_backend})
     fake_dates = types.SimpleNamespace(
-        AutoDateLocator=lambda: "LOC",
-        ConciseDateFormatter=lambda loc: f"FMT-{loc}",
+        DayLocator=lambda: "LOC",
+        DateFormatter=lambda fmt: f"FMT-{fmt}",
         date2num=lambda d: d,
         num2date=lambda n: n,
     )
