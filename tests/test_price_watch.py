@@ -232,29 +232,8 @@ def test_show_graph_sets_xticks(monkeypatch):
 
         def pack(self, *a, **k):
             pass
-    import builtins
-    toggle_capture = {}
-    builtins.toggle_capture = toggle_capture
-    monkeypatch.setattr("wsm.ui.price_watch.toggle_capture", toggle_capture)
-
-    class FakeVar:
-        def __init__(self, value=False):
-            builtins.toggle_capture["var"] = self
-
-        def get(self):
-            return False
-
-    class FakeCheck:
-        def __init__(self, master=None, text=None, variable=None, command=None):
-            builtins.toggle_capture["variable"] = variable
-
-        def pack(self, *a, **k):
-            builtins.toggle_capture["packed"] = True
-
     monkeypatch.setattr("wsm.ui.price_watch.tk.Toplevel", FakeTop)
     monkeypatch.setattr("wsm.ui.price_watch.ttk.Button", FakeButton)
-    monkeypatch.setattr("wsm.ui.price_watch.tk.BooleanVar", FakeVar)
-    monkeypatch.setattr("wsm.ui.price_watch.ttk.Checkbutton", FakeCheck)
     monkeypatch.setattr("wsm.ui.price_watch.tk.BOTH", "both", raising=False)
     monkeypatch.setattr("wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None)
 
@@ -269,8 +248,6 @@ def test_show_graph_sets_xticks(monkeypatch):
         df["unit_price"].min() - expected_pad,
         df["unit_price"].max() + expected_pad,
     )
-    assert toggle_capture.get("variable") is toggle_capture.get("var")
-    assert toggle_capture.get("packed") in (True, False)
 
 
 def test_show_graph_single_value(monkeypatch):
@@ -394,29 +371,8 @@ def test_show_graph_single_value(monkeypatch):
 
         def pack(self, *a, **k):
             pass
-    import builtins
-    toggle_capture = {}
-    builtins.toggle_capture = toggle_capture
-    monkeypatch.setattr("wsm.ui.price_watch.toggle_capture", toggle_capture)
-
-    class FakeVar:
-        def __init__(self, value=False):
-            builtins.toggle_capture["var"] = self
-
-        def get(self):
-            return False
-
-    class FakeCheck:
-        def __init__(self, master=None, text=None, variable=None, command=None):
-            builtins.toggle_capture["variable"] = variable
-
-        def pack(self, *a, **k):
-            builtins.toggle_capture["packed"] = True
-
     monkeypatch.setattr("wsm.ui.price_watch.tk.Toplevel", FakeTop)
     monkeypatch.setattr("wsm.ui.price_watch.ttk.Button", FakeButton)
-    monkeypatch.setattr("wsm.ui.price_watch.tk.BooleanVar", FakeVar)
-    monkeypatch.setattr("wsm.ui.price_watch.ttk.Checkbutton", FakeCheck)
     monkeypatch.setattr("wsm.ui.price_watch.tk.BOTH", "both", raising=False)
     monkeypatch.setattr("wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None)
 
@@ -428,8 +384,6 @@ def test_show_graph_single_value(monkeypatch):
     if pad == 0:
         pad = 0.10
     assert ax.ylim == (float(df["unit_price"].iloc[0]) - pad, float(df["unit_price"].iloc[0]) + pad)
-    assert toggle_capture.get("variable") is toggle_capture.get("var")
-    assert toggle_capture.get("packed") in (True, False)
 
 
 def test_refresh_table_empty(monkeypatch):
@@ -617,48 +571,7 @@ def test_show_graph_with_real_matplotlib(monkeypatch):
 
         def pack(self, *a, **k):
             pass
-    import builtins
-    toggle_capture = {}
-    builtins.toggle_capture = toggle_capture
-    monkeypatch.setattr("wsm.ui.price_watch.toggle_capture", toggle_capture)
-
-    class FakeVar:
-        def __init__(self, value=False):
-            builtins.toggle_capture["var"] = self
-
-        def get(self):
-            return False
-
-    class FakeCheck:
-        def __init__(self, master=None, text=None, variable=None, command=None):
-            builtins.toggle_capture["variable"] = variable
-
-        def pack(self, *a, **k):
-            builtins.toggle_capture["packed"] = True
-
-    toggle_capture = {}
-    builtins.toggle_capture = toggle_capture
-    monkeypatch.setattr("wsm.ui.price_watch.toggle_capture", toggle_capture)
-
-    class FakeVar:
-        def __init__(self, value=False):
-            builtins.toggle_capture["var"] = self
-
-        def get(self):
-            return False
-
-    class FakeCheck:
-        def __init__(self, master=None, text=None, variable=None, command=None):
-            builtins.toggle_capture["variable"] = variable
-
-        def pack(self, *a, **k):
-            builtins.toggle_capture["packed"] = True
-
     cursor_info = {}
-    import builtins
-    toggle_capture = {}
-    builtins.toggle_capture = toggle_capture
-    monkeypatch.setattr("wsm.ui.price_watch.toggle_capture", toggle_capture)
 
     class FakeCursor:
         def connect(self, event, func):
@@ -675,8 +588,6 @@ def test_show_graph_with_real_matplotlib(monkeypatch):
     )
     monkeypatch.setattr("wsm.ui.price_watch.tk.Toplevel", FakeTop)
     monkeypatch.setattr("wsm.ui.price_watch.ttk.Button", FakeButton)
-    monkeypatch.setattr("wsm.ui.price_watch.tk.BooleanVar", FakeVar)
-    monkeypatch.setattr("wsm.ui.price_watch.ttk.Checkbutton", FakeCheck)
     monkeypatch.setattr("wsm.ui.price_watch.tk.BOTH", "both", raising=False)
     monkeypatch.setattr("wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None)
     monkeypatch.setitem(sys.modules, "mplcursors", types.SimpleNamespace(cursor=fake_cursor))
@@ -800,8 +711,6 @@ def test_show_graph_skips_zero_prices(monkeypatch):
     ydata = list(line.get_ydata())
     assert 0 not in ydata
     assert len(ydata) == 2
-    assert toggle_capture.get("variable") is toggle_capture.get("var")
-    assert toggle_capture.get("packed") in (True, False)
 
 
 def test_close_calls_destroy_and_quit():
