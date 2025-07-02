@@ -30,7 +30,7 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    pip install -r requirements.txt
    ```
    Med glavnimi odvisnostmi so `pandas`, `pdfplumber` in `openpyxl`.
-   Za prikaz grafov cen morate namestiti tudi `matplotlib` in `mplcursors`:
+   Za grafični vmesnik **Price Watch** potrebujete tudi `matplotlib` in `mplcursors`:
    ```bash
    pip install 'wsm[plot]'
    ```
@@ -145,7 +145,9 @@ stalno maso pakiranja, jo dodajte v ta slovar.
 
 ### Poganjanje testov
 
-Pred zagonom `pytest` zato namestite pakete iz `requirements.txt` in, če obstaja, še `requirements-dev.txt`:
+Pred zagonom `pytest` namestite pakete iz `requirements.txt` in, če obstaja,
+še `requirements-dev.txt`. Slednji vključuje `matplotlib` in `mplcursors`,
+ki sta potrebna za teste **Price Watch**:
 
 ```bash
 pip install -r requirements.txt
