@@ -1,5 +1,6 @@
 # Ignoriraj virtualno okolje
 venv/
+.venv/
 
 # Ignoriraj Pythonske začasne datoteke
 __pycache__/
