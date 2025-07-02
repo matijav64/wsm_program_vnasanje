@@ -645,6 +645,73 @@ def test_refresh_table_weeks_filter_fallback(monkeypatch):
     assert row[4] == ""
 
 
+def test_refresh_table_min_max_change_with_weeks(monkeypatch):
+    monkeypatch.setattr(
+        "wsm.ui.price_watch.messagebox.showinfo",
+        lambda *a, **k: None,
+    )
+
+    class DummyVar:
+        def __init__(self, value=""):
+            self.val = value
+
+        def get(self):
+            return self.val
+
+    class DummyTree:
+        def __init__(self):
+            self.inserted = []
+
+        def get_children(self):
+            return []
+
+        def delete(self, *a):
+            pass
+
+        def insert(self, parent, index, values):
+            self.inserted.append(values)
+
+    now = pd.Timestamp("2023-01-31")
+    monkeypatch.setattr(pd.Timestamp, "now", classmethod(lambda cls, tz=None: now))
+
+    df = pd.DataFrame(
+        {
+            "line_netto": [1, 2, 3, 4],
+            "unit_price": [pd.NA, pd.NA, pd.NA, pd.NA],
+            "time": [
+                now - pd.Timedelta(weeks=3),
+                now - pd.Timedelta(weeks=2),
+                now - pd.Timedelta(weeks=1),
+                now,
+            ],
+        }
+    )
+
+    pw = PriceWatch.__new__(PriceWatch)
+    pw.tree = DummyTree()
+    pw.supplier_codes = {"S1 - Sup": "S1"}
+    pw.sup_var = DummyVar("S1 - Sup")
+    pw.search_var = DummyVar("")
+    pw.weeks_var = DummyVar("2")
+    pw.items_by_supplier = {"S1": {"Item": df}}
+    pw._sort_col = None
+    pw._sort_reverse = False
+
+    pw._refresh_table()
+
+    row = pw.tree.inserted[0]
+    assert float(row[5]) == 2.0
+    assert float(row[6]) == 4.0
+
+    pw.weeks_var.val = "1"
+    pw.tree.inserted = []
+    pw._refresh_table()
+
+    row = pw.tree.inserted[0]
+    assert float(row[5]) == 3.0
+    assert float(row[6]) == 4.0
+
+
 def test_show_graph_with_real_matplotlib(monkeypatch):
     import matplotlib
     import matplotlib.dates as mdates
