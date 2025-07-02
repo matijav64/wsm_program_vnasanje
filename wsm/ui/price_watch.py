@@ -140,13 +140,10 @@ class PriceWatch(tk.Toplevel):
 
         # Interval (weeks) for price change calculation
         ttk.Label(frame, text="Tedni:").pack(side=tk.LEFT, padx=(10, 2))
-        self.weeks_var = tk.StringVar(value="10")
+        self.weeks_var = tk.StringVar(value="2")
         spin = ttk.Spinbox(frame, from_=1, to=520, textvariable=self.weeks_var, width=5)
         spin.pack(side=tk.LEFT, padx=5)
-        try:
-            self.weeks_var.trace_add("write", lambda *a: self._refresh_table())
-        except Exception:
-            pass
+        ttk.Button(frame, text="Potrdi", command=self._refresh_table).pack(side=tk.LEFT, padx=5)
 
         self.sup_var = tk.StringVar()
         self.sup_box = ttk.Combobox(frame, textvariable=self.sup_var, state="readonly", width=45)
