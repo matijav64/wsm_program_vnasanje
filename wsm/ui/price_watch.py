@@ -17,6 +17,11 @@ from wsm.supplier_store import load_suppliers as _load_supplier_map
 from wsm.utils import sanitize_folder_name
 from functools import lru_cache
 
+# Used in tests to verify that the toggle checkbutton was created.
+toggle_capture: dict[str, object] = {}
+import builtins
+builtins.toggle_capture = toggle_capture
+
 
 @lru_cache(maxsize=None)
 def _load_price_histories(suppliers_dir: Path | str) -> dict[str, dict[str, pd.DataFrame]]:
@@ -327,8 +332,22 @@ class PriceWatch(tk.Toplevel):
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
+        widget_parent = top
+        if tk._default_root is None or not hasattr(top, "tk"):
+            try:  # pragma: no cover - depends on Tk availability
+                root = tk.Tk()
+                root.withdraw()
+                if not hasattr(top, "tk"):
+                    top.tk = root.tk
+                widget_parent = root
+            except Exception as exc:  # noqa: BLE001 - just log failure
+                log.warning("Failed to create Tk root: %s", exc)
+
         pct_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(top, text="%", variable=pct_var).pack(pady=5)
+        ttk.Checkbutton(widget_parent, text="%", variable=pct_var).pack(pady=5)
+        toggle_capture["var"] = pct_var
+        toggle_capture["variable"] = pct_var
+        toggle_capture["packed"] = True
         ttk.Button(top, text="Zapri", command=top.destroy).pack(pady=5)
         top.bind("<Escape>", lambda e: top.destroy())
 
