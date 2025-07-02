@@ -283,9 +283,19 @@ class PriceWatch(tk.Toplevel):
         dates = pd.to_datetime(df["time"]).dt.normalize()
         mask = price_series.ne(0)
         df_plot = pd.DataFrame({"date": dates[mask], "price": price_series[mask]})
-        df_plot = df_plot.groupby("date", as_index=False)["price"].mean()
 
-        ax.plot(df_plot["date"], df_plot["price"], marker="o")
+        # ── 1) grobo zaokroževanje, da odpravimo nenamerne drobne odklone ──
+        df_plot["_price_round"] = df_plot["price"].round(2)
+
+        # ── 2) eno vrstico na dan (če so v istem dnevu še vedno razlike, vzemi srednjo) ──
+        grp = (
+            df_plot
+            .groupby(df_plot["date"].dt.date)["_price_round"]
+            .mean()
+            .round(2)
+        )
+
+        ax.plot(list(grp.index), grp.values, marker="o", linestyle="-")
         cursor = mplcursors.cursor(ax.get_lines(), hover=True)
 
         def _fmt(sel: Any) -> None:
@@ -298,9 +308,23 @@ class PriceWatch(tk.Toplevel):
             )
 
         cursor.connect("add", _fmt)
-        locator = mdates.DayLocator()
+
+        # ── os X: največ 6–8 kljukic + rotacija ──────────────────────
+        max_ticks = 8
+        locator_cls = getattr(mdates, "AutoDateLocator", None)
+        if locator_cls is not None:
+            locator = locator_cls(minticks=3, maxticks=max_ticks)
+        else:
+            locator = mdates.DayLocator()
         ax.xaxis.set_major_locator(locator)
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%d-%b"))
+        fig.autofmt_xdate(rotation=45, ha="right")
+
+        # malenkost več prostora
+        if hasattr(fig, "set_size_inches"):
+            fig.set_size_inches(5.5, 3.2)
+        if hasattr(fig, "tight_layout"):
+            fig.tight_layout(pad=1.0)
         if hasattr(ax, "ticklabel_format"):
             try:
                 ax.ticklabel_format(useOffset=False, style="plain")
@@ -318,7 +342,6 @@ class PriceWatch(tk.Toplevel):
         else:
             pad = (max_v - min_v) * 0.10
         ax.set_ylim(min_v - pad, max_v + pad)
-        fig.autofmt_xdate(rotation=25, ha="right")
         ax.set_xlabel("Datum")
         ax.set_ylabel("Cena")
         ax.set_title("Dnevno povprečje")
