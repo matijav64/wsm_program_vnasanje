@@ -216,7 +216,10 @@ class PriceWatch(tk.Toplevel):
         self._refresh_table()
 
     def _refresh_table(self) -> None:
-        if not hasattr(self, "tree"):
+        tree = getattr(self, "tree", None)
+        if not tree:
+            return
+        if hasattr(tree, "winfo_exists") and not tree.winfo_exists():
             return
         self.tree.delete(*self.tree.get_children())
         code = self.supplier_codes.get(self.sup_var.get())
@@ -303,19 +306,6 @@ class PriceWatch(tk.Toplevel):
                     try:
                         cfg(tag, background=color)
                     except Exception:  # pragma: no cover - ignore test dummies
-                        pass
-                if abs(r["diff_pct"]) >= 5:
-                    price_val = (
-                        r.get("unit_price")
-                        if r.get("unit_price") is not None
-                        else r.get("line_netto")
-                    )
-                    try:
-                        messagebox.showinfo(
-                            "Price change",
-                            f"{price_val} ({r['diff_pct']:.2f} %)",
-                        )
-                    except Exception:  # pragma: no cover - optional GUI
                         pass
             vals = (
                 r["label"],
