@@ -92,7 +92,7 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
   prostora, da se ločijo od tabele.
   Ob potrditvi vrstice program primerja ceno s prejšnjimi zapisi v
   `price_history.xlsx`. Če je odstopanje večje od nastavljenega praga
-  (privzeto 5&nbsp;% oz. vrednost spremenljivke `WSM_PRICE_WARN_PCT`), se
+  (privzeto 1&nbsp;% oz. vrednost spremenljivke `WSM_PRICE_WARN_PCT`), se
   vrstica obarva oranžno in prikaže se namig z zadnjo ceno ter razliko v
   odstotkih.
   Parameter `--price-warn-pct` omogoča začasno nastavitev drugega praga.

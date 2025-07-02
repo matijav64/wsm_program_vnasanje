@@ -7,14 +7,17 @@ import re
 from decimal import Decimal
 from typing import Tuple
 
-from wsm.constants import WEIGHTS_PER_PIECE
+from wsm.constants import WEIGHTS_PER_PIECE, PRICE_DIFF_THRESHOLD as DEFAULT_PRICE_DIFF_THRESHOLD
 
 import pandas as pd
 
 log = logging.getLogger(__name__)
 
 # Threshold for price change warnings in percent used by GUI
-PRICE_DIFF_THRESHOLD = Decimal(os.getenv("WSM_PRICE_WARN_PCT", "5"))
+_env_threshold = os.getenv("WSM_PRICE_WARN_PCT")
+PRICE_DIFF_THRESHOLD = (
+    Decimal(_env_threshold) if _env_threshold is not None else DEFAULT_PRICE_DIFF_THRESHOLD
+)
 
 
 def _fmt(v) -> str:

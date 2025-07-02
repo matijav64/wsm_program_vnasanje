@@ -18,7 +18,8 @@ from tkinter import ttk, messagebox
 
 from wsm.parsing.money import detect_round_step
 from wsm.utils import short_supplier_name, _clean
-from .helpers import _fmt, _norm_unit, PRICE_DIFF_THRESHOLD
+from wsm.constants import PRICE_DIFF_THRESHOLD
+from .helpers import _fmt, _norm_unit
 from .io import _save_and_close, _load_supplier_map, _write_supplier_map
 
 # Logger setup
