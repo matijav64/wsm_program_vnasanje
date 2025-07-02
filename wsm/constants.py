@@ -3,6 +3,9 @@ from decimal import Decimal
 from pathlib import Path
 import csv
 
+# Threshold for price change warnings (percent).
+PRICE_DIFF_THRESHOLD = Decimal("1.0")
+
 # Mapping of supplier item codes to their weight per individual piece (in kg).
 # Add entries as needed for products where the packaging weight is constant.
 WEIGHTS_PER_PIECE: dict[tuple[str, str], Decimal] = {}

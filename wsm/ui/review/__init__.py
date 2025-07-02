@@ -1,4 +1,5 @@
-from .helpers import _fmt, _norm_unit, PRICE_DIFF_THRESHOLD
+from wsm.constants import PRICE_DIFF_THRESHOLD
+from .helpers import _fmt, _norm_unit
 from .gui import review_links, _apply_price_warning, log
 from .io import _save_and_close, _load_supplier_map, _write_supplier_map
 

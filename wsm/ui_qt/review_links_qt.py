@@ -21,7 +21,8 @@ try:
 except Exception as exc:  # pragma: no cover - optional dependency
     raise ImportError("PyQt5 is required for the Qt GUI") from exc
 
-from wsm.ui.review.helpers import _fmt, _norm_unit, PRICE_DIFF_THRESHOLD
+from wsm.constants import PRICE_DIFF_THRESHOLD
+from wsm.ui.review.helpers import _fmt, _norm_unit
 from wsm.ui.review.io import _save_and_close, _load_supplier_map
 from wsm.parsing.money import detect_round_step
 from wsm.utils import short_supplier_name
