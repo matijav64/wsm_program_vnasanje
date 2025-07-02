@@ -11,6 +11,8 @@ from pathlib import Path
 import pandas as pd
 import logging
 
+from wsm.constants import PRICE_DIFF_THRESHOLD
+
 log = logging.getLogger(__name__)
 
 from wsm.supplier_store import load_suppliers as _load_supplier_map
@@ -140,13 +142,22 @@ class PriceWatch(tk.Toplevel):
         entry.pack(pady=5, fill=tk.X)
         entry.bind("<KeyRelease>", lambda e: self._refresh_table())
 
-        columns = ("label", "line_netto", "unit_price", "last_dt", "min", "max")
+        columns = (
+            "label",
+            "line_netto",
+            "unit_price",
+            "last_dt",
+            "diff_pct",
+            "min",
+            "max",
+        )
         self.tree = ttk.Treeview(self, columns=columns, show="headings")
         headings = {
             "label": "Artikel",
             "line_netto": "Neto cena",
             "unit_price": "€/kg|€/L",
             "last_dt": "Zadnji datum",
+            "diff_pct": "% diff",
             "min": "Min",
             "max": "Max",
         }
@@ -155,6 +166,9 @@ class PriceWatch(tk.Toplevel):
             width = 220 if col == "label" else 90
             anchor = tk.W if col == "label" else tk.E
             self.tree.column(col, width=width, anchor=anchor)
+
+        # Tag for highlighting notable price changes
+        self.tree.tag_configure("chg", background="#ffcccc")
 
         scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
@@ -208,12 +222,20 @@ class PriceWatch(tk.Toplevel):
 
             last_idx = stats_series.index[-1]
 
+            diff_pct = None
+            if len(stats_series) >= 2:
+                prev_val = stats_series.iloc[-2]
+                curr_val = stats_series.iloc[-1]
+                if prev_val != 0 and pd.notna(prev_val) and pd.notna(curr_val):
+                    diff_pct = float((curr_val - prev_val) / prev_val * 100)
+
             rows.append(
                 {
                     "label": label,
                     "line_netto": float(last_line.iloc[-1]) if not last_line.empty else None,
                     "unit_price": float(last_unit.iloc[-1]) if not last_unit.empty else None,
                     "last_dt": pd.to_datetime(df.loc[last_idx, "time"]),
+                    "diff_pct": diff_pct,
                     "min": float(stats_series.min()),
                     "max": float(stats_series.max()),
                     "df": df,
@@ -228,18 +250,26 @@ class PriceWatch(tk.Toplevel):
                 reverse=self._sort_reverse,
             )
         for r in rows:
-            self.tree.insert(
-                "",
-                "end",
-                values=(
-                    r["label"],
-                    "" if r["line_netto"] is None else f"{r['line_netto']}",
-                    "" if r["unit_price"] is None else f"{r['unit_price']}",
-                    r["last_dt"].strftime("%Y-%m-%d"),
-                    f"{r['min']}",
-                    f"{r['max']}",
-                ),
+            tag = (
+                "chg"
+                if r.get("diff_pct") is not None
+                and abs(r["diff_pct"]) > float(PRICE_DIFF_THRESHOLD)
+                else None
             )
+            vals = (
+                r["label"],
+                "" if r["line_netto"] is None else f"{r['line_netto']}",
+                "" if r["unit_price"] is None else f"{r['unit_price']}",
+                r["last_dt"].strftime("%Y-%m-%d"),
+                "" if r["diff_pct"] is None else f"{r['diff_pct']:.2f}",
+                f"{r['min']}",
+                f"{r['max']}",
+            )
+            kwargs = {"tags": (tag,)} if tag else {}
+            try:
+                self.tree.insert("", "end", values=vals, **kwargs)
+            except TypeError:  # pragma: no cover - for test dummies
+                self.tree.insert("", "end", values=vals)
 
     def _sort_by(self, column: str) -> None:
         if self._sort_col == column:
