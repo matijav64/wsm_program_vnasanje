@@ -11,14 +11,26 @@ from pathlib import Path
 import pandas as pd
 import logging
 
-from wsm.constants import PRICE_DIFF_THRESHOLD
-
 log = logging.getLogger(__name__)
 
 from wsm.supplier_store import load_suppliers as _load_supplier_map
 from wsm.utils import sanitize_folder_name
 from functools import lru_cache
 from typing import Any
+
+
+def _color_for_diff(pct: float) -> str:
+    """Return a hex color from blue (negative) to red (positive)."""
+    if pct is None:
+        return ""
+    pct = max(min(pct, 100), -100)
+    frac = abs(pct) / 100
+    base = int(255 * (1 - frac))
+    if pct >= 0:
+        r, g, b = 255, base, base
+    else:
+        r, g, b = base, base, 255
+    return f"#{r:02x}{g:02x}{b:02x}"
 
 
 
@@ -249,13 +261,30 @@ class PriceWatch(tk.Toplevel):
                 key=lambda r: (r[self._sort_col] is None, r[self._sort_col]),
                 reverse=self._sort_reverse,
             )
-        for r in rows:
-            tag = (
-                "chg"
-                if r.get("diff_pct") is not None
-                and abs(r["diff_pct"]) > float(PRICE_DIFF_THRESHOLD)
-                else None
-            )
+        for idx, r in enumerate(rows):
+            tag = None
+            if r.get("diff_pct") is not None:
+                color = _color_for_diff(r["diff_pct"])
+                tag = f"diff_{idx}"
+                cfg = getattr(self.tree, "tag_configure", None)
+                if callable(cfg):
+                    try:
+                        cfg(tag, background=color)
+                    except Exception:  # pragma: no cover - ignore test dummies
+                        pass
+                if abs(r["diff_pct"]) >= 5:
+                    price_val = (
+                        r.get("unit_price")
+                        if r.get("unit_price") is not None
+                        else r.get("line_netto")
+                    )
+                    try:
+                        messagebox.showinfo(
+                            "Price change",
+                            f"{price_val} ({r['diff_pct']:.2f} %)",
+                        )
+                    except Exception:  # pragma: no cover - optional GUI
+                        pass
             vals = (
                 r["label"],
                 "" if r["line_netto"] is None else f"{r['line_netto']}",

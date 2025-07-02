@@ -431,6 +431,10 @@ def test_refresh_table_empty(monkeypatch):
 
 
 def test_refresh_table_with_data(monkeypatch):
+    monkeypatch.setattr(
+        "wsm.ui.price_watch.messagebox.showinfo",
+        lambda *a, **k: None,
+    )
     class DummyVar:
         def __init__(self, value=""):
             self.val = value
@@ -477,6 +481,10 @@ def test_refresh_table_with_data(monkeypatch):
 
 
 def test_refresh_table_with_non_contiguous_index(monkeypatch):
+    monkeypatch.setattr(
+        "wsm.ui.price_watch.messagebox.showinfo",
+        lambda *a, **k: None,
+    )
     class DummyVar:
         def __init__(self, value=""):
             self.val = value
