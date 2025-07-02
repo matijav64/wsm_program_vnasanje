@@ -30,6 +30,10 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    pip install -r requirements.txt
    ```
    Med glavnimi odvisnostmi so `pandas`, `pdfplumber` in `openpyxl`.
+   Za prikaz grafov cen morate namestiti tudi `matplotlib` in `mplcursors`:
+   ```bash
+   pip install 'wsm[plot]'
+   ```
    Za PyQt različico GUI lahko namestite tudi `PyQt5` preko
    ```bash
    pip install 'wsm[pyqt]'
