@@ -256,19 +256,22 @@ class PriceWatch(tk.Toplevel):
             else:
                 df_recent = df
 
-            diff_pct = None
-            if len(df_recent) >= 2:
-                line_eval = line_prices_full.loc[df_recent.index]
-                unit_eval = unit_prices_full.loc[df_recent.index]
-                stats_series = unit_eval.dropna()
-                if stats_series.empty:
-                    stats_series = line_eval.dropna()
+            line_eval = line_prices_full.loc[df_recent.index]
+            unit_eval = unit_prices_full.loc[df_recent.index]
 
-                if len(stats_series) >= 2:
-                    first_val = stats_series.iloc[0]
-                    last_val = stats_series.iloc[-1]
-                    if first_val != 0 and pd.notna(first_val) and pd.notna(last_val):
-                        diff_pct = float((last_val - first_val) / first_val * 100)
+            stats_series_eval = unit_eval.dropna()
+            if stats_series_eval.empty:
+                stats_series_eval = line_eval.dropna()
+
+            diff_pct = None
+            if len(stats_series_eval) >= 2:
+                first_val = stats_series_eval.iloc[0]
+                last_val = stats_series_eval.iloc[-1]
+                if first_val != 0 and pd.notna(first_val) and pd.notna(last_val):
+                    diff_pct = float((last_val - first_val) / first_val * 100)
+
+            min_val = stats_series_eval.min()
+            max_val = stats_series_eval.max()
 
             rows.append(
                 {
@@ -277,8 +280,8 @@ class PriceWatch(tk.Toplevel):
                     "unit_price": float(last_unit.iloc[-1]) if not last_unit.empty else None,
                     "last_dt": pd.to_datetime(df.loc[last_idx, "time"]),
                     "diff_pct": diff_pct,
-                    "min": float(stats_series_full.min()),
-                    "max": float(stats_series_full.max()),
+                    "min": float(min_val) if pd.notna(min_val) else float("nan"),
+                    "max": float(max_val) if pd.notna(max_val) else float("nan"),
                     "df": df,
                 }
             )
