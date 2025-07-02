@@ -265,15 +265,25 @@ class PriceWatch(tk.Toplevel):
             if stats_series_eval.empty:
                 stats_series_eval = line_eval.dropna()
 
-            diff_pct = None
+            diff_pct: float | None
             if len(stats_series_eval) >= 2:
                 first_val = stats_series_eval.iloc[0]
                 last_val = stats_series_eval.iloc[-1]
                 if first_val != 0 and pd.notna(first_val) and pd.notna(last_val):
                     diff_pct = float((last_val - first_val) / first_val * 100)
+                else:
+                    diff_pct = None
+            elif len(stats_series_eval) == 1:
+                diff_pct = 0.0
+            else:
+                diff_pct = None
 
-            min_val = stats_series_eval.min()
-            max_val = stats_series_eval.max()
+            if stats_series_eval.empty:
+                min_val = None
+                max_val = None
+            else:
+                min_val = float(stats_series_eval.min())
+                max_val = float(stats_series_eval.max())
 
             rows.append(
                 {
@@ -282,8 +292,8 @@ class PriceWatch(tk.Toplevel):
                     "unit_price": float(last_unit.iloc[-1]) if not last_unit.empty else None,
                     "last_dt": pd.to_datetime(df.loc[last_idx, "time"]),
                     "diff_pct": diff_pct,
-                    "min": float(min_val) if pd.notna(min_val) else float("nan"),
-                    "max": float(max_val) if pd.notna(max_val) else float("nan"),
+                    "min": min_val,
+                    "max": max_val,
                     "df": df,
                 }
             )
@@ -311,9 +321,9 @@ class PriceWatch(tk.Toplevel):
                 "" if r["line_netto"] is None else f"{r['line_netto']:.2f}",
                 "" if r["unit_price"] is None else f"{r['unit_price']:.2f}",
                 r["last_dt"].strftime("%Y-%m-%d"),
-                "" if r["diff_pct"] is None else f"{r['diff_pct']:.2f}",
-                f"{r['min']:.2f}",
-                f"{r['max']:.2f}",
+                "—" if r["diff_pct"] is None else f"{r['diff_pct']:.2f}",
+                "—" if r["min"] is None else f"{r['min']:.2f}",
+                "—" if r["max"] is None else f"{r['max']:.2f}",
             )
             kwargs = {"tags": (tag,)} if tag else {}
             try:

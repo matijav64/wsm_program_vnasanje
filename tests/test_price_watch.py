@@ -642,7 +642,7 @@ def test_refresh_table_weeks_filter_fallback(monkeypatch):
     pw._refresh_table()
 
     row = pw.tree.inserted[0]
-    assert row[4] == ""
+    assert row[4] == "0.00"
 
 
 def test_refresh_table_min_max_change_with_weeks(monkeypatch):
