@@ -138,6 +138,16 @@ class PriceWatch(tk.Toplevel):
         entry = ttk.Entry(frame, textvariable=self.sup_search_var, width=20)
         entry.pack(side=tk.LEFT, padx=5)
 
+        # Interval (weeks) for price change calculation
+        ttk.Label(frame, text="Tedni:").pack(side=tk.LEFT, padx=(10, 2))
+        self.weeks_var = tk.StringVar(value="10")
+        spin = ttk.Spinbox(frame, from_=1, to=520, textvariable=self.weeks_var, width=5)
+        spin.pack(side=tk.LEFT, padx=5)
+        try:
+            self.weeks_var.trace_add("write", lambda *a: self._refresh_table())
+        except Exception:
+            pass
+
         self.sup_var = tk.StringVar()
         self.sup_box = ttk.Combobox(frame, textvariable=self.sup_var, state="readonly", width=45)
         self.sup_box.pack(side=tk.LEFT, padx=5)
@@ -219,27 +229,49 @@ class PriceWatch(tk.Toplevel):
             if query and query not in label.lower():
                 continue
 
-            line_prices = pd.to_numeric(df.get("line_netto"), errors="coerce")
-            unit_prices = pd.to_numeric(df.get("unit_price"), errors="coerce")
+            line_prices_full = pd.to_numeric(df.get("line_netto"), errors="coerce")
+            unit_prices_full = pd.to_numeric(df.get("unit_price"), errors="coerce")
 
-            last_line = line_prices.dropna()
-            last_unit = unit_prices.dropna()
+            last_line = line_prices_full.dropna()
+            last_unit = unit_prices_full.dropna()
 
-            stats_series = unit_prices.dropna()
-            if stats_series.empty:
-                stats_series = line_prices.dropna()
+            stats_series_full = unit_prices_full.dropna()
+            if stats_series_full.empty:
+                stats_series_full = line_prices_full.dropna()
 
-            if stats_series.empty:
+            if stats_series_full.empty:
                 continue
 
-            last_idx = stats_series.index[-1]
+            last_idx = stats_series_full.index[-1]
+
+            weeks = 0
+            if hasattr(self, "weeks_var"):
+                try:
+                    weeks = int(self.weeks_var.get())
+                except Exception:
+                    weeks = 0
+            if weeks:
+                cutoff = pd.Timestamp.now() - pd.Timedelta(weeks=weeks)
+                df_recent = df[df["time"] >= cutoff]
+            else:
+                df_recent = df
+            if len(df_recent) < 2:
+                df_eval = df
+            else:
+                df_eval = df_recent
+
+            line_eval = line_prices_full.loc[df_eval.index]
+            unit_eval = unit_prices_full.loc[df_eval.index]
+            stats_series = unit_eval.dropna()
+            if stats_series.empty:
+                stats_series = line_eval.dropna()
 
             diff_pct = None
             if len(stats_series) >= 2:
-                prev_val = stats_series.iloc[-2]
-                curr_val = stats_series.iloc[-1]
-                if prev_val != 0 and pd.notna(prev_val) and pd.notna(curr_val):
-                    diff_pct = float((curr_val - prev_val) / prev_val * 100)
+                first_val = stats_series.iloc[0]
+                last_val = stats_series.iloc[-1]
+                if first_val != 0 and pd.notna(first_val) and pd.notna(last_val):
+                    diff_pct = float((last_val - first_val) / first_val * 100)
 
             rows.append(
                 {
@@ -248,8 +280,8 @@ class PriceWatch(tk.Toplevel):
                     "unit_price": float(last_unit.iloc[-1]) if not last_unit.empty else None,
                     "last_dt": pd.to_datetime(df.loc[last_idx, "time"]),
                     "diff_pct": diff_pct,
-                    "min": float(stats_series.min()),
-                    "max": float(stats_series.max()),
+                    "min": float(stats_series_full.min()),
+                    "max": float(stats_series_full.max()),
                     "df": df,
                 }
             )
@@ -341,7 +373,19 @@ class PriceWatch(tk.Toplevel):
 
         dates = pd.to_datetime(df["time"]).dt.normalize()
         mask = price_series.ne(0)
+        weeks = 0
+        if hasattr(self, "weeks_var"):
+            try:
+                weeks = int(self.weeks_var.get())
+            except Exception:
+                weeks = 0
+        if weeks:
+            cutoff = pd.Timestamp.now() - pd.Timedelta(weeks=weeks)
+            mask &= dates >= cutoff
         df_plot = pd.DataFrame({"date": dates[mask], "price": price_series[mask]})
+        if df_plot.empty:
+            mask = price_series.ne(0)
+            df_plot = pd.DataFrame({"date": dates[mask], "price": price_series[mask]})
 
         # ── 1) grobo zaokroževanje, da odpravimo nenamerne drobne odklone ──
         df_plot["_price_round"] = df_plot["price"].round(2)
