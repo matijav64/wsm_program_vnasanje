@@ -143,6 +143,8 @@ class PriceWatch(tk.Toplevel):
         self.weeks_var = tk.StringVar(value="2")
         spin = ttk.Spinbox(frame, from_=1, to=520, textvariable=self.weeks_var, width=5)
         spin.pack(side=tk.LEFT, padx=5)
+        spin.configure(command=self._refresh_table)
+        spin.bind("<KeyRelease>", lambda e: self._refresh_table())
         ttk.Button(frame, text="Potrdi", command=self._refresh_table).pack(side=tk.LEFT, padx=5)
 
         self.sup_var = tk.StringVar()
