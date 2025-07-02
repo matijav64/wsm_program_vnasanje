@@ -642,7 +642,7 @@ def test_refresh_table_weeks_filter_fallback(monkeypatch):
     pw._refresh_table()
 
     row = pw.tree.inserted[0]
-    assert float(row[4]) == 300.0
+    assert row[4] == ""
 
 
 def test_show_graph_with_real_matplotlib(monkeypatch):

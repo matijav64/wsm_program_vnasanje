@@ -255,23 +255,20 @@ class PriceWatch(tk.Toplevel):
                 df_recent = df[df["time"] >= cutoff]
             else:
                 df_recent = df
-            if len(df_recent) < 2:
-                df_eval = df
-            else:
-                df_eval = df_recent
-
-            line_eval = line_prices_full.loc[df_eval.index]
-            unit_eval = unit_prices_full.loc[df_eval.index]
-            stats_series = unit_eval.dropna()
-            if stats_series.empty:
-                stats_series = line_eval.dropna()
 
             diff_pct = None
-            if len(stats_series) >= 2:
-                first_val = stats_series.iloc[0]
-                last_val = stats_series.iloc[-1]
-                if first_val != 0 and pd.notna(first_val) and pd.notna(last_val):
-                    diff_pct = float((last_val - first_val) / first_val * 100)
+            if len(df_recent) >= 2:
+                line_eval = line_prices_full.loc[df_recent.index]
+                unit_eval = unit_prices_full.loc[df_recent.index]
+                stats_series = unit_eval.dropna()
+                if stats_series.empty:
+                    stats_series = line_eval.dropna()
+
+                if len(stats_series) >= 2:
+                    first_val = stats_series.iloc[0]
+                    last_val = stats_series.iloc[-1]
+                    if first_val != 0 and pd.notna(first_val) and pd.notna(last_val):
+                        diff_pct = float((last_val - first_val) / first_val * 100)
 
             rows.append(
                 {
