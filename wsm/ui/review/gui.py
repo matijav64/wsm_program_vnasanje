@@ -278,6 +278,7 @@ def review_links(
         )
 
     df["kolicina_norm"] = df["kolicina_norm"].astype(float)
+    df["warning"] = pd.NA
     log.debug(f"df po normalizaciji: {df.head().to_dict()}")
 
     # If totals differ slightly (<=5 cent), adjust the document discount when
@@ -424,6 +425,7 @@ def review_links(
         "cena_pred_rabatom",
         "cena_po_rabatu",
         "total_net",
+        "warning",
         "wsm_naziv",
         "dobavitelj",
     ]
@@ -435,6 +437,7 @@ def review_links(
         "Net. pred rab.",
         "Net. po rab.",
         "Skupna neto",
+        "Opozorilo",
         "WSM naziv",
         "Dobavitelj",
     ]
@@ -447,7 +450,11 @@ def review_links(
 
     for c, h in zip(cols, heads):
         tree.heading(c, text=h)
-        width = 300 if c == "naziv" else (80 if c == "enota_norm" else 120)
+        width = (
+            300
+            if c == "naziv"
+            else 80 if c == "enota_norm" else 160 if c == "warning" else 120
+        )
         tree.column(c, width=width, anchor="w")
     for i, row in df.iterrows():
         vals = [
@@ -459,6 +466,23 @@ def review_links(
             for c in cols
         ]
         tree.insert("", "end", iid=str(i), values=vals)
+        label = f"{row['sifra_dobavitelja']} - {row['naziv']}"
+        try:
+            from wsm.utils import load_last_price
+
+            prev_price = load_last_price(label, suppliers_file)
+        except Exception as exc:  # pragma: no cover - robust against IO errors
+            log.warning("Napaka pri branju zadnje cene: %s", exc)
+            prev_price = None
+
+        tooltip = _apply_price_warning(
+            tree,
+            str(i),
+            row["cena_po_rabatu"],
+            prev_price,
+            threshold=price_warn_threshold,
+        )
+        df.at[i, "warning"] = tooltip
     tree.focus("0")
     tree.selection_set("0")
 
@@ -791,6 +815,15 @@ def review_links(
         price_tip.geometry(f"+{tree.winfo_rootx()+x+w}+{tree.winfo_rooty()+y}")
         last_warn_item = item_id
 
+    def _on_select(_=None):
+        sel_i = tree.focus()
+        if not sel_i:
+            _hide_tooltip()
+            return
+        idx = int(sel_i)
+        tooltip = df.at[idx, "warning"]
+        _show_tooltip(sel_i, tooltip)
+
     def _confirm(_=None):
         sel_i = tree.focus()
         if not sel_i:
@@ -824,6 +857,8 @@ def review_links(
             prev_price,
             threshold=price_warn_threshold,
         )
+
+        df.at[idx, "warning"] = tooltip
 
         _show_tooltip(sel_i, tooltip)
 
@@ -896,7 +931,7 @@ def review_links(
     tree.bind("<Up>", _tree_nav_up)
     tree.bind("<Down>", _tree_nav_down)
     tree.bind("<Double-Button-1>", _edit_unit)
-    tree.bind("<<TreeviewSelect>>", _hide_tooltip)
+    tree.bind("<<TreeviewSelect>>", _on_select)
 
     # Vezave za entry in lb
     entry.bind("<KeyRelease>", _suggest)
