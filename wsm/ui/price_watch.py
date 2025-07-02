@@ -16,6 +16,7 @@ log = logging.getLogger(__name__)
 from wsm.supplier_store import load_suppliers as _load_supplier_map
 from wsm.utils import sanitize_folder_name
 from functools import lru_cache
+from typing import Any
 
 
 
@@ -286,12 +287,17 @@ class PriceWatch(tk.Toplevel):
 
         ax.plot(df_plot["date"], df_plot["price"], marker="o")
         cursor = mplcursors.cursor(ax.get_lines(), hover=True)
-        cursor.connect(
-            "add",
-            lambda sel: sel.annotation.set_text(
-                f"{sel.target[1]:.2f}\n{mdates.num2date(sel.target[0]).strftime('%Y-%m-%d')}"
-            ),
-        )
+
+        def _fmt(sel: Any) -> None:
+            try:
+                dt = mdates.num2date(sel.target[0])
+            except Exception:
+                dt = pd.to_datetime(sel.target[0])
+            sel.annotation.set_text(
+                f"{sel.target[1]:.2f} €\n{dt.strftime('%Y-%m-%d')}"
+            )
+
+        cursor.connect("add", _fmt)
         locator = mdates.DayLocator()
         ax.xaxis.set_major_locator(locator)
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%d-%b"))

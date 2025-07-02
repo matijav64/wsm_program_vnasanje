@@ -622,7 +622,7 @@ def test_show_graph_with_real_matplotlib(monkeypatch):
             target=(mdates.date2num(first_x), first_y), annotation=Ann()
         )
     )
-    assert ann_text and "2023-01-01" in ann_text[0]
+    assert ann_text and ann_text[0] == "1.00 €\n2023-01-01"
 
 
 def test_show_graph_skips_zero_prices(monkeypatch):
