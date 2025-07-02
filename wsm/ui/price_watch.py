@@ -283,16 +283,12 @@ class PriceWatch(tk.Toplevel):
         else:
             price_series = pd.to_numeric(df.get("line_netto"), errors="coerce")
 
-        dates = pd.to_datetime(df["time"])
-        # Ignore entries with zero price to avoid meaningless points on the
-        # graph.  ``price_series`` is the column that will be plotted, so we
-        # drop rows where its value is exactly ``0``.  ``time`` values are
-        # filtered with the same mask to keep data aligned.
+        dates = pd.to_datetime(df["time"]).dt.normalize()
         mask = price_series.ne(0)
-        price_series = price_series[mask]
-        dates = dates[mask]
+        df_plot = pd.DataFrame({"date": dates[mask], "price": price_series[mask]})
+        df_plot = df_plot.groupby("date", as_index=False)["price"].mean()
 
-        ax.plot(dates, price_series, marker="o")
+        ax.plot(df_plot["date"], df_plot["price"], marker="o")
         cursor = mplcursors.cursor(ax.get_lines(), hover=True)
         cursor.connect(
             "add",
@@ -300,9 +296,9 @@ class PriceWatch(tk.Toplevel):
                 f"{sel.target[1]:.2f}\n{mdates.num2date(sel.target[0]).strftime('%Y-%m-%d')}"
             ),
         )
-        locator = mdates.AutoDateLocator()
+        locator = mdates.DayLocator()
         ax.xaxis.set_major_locator(locator)
-        ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%d-%b"))
         if hasattr(ax, "ticklabel_format"):
             try:
                 ax.ticklabel_format(useOffset=False, style="plain")
@@ -323,6 +319,7 @@ class PriceWatch(tk.Toplevel):
         fig.autofmt_xdate(rotation=25, ha="right")
         ax.set_xlabel("Datum")
         ax.set_ylabel("Cena")
+        ax.set_title("Dnevno povprečje")
         ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.2f}"))
         ax.grid(True, linestyle=":")
         # Add a little horizontal padding so points at the edges are visible
