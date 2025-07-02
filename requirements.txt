@@ -6,3 +6,4 @@ click
 PyQt5; extra == "pyqt"
 matplotlib
 mplcursors
+nginx
