@@ -126,9 +126,10 @@ stalno maso pakiranja, jo dodajte v ta slovar.
    `launch_price_watch`.
 
    V zgornjem delu okna je iskalnik za hitro filtriranje dobaviteljev. Ob njem
-   je še polje za izbiro števila tednov (privzeto 10), ki določa, koliko
+   je še polje za izbiro števila tednov (privzeto 2), ki določa, koliko
    zgodovine se upošteva pri izračunu spremembe cene. Spodaj se nahaja
-   dodatno polje za iskanje po nazivih artiklov. Rezultati so
+   dodatno polje za iskanje po nazivih artiklov. Filter se uporabi po kliku na
+   gumb "Potrdi". Rezultati so
    prikazani v tabeli s stolpci "Artikel", "Neto cena", "€/kg|€/L",
    "Zadnji datum", "Min" in "Max". Po posameznem stolpcu lahko razvrstite
    s klikom na glavo.
