@@ -643,6 +643,66 @@ def test_refresh_table_weeks_filter_fallback(monkeypatch):
 
     row = pw.tree.inserted[0]
     assert row[4] == "0.00"
+    assert row[5] == "—"
+    assert row[6] == "—"
+
+
+def test_refresh_table_weeks_filter_no_entries(monkeypatch):
+    monkeypatch.setattr(
+        "wsm.ui.price_watch.messagebox.showinfo",
+        lambda *a, **k: None,
+    )
+
+    class DummyVar:
+        def __init__(self, value=""):
+            self.val = value
+
+        def get(self):
+            return self.val
+
+    class DummyTree:
+        def __init__(self):
+            self.inserted = []
+            self.kwargs = []
+
+        def get_children(self):
+            return []
+
+        def delete(self, *a):
+            pass
+
+        def insert(self, parent, index, values, **kwargs):
+            self.inserted.append(values)
+            self.kwargs.append(kwargs)
+
+    now = pd.Timestamp("2023-01-31")
+    monkeypatch.setattr(pd.Timestamp, "now", classmethod(lambda cls, tz=None: now))
+
+    df = pd.DataFrame(
+        {
+            "line_netto": [1, 2],
+            "unit_price": [0.5, 0.6],
+            "time": [now - pd.Timedelta(weeks=10), now - pd.Timedelta(weeks=9)],
+        }
+    )
+
+    pw = PriceWatch.__new__(PriceWatch)
+    pw.tree = DummyTree()
+    pw.supplier_codes = {"S1 - Sup": "S1"}
+    pw.sup_var = DummyVar("S1 - Sup")
+    pw.search_var = DummyVar("")
+    pw.weeks_var = DummyVar("1")
+    pw.items_by_supplier = {"S1": {"Item": df}}
+    pw._sort_col = None
+    pw._sort_reverse = False
+
+    pw._refresh_table()
+
+    row = pw.tree.inserted[0]
+    assert row[4] == "—"
+    assert row[5] == "—"
+    assert row[6] == "—"
+    assert pw.tree.kwargs[0].get("tags") is None
 
 
 def test_refresh_table_min_max_change_with_weeks(monkeypatch):
@@ -677,7 +737,7 @@ def test_refresh_table_min_max_change_with_weeks(monkeypatch):
     df = pd.DataFrame(
         {
             "line_netto": [1, 2, 3, 4],
-            "unit_price": [pd.NA, pd.NA, pd.NA, pd.NA],
+            "unit_price": [1.0, 2.0, 3.0, 4.0],
             "time": [
                 now - pd.Timedelta(weeks=3),
                 now - pd.Timedelta(weeks=2),
