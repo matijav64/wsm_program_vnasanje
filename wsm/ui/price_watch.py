@@ -140,11 +140,27 @@ class PriceWatch(tk.Toplevel):
 
         # Interval (weeks) for price change calculation
         ttk.Label(frame, text="Tedni:").pack(side=tk.LEFT, padx=(10, 2))
-        self.weeks_var = tk.StringVar(value="2")
+        self.weeks_var = tk.StringVar(value="30")
         spin = ttk.Spinbox(frame, from_=1, to=520, textvariable=self.weeks_var, width=5)
         spin.pack(side=tk.LEFT, padx=5)
         spin.configure(command=self._refresh_table)
         spin.bind("<KeyRelease>", lambda e: self._refresh_table())
+
+        try:
+            from tkcalendar import DateEntry  # type: ignore
+        except Exception:  # pragma: no cover - optional dependency
+            DateEntry = None  # type: ignore
+
+        if DateEntry is not None:
+            ttk.Label(frame, text="Od:").pack(side=tk.LEFT, padx=(10, 2))
+            start_of_year = pd.Timestamp.now().replace(month=1, day=1).date()
+            self.start_date_var = tk.StringVar(value=start_of_year.isoformat())
+            date_entry = DateEntry(frame, textvariable=self.start_date_var, width=10)
+            date_entry.pack(side=tk.LEFT, padx=5)
+            date_entry.bind("<<DateEntrySelected>>", lambda e: self._refresh_table())
+        else:
+            self.start_date_var = None
+
         ttk.Button(frame, text="Potrdi", command=self._refresh_table).pack(side=tk.LEFT, padx=5)
 
         self.sup_var = tk.StringVar()
@@ -251,8 +267,19 @@ class PriceWatch(tk.Toplevel):
                     weeks = int(self.weeks_var.get())
                 except Exception:
                     weeks = 0
-            if weeks:
+
+            cutoff: pd.Timestamp | None = None
+            if getattr(self, "start_date_var", None):
+                try:
+                    start_dt = pd.to_datetime(self.start_date_var.get())
+                    if pd.notna(start_dt):
+                        cutoff = start_dt
+                except Exception:
+                    cutoff = None
+            if cutoff is None and weeks:
                 cutoff = pd.Timestamp.now() - pd.Timedelta(weeks=weeks)
+
+            if cutoff is not None:
                 df_recent = df[df["time"] >= cutoff]
             else:
                 df_recent = df
@@ -379,8 +406,18 @@ class PriceWatch(tk.Toplevel):
                 weeks = int(self.weeks_var.get())
             except Exception:
                 weeks = 0
-        if weeks:
+
+        cutoff: pd.Timestamp | None = None
+        if getattr(self, "start_date_var", None):
+            try:
+                start_dt = pd.to_datetime(self.start_date_var.get())
+                if pd.notna(start_dt):
+                    cutoff = start_dt
+            except Exception:
+                cutoff = None
+        if cutoff is None and weeks:
             cutoff = pd.Timestamp.now() - pd.Timedelta(weeks=weeks)
+        if cutoff is not None:
             mask &= dates >= cutoff
         df_plot = pd.DataFrame({"date": dates[mask], "price": price_series[mask]})
         if df_plot.empty:

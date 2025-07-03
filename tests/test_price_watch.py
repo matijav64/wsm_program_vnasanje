@@ -962,6 +962,160 @@ def test_show_graph_skips_zero_prices(monkeypatch):
     assert len(ydata) == 2
 
 
+def test_refresh_table_uses_start_date(monkeypatch):
+    monkeypatch.setattr(
+        "wsm.ui.price_watch.messagebox.showinfo",
+        lambda *a, **k: None,
+    )
+
+    class DummyVar:
+        def __init__(self, value=""):
+            self.val = value
+
+        def get(self):
+            return self.val
+
+    class DummyTree:
+        def __init__(self):
+            self.inserted = []
+
+        def get_children(self):
+            return []
+
+        def delete(self, *a):
+            pass
+
+        def insert(self, parent, index, values):
+            self.inserted.append(values)
+
+    df = pd.DataFrame(
+        {
+            "line_netto": [1, 2, 3],
+            "unit_price": [1.0, 2.0, 3.0],
+            "time": [
+                pd.Timestamp("2023-01-01"),
+                pd.Timestamp("2023-02-01"),
+                pd.Timestamp("2023-03-01"),
+            ],
+        }
+    )
+
+    pw = PriceWatch.__new__(PriceWatch)
+    pw.tree = DummyTree()
+    pw.supplier_codes = {"S1 - Sup": "S1"}
+    pw.sup_var = DummyVar("S1 - Sup")
+    pw.search_var = DummyVar("")
+    pw.weeks_var = DummyVar("0")
+    pw.start_date_var = DummyVar("2023-02-01")
+    pw.items_by_supplier = {"S1": {"Item": df}}
+    pw._sort_col = None
+    pw._sort_reverse = False
+
+    pw._refresh_table()
+
+    row = pw.tree.inserted[0]
+    assert row[3] == "2023-03-01"
+    assert row[4] == "50.00"
+    assert float(row[5]) == 2.0
+    assert float(row[6]) == 3.0
+
+
+def test_show_graph_filters_start_date(monkeypatch):
+    import matplotlib
+    matplotlib.use("Agg")
+    import types, sys
+
+    df = pd.DataFrame(
+        {
+            "time": [
+                pd.Timestamp("2023-01-01"),
+                pd.Timestamp("2023-02-01"),
+                pd.Timestamp("2023-03-01"),
+            ],
+            "unit_price": [1, 2, 3],
+        }
+    )
+
+    captured = {}
+
+    class FakeCanvas:
+        def __init__(self, fig, master=None):
+            captured["fig"] = fig
+
+        def draw(self):
+            pass
+
+        def get_tk_widget(self):
+            class W:
+                def pack(self, *a, **k):
+                    pass
+
+            return W()
+
+    class FakeTop:
+        def __init__(self, master=None):
+            pass
+
+        def title(self, t):
+            pass
+
+        def bind(self, *a, **k):
+            pass
+
+        def destroy(self):
+            pass
+
+    class FakeButton:
+        def __init__(self, master=None, text=None, command=None):
+            pass
+
+        def pack(self, *a, **k):
+            pass
+
+    cursor_info = {}
+
+    class FakeCursor:
+        def connect(self, event, func):
+            cursor_info["event"] = event
+            cursor_info["func"] = func
+
+    def fake_cursor(lines, hover=False):
+        cursor_info["lines"] = lines
+        cursor_info["hover"] = hover
+        return FakeCursor()
+
+    monkeypatch.setattr(
+        "matplotlib.backends.backend_tkagg.FigureCanvasTkAgg", FakeCanvas
+    )
+    monkeypatch.setattr("wsm.ui.price_watch.tk.Toplevel", FakeTop)
+    monkeypatch.setattr("wsm.ui.price_watch.ttk.Button", FakeButton)
+    monkeypatch.setattr("wsm.ui.price_watch.tk.BOTH", "both", raising=False)
+    monkeypatch.setattr(
+        "wsm.ui.price_watch.messagebox.showerror",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setitem(sys.modules, "mplcursors", types.SimpleNamespace(cursor=fake_cursor))
+
+    class DummyVar:
+        def __init__(self, value=""):
+            self.val = value
+
+        def get(self):
+            return self.val
+
+    pw = PriceWatch.__new__(PriceWatch)
+    pw.start_date_var = DummyVar("2023-02-01")
+    pw.weeks_var = DummyVar("0")
+    pw._show_graph("Item", df)
+
+    fig = captured.get("fig")
+    assert fig is not None
+    ax = fig.axes[0]
+    line = ax.lines[0]
+    assert len(line.get_xdata()) == 2
+    assert len(line.get_ydata()) == 2
+
+
 def test_close_calls_destroy_and_quit():
     calls = []
 
