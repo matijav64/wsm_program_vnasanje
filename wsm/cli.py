@@ -190,7 +190,24 @@ def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct, use_pyqt):
 
     try:
         from wsm.utils import povezi_z_wsm
-        df = povezi_z_wsm(df, str(sifre_path), str(keywords_path), Path(suppliers_path), supplier_code)
+        bonus_code = os.getenv("WSM_BONUS_CODE")
+        if bonus_code:
+            df = povezi_z_wsm(
+                df,
+                str(sifre_path),
+                str(keywords_path),
+                Path(suppliers_path),
+                supplier_code,
+                bonus_code=bonus_code,
+            )
+        else:
+            df = povezi_z_wsm(
+                df,
+                str(sifre_path),
+                str(keywords_path),
+                Path(suppliers_path),
+                supplier_code,
+            )
     except Exception as exc:
         click.echo(f"[NAPAKA] Samodejno povezovanje ni uspelo: {exc}")
 

@@ -110,6 +110,11 @@ Za datoteko s ključnimi besedami lahko nastavite okoljsko spremenljivko
 `WSM_KEYWORDS`, ki kaže na `kljucne_besede_wsm_kode.xlsx`. Če ni
 nastavljena, program privzeto bere to datoteko iz trenutne mape.
 
+Če v `povezi_z_wsm` želite samodejno označiti brezplačne ("gratis")
+postavke s posebno WSM kodo, nastavite okoljsko spremenljivko
+`WSM_BONUS_CODE` na želeno kodo. Vrstice, kjer je stolpec `is_gratis`
+`True`, bodo tako dobile to kodo in status `BONUS`.
+
 
 Pri samodejnem povezovanju lahko program iz teh ročno
 shranjenih datotek sam izdela datoteko `kljucne_besede_wsm_kode.xlsx`.

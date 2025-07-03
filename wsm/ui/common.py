@@ -128,7 +128,24 @@ def open_invoice_gui(
     try:
         from wsm.utils import povezi_z_wsm
 
-        df = povezi_z_wsm(df, str(sifre_file), str(keywords), suppliers, supplier_code)
+        bonus_code = os.getenv("WSM_BONUS_CODE")
+        if bonus_code:
+            df = povezi_z_wsm(
+                df,
+                str(sifre_file),
+                str(keywords),
+                suppliers,
+                supplier_code,
+                bonus_code=bonus_code,
+            )
+        else:
+            df = povezi_z_wsm(
+                df,
+                str(sifre_file),
+                str(keywords),
+                suppliers,
+                supplier_code,
+            )
     except Exception as exc:
         logging.warning(f"Napaka pri samodejnem povezovanju: {exc}")
 
