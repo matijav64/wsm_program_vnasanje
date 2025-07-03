@@ -90,6 +90,11 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
   "Kopiraj številko računa", ki ustrezne vrednosti hitro prenesejo na odložišče.
   Gumbi so zdaj tik pod zgornjo vrstico, pod njimi pa je nekaj dodatnega
   prostora, da se ločijo od tabele.
+  Vrstico lahko uredite z Enterjem ali z dvojnim klikom in tako spremenite ime v stolpcu "WSM".
+  Vrednost potrdite s tipko Enter, s tipko Backspace jo lahko tudi odstranite.
+  Račun shranite z gumbom "Shrani & zapri" ali s bližnjico F10.
+  Pod tabelo se izpiše povzetek s skupnimi zneski.
+  Če se del okna ne vidi, ga razširite s tipko F11.
   Ob potrditvi vrstice program primerja ceno s prejšnjimi zapisi v
   `price_history.xlsx`. Če je odstopanje večje od nastavljenega praga
   (privzeto 1&nbsp;% oz. vrednost spremenljivke `WSM_PRICE_WARN_PCT`), se
