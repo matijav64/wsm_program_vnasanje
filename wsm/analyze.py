@@ -37,6 +37,11 @@ def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[p
     df_main = df[~doc_mask].copy()
     df_doc = df[doc_mask].copy()
 
+    # Remove "gratis" lines with 100 % discount or zero net value
+    df_main = df_main[~(
+        (df_main['vrednost'] == 0) | (df_main['rabata_pct'] >= Decimal('100'))
+    )].copy()
+
     grouped = (
         df_main
         .groupby(['sifra_artikla', 'rabata_pct'], dropna=False, as_index=False)
