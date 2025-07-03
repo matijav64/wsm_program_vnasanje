@@ -762,9 +762,13 @@ def review_links(
         return "break"
 
     def _edit_unit(evt):
+        """Handle double-clicks on the tree view."""
         col = tree.identify_column(evt.x)
         row_id = tree.identify_row(evt.y)
-        if col != "#3" or not row_id:
+        if col != "#3":
+            log.debug("Double-click outside Enota column -> starting edit")
+            return _start_edit()
+        if not row_id:
             return
         idx = int(row_id)
 
@@ -950,6 +954,8 @@ def review_links(
         return "break"
 
     # Vezave za tipke na tree
+    # Dvojni klik na stolpec "Enota" odpre urejanje enote,
+    # drugje pa sprozi urejanje vnosa.
     tree.bind("<Return>", _start_edit)
     tree.bind("<BackSpace>", _clear_wsm_connection)
     tree.bind("<Up>", _tree_nav_up)
