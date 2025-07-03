@@ -4,10 +4,9 @@
 
 set -e
 
-if [ -f requirements.txt ]; then
-    pip install -r requirements.txt
-fi
-
-if [ -f requirements-dev.txt ]; then
-    pip install -r requirements-dev.txt
+if [ -f requirements.txt ] && [ -f requirements-dev.txt ]; then
+    pip install -r requirements.txt -r requirements-dev.txt
+else
+    [ -f requirements.txt ] && pip install -r requirements.txt
+    [ -f requirements-dev.txt ] && pip install -r requirements-dev.txt
 fi
