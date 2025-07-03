@@ -247,6 +247,7 @@ def review_links(
         axis=1,
     )
     df["total_net"] = df["vrednost"]
+    df["is_gratis"] = df["rabata_pct"] >= Decimal("99.9")
     df["kolicina_norm"], df["enota_norm"] = zip(
         *[
             _norm_unit(Decimal(str(q)), u, n, vat, code)
@@ -443,6 +444,7 @@ def review_links(
     ]
     tree = ttk.Treeview(frame, columns=cols, show="headings", height=27)
     tree.tag_configure("price_warn", background="orange")
+    tree.tag_configure("gratis", foreground="#666", background="#f4f4f4")
     vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
     tree.configure(yscrollcommand=vsb.set)
     vsb.pack(side="right", fill="y")
@@ -483,6 +485,9 @@ def review_links(
             threshold=price_warn_threshold,
         )
         df.at[i, "warning"] = tooltip
+        if "is_gratis" in row and row["is_gratis"]:
+            current_tags = tree.item(str(i), "tags")
+            tree.item(str(i), tags=current_tags + ("gratis",))
     tree.focus("0")
     tree.selection_set("0")
 
@@ -577,19 +582,20 @@ def review_links(
     # Dokumentarni popust obravnavamo kot povezan znesek, saj ne potrebuje
     # dodatne ročne obdelave. Zato ga prištejemo k "Skupaj povezano" in ga
     # ne štejemo med "Skupaj ostalo".
-    if df["wsm_sifra"].notna().any():
+    valid = df[~df["is_gratis"]]
+    if valid["wsm_sifra"].notna().any():
         # Ko je vsaj ena vrstica povezana, dokumentarni popust štejemo
         # kot "povezan" znesek, saj ga uporabnik ne obravnava ročno.
         linked_total = (
-            df[df["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
+            valid[valid["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
         )
-        unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum()
+        unlinked_total = valid[valid["wsm_sifra"].isna()]["total_net"].sum()
     else:
         # Če ni še nobene povezave, popust prištejemo k "ostalim" vrsticam,
         # da "Skupaj povezano" ostane ničelno.
-        linked_total = df[df["wsm_sifra"].notna()]["total_net"].sum()
+        linked_total = valid[valid["wsm_sifra"].notna()]["total_net"].sum()
         unlinked_total = (
-            df[df["wsm_sifra"].isna()]["total_net"].sum() + doc_discount_total
+            valid[valid["wsm_sifra"].isna()]["total_net"].sum() + doc_discount_total
         )
     # Skupni seštevek mora biti vsota "povezano" in "ostalo"
     total_sum = linked_total + unlinked_total
@@ -604,15 +610,16 @@ def review_links(
     ).pack(side="left", padx=10)
 
     def _update_totals():
-        if df["wsm_sifra"].notna().any():
+        valid = df[~df["is_gratis"]]
+        if valid["wsm_sifra"].notna().any():
             linked_total = (
-                df[df["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
+                valid[valid["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
             )
-            unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum()
+            unlinked_total = valid[valid["wsm_sifra"].isna()]["total_net"].sum()
         else:
-            linked_total = df[df["wsm_sifra"].notna()]["total_net"].sum()
+            linked_total = valid[valid["wsm_sifra"].notna()]["total_net"].sum()
             unlinked_total = (
-                df[df["wsm_sifra"].isna()]["total_net"].sum() + doc_discount_total
+                valid[valid["wsm_sifra"].isna()]["total_net"].sum() + doc_discount_total
             )
         total_sum = linked_total + unlinked_total
         step_total = detect_round_step(invoice_total, total_sum)
@@ -791,7 +798,11 @@ def review_links(
             price_tip.destroy()
             price_tip = None
         if last_warn_item is not None:
-            tree.item(last_warn_item, tags=())
+            tags = ()
+            idx = int(last_warn_item)
+            if "is_gratis" in df.columns and df.at[idx, "is_gratis"]:
+                tags = ("gratis",)
+            tree.item(last_warn_item, tags=tags)
             last_warn_item = None
 
     def _show_tooltip(item_id: str, text: str | None) -> None:
@@ -861,6 +872,10 @@ def review_links(
         df.at[idx, "warning"] = tooltip
 
         _show_tooltip(sel_i, tooltip)
+        if "is_gratis" in df.columns and df.at[idx, "is_gratis"]:
+            current_tags = tree.item(sel_i, "tags")
+            if "gratis" not in current_tags:
+                tree.item(sel_i, tags=current_tags + ("gratis",))
 
         new_vals = [
             (
