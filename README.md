@@ -126,10 +126,11 @@ stalno maso pakiranja, jo dodajte v ta slovar.
    `launch_price_watch`.
 
    V zgornjem delu okna je iskalnik za hitro filtriranje dobaviteljev. Ob njem
-   je še polje za izbiro števila tednov (privzeto 2), ki določa, koliko
-   zgodovine se upošteva pri izračunu spremembe cene. Spodaj se nahaja
-   dodatno polje za iskanje po nazivih artiklov. Tabela se ob spremembi
-   števila tednov osveži samodejno, filter pa lahko po želji potrdite tudi
+   je še polje za izbiro števila tednov (privzeto 30) in koledar za izbiro
+   začetnega datuma. Če je nameščen paket `tkcalendar`, se privzeta vrednost
+   koledarja nastavi na prvi dan trenutnega leta. Spodaj se nahaja dodatno
+   polje za iskanje po nazivih artiklov. Tabela se ob spremembi
+   števila tednov ali datuma osveži samodejno, filter pa lahko po želji potrdite tudi
    z gumbom "Potrdi". Rezultati so
    prikazani v tabeli s stolpci "Artikel", "Neto cena", "€/kg|€/L",
    "Zadnji datum", "Min" in "Max". Po posameznem stolpcu lahko razvrstite
