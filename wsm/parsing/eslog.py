@@ -324,6 +324,8 @@ def parse_eslog_invoice(
             else:
                 rabata_pct = Decimal("0.00")
 
+        is_gratis = rabata_pct >= Decimal("99.9")
+
         items.append({
             "sifra_dobavitelja": supplier_code,
             "naziv":            desc,
@@ -333,6 +335,7 @@ def parse_eslog_invoice(
             "cena_netto":       cena_post,
             "rabata":           rebate,
             "rabata_pct":       rabata_pct,
+            "is_gratis":        is_gratis,
             "vrednost":         net_amount,
             "ddv_stopnja":      vat_rate,
             "sifra_artikla":    art_code,
@@ -372,6 +375,7 @@ def parse_eslog_invoice(
             "rabata":           doc_discount,
             "rabata_pct":       Decimal("100.00"),
             "vrednost":         -doc_discount,
+            "is_gratis":        False,
         })
 
     df = pd.DataFrame(items)
