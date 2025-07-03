@@ -19,7 +19,7 @@ from tkinter import ttk, messagebox
 from wsm.parsing.money import detect_round_step
 from wsm.utils import short_supplier_name, _clean
 from wsm.constants import PRICE_DIFF_THRESHOLD
-from .helpers import _fmt, _norm_unit
+from .helpers import _fmt, _norm_unit, _merge_same_items
 from .io import _save_and_close, _load_supplier_map, _write_supplier_map
 
 # Logger setup
@@ -318,6 +318,9 @@ def review_links(
                 ]
             )
             doc_discount_total += diff
+
+    # Combine duplicate invoice lines except for gratis items
+    df = _merge_same_items(df)
 
     root = tk.Tk()
     # Window title shows the full supplier name while the on-screen header can be
