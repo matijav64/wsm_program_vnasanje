@@ -246,12 +246,11 @@ def load_wsm_data(
 
 # ────────────────────────── samodejno povezovanje ───────────────────
 def povezi_z_wsm(
-    df_items: pd.DataFrame,
-    sifre_path: str,
-    keywords_path: str | None = None,
-    links_dir: Path | None = None,
-    supplier_code: str | None = None,
-    bonus_code: str | None = None,
+    df_items      : pd.DataFrame,
+    sifre_path    : str,
+    keywords_path : str | None = None,
+    links_dir     : Path | None = None,
+    supplier_code : str | None = None
 ) -> pd.DataFrame:
     """
     Poskusi vsaki vrstici v ``df_items`` pripisati WSM kodo:
@@ -266,8 +265,6 @@ def povezi_z_wsm(
     """
     if keywords_path is None:
         keywords_path = os.getenv("WSM_KEYWORDS", "kljucne_besede_wsm_kode.xlsx")
-    if bonus_code is None:
-        bonus_code = os.getenv("WSM_BONUS_CODE")
     if links_dir is None or supplier_code is None:
         raise TypeError("links_dir and supplier_code must be provided")
     kw_path = Path(keywords_path)
@@ -290,11 +287,6 @@ def povezi_z_wsm(
         on=["sifra_dobavitelja", "naziv_ckey"], how="left"
     )
     df["status"] = df["wsm_sifra"].notna().map({True: "POVEZANO", False: pd.NA})
-
-    if bonus_code and "is_gratis" in df.columns:
-        bonus_mask = df["status"].isna() & df["is_gratis"]
-        df.loc[bonus_mask, "wsm_sifra"] = bonus_code
-        df.loc[bonus_mask, "status"] = "BONUS"
 
     new_links: List[Dict] = []
     mask = df["status"].isna()
