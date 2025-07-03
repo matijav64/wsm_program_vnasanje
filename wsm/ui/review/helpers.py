@@ -214,3 +214,47 @@ def _norm_unit(
 
     log.debug(f"Končna normalizacija: q_norm={q_norm}, base_unit={base_unit}")
     return q_norm, base_unit
+
+
+def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
+    """Merge identical rows while keeping ``is_gratis`` lines separate.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        DataFrame with invoice lines. Must contain the ``is_gratis`` column.
+
+    Returns
+    -------
+    pandas.DataFrame
+        New DataFrame where duplicate rows (excluding ``is_gratis``) are
+        combined by summing numeric columns. Rows marked with ``is_gratis`` are
+        left untouched.
+    """
+
+    if "is_gratis" not in df.columns:
+        return df
+
+    gratis = df[df["is_gratis"]].copy()
+    to_merge = df[~df["is_gratis"]].copy()
+
+    if to_merge.empty:
+        return df
+
+    numeric_cols = {
+        "kolicina",
+        "kolicina_norm",
+        "vrednost",
+        "rabata",
+        "total_net",
+    }
+    existing_numeric = [c for c in numeric_cols if c in to_merge.columns]
+    group_cols = [c for c in to_merge.columns if c not in existing_numeric]
+
+    merged = (
+        to_merge.groupby(group_cols, dropna=False)
+        .agg({c: "sum" for c in existing_numeric})
+        .reset_index()
+    )
+
+    return pd.concat([merged, gratis], ignore_index=True)
