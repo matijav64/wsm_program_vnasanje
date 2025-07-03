@@ -237,14 +237,13 @@ class PriceWatch(tk.Toplevel):
             last_line = line_prices_full.dropna()
             last_unit = unit_prices_full.dropna()
 
-            stats_series_full = unit_prices_full.dropna()
-            if stats_series_full.empty:
-                stats_series_full = line_prices_full.dropna()
-
-            if stats_series_full.empty:
+            diff_series_full = unit_prices_full.dropna()
+            if diff_series_full.empty:
+                diff_series_full = line_prices_full.dropna()
+            if diff_series_full.empty:
                 continue
 
-            last_idx = stats_series_full.index[-1]
+            last_idx = diff_series_full.index[-1]
 
             weeks = 0
             if hasattr(self, "weeks_var"):
@@ -261,19 +260,21 @@ class PriceWatch(tk.Toplevel):
             line_eval = line_prices_full.loc[df_recent.index]
             unit_eval = unit_prices_full.loc[df_recent.index]
 
+            diff_series_eval = unit_eval.dropna()
+            if diff_series_eval.empty:
+                diff_series_eval = line_eval.dropna()
+
             stats_series_eval = unit_eval.dropna()
-            if stats_series_eval.empty:
-                stats_series_eval = line_eval.dropna()
 
             diff_pct: float | None
-            if len(stats_series_eval) >= 2:
-                first_val = stats_series_eval.iloc[0]
-                last_val = stats_series_eval.iloc[-1]
+            if len(diff_series_eval) >= 2:
+                first_val = diff_series_eval.iloc[0]
+                last_val = diff_series_eval.iloc[-1]
                 if first_val != 0 and pd.notna(first_val) and pd.notna(last_val):
                     diff_pct = float((last_val - first_val) / first_val * 100)
                 else:
                     diff_pct = None
-            elif len(stats_series_eval) == 1:
+            elif len(diff_series_eval) == 1:
                 diff_pct = 0.0
             else:
                 diff_pct = None
