@@ -326,6 +326,12 @@ def review_links(
     # Window title shows the full supplier name while the on-screen header can be
     # a bit shorter for readability.
     root.title(f"Ročna revizija – {supplier_name}")
+
+    # Determine how many rows can fit based on the screen height. Roughly
+    # 500px is taken by the header, summary and button sections so we convert
+    # the remaining space to a row count assuming ~20px per row.
+    screen_height = root.winfo_screenheight()
+    tree_height = max(10, (screen_height - 500) // 20)
     # Start maximized but keep the window decorations visible
     try:
         root.state("zoomed")
@@ -445,7 +451,7 @@ def review_links(
         "WSM naziv",
         "Dobavitelj",
     ]
-    tree = ttk.Treeview(frame, columns=cols, show="headings", height=27)
+    tree = ttk.Treeview(frame, columns=cols, show="headings", height=tree_height)
     tree.tag_configure("price_warn", background="orange")
     tree.tag_configure("gratis", foreground="#666", background="#f4f4f4")
     vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
