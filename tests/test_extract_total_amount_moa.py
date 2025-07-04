@@ -31,3 +31,23 @@ def test_extract_total_amount_moa_with_discount():
     )
     root = ET.fromstring(xml)
     assert extract_total_amount(root) == Decimal("170.00")
+
+
+def test_extract_total_amount_moa_with_discount_260_500():
+    xml = (
+        "<Invoice>"
+        "  <M_INVOIC>"
+        "    <G_SG50>"
+        "      <S_MOA><C_C516><D_5025>79</D_5025><D_5004>200</D_5004></C_C516></S_MOA>"
+        "    </G_SG50>"
+        "    <G_SG50>"
+        "      <S_MOA><C_C516><D_5025>260</D_5025><D_5004>20</D_5004></C_C516></S_MOA>"
+        "    </G_SG50>"
+        "    <G_SG50>"
+        "      <S_MOA><C_C516><D_5025>500</D_5025><D_5004>0.05</D_5004></C_C516></S_MOA>"
+        "    </G_SG50>"
+        "  </M_INVOIC>"
+        "</Invoice>"
+    )
+    root = ET.fromstring(xml)
+    assert extract_total_amount(root) == Decimal("179.95")
