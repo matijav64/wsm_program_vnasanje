@@ -456,7 +456,7 @@ def review_links(
     tree.tag_configure("gratis", background="#ffe6cc")  # oranžna
     tree.tag_configure("linked", background="#ffe6cc")
     tree.tag_configure("suggestion", background="#ffe6cc")
-    tree.tag_configure("autofix", background="#eeeeee", foreground="#333")
+    tree.tag_configure("autofix", background="#eeeeee", foreground="#444")
     vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
     tree.configure(yscrollcommand=vsb.set)
     vsb.pack(side="right", fill="y")
@@ -628,6 +628,22 @@ def review_links(
     ).pack(side="left", padx=10)
 
     def _update_totals():
+        calc_total = df["total_net"].sum() + doc_discount_total
+        diff = invoice_total - calc_total
+        if abs(diff) > Decimal("0.02"):
+            last = df.index[-1]
+            df.at[last, "total_net"] += diff
+            df.at[last, "cena_po_rabatu"] = (
+                df.at[last, "total_net"] / df.at[last, "kolicina_norm"]
+            ).quantize(Decimal("0.0001"))
+            df.at[last, "warning"] = f"AUTOFIX {diff:+.2f} €"
+            tree.set(str(last), "warning", f"AUTOFIX {diff:+.2f} €")
+            current_tags = tree.item(str(last)).get("tags", ())
+            if not isinstance(current_tags, tuple):
+                current_tags = (current_tags,) if current_tags else ()
+            tree.item(str(last), tags=("autofix",) + current_tags)
+            calc_total = df["total_net"].sum() + doc_discount_total
+
         valid = df[~df["is_gratis"]]
         if valid["wsm_sifra"].notna().any():
             linked_total = (
@@ -662,20 +678,6 @@ def review_links(
     unit_options = ["kos", "kg", "L"]
 
     def _finalize_and_save(_=None):
-        calc_total = df["total_net"].sum() + doc_discount_total
-        diff = invoice_total - calc_total
-        if abs(diff) > Decimal("0.02"):
-            last = df.index[-1]
-            df.at[last, "total_net"] += diff
-            df.at[last, "cena_po_rabatu"] = (
-                df.at[last, "total_net"] / df.at[last, "kolicina_norm"]
-            ).quantize(Decimal("0.0001"))
-            df.at[last, "warning"] = f"AUTOFIX {diff:+.2f} €"
-            tree.set(str(last), "warning", f"AUTOFIX {diff:+.2f} €")
-            current_tags = tree.item(str(last)).get("tags", ())
-            if not isinstance(current_tags, tuple):
-                current_tags = (current_tags,) if current_tags else ()
-            tree.item(str(last), tags=("autofix",) + current_tags)
         _update_summary()
         _update_totals()
         _save_and_close(
