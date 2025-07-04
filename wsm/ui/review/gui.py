@@ -504,7 +504,7 @@ def review_links(
             tree.item(str(i), tags=("gratis",) + current_tags)
 
             #  ➜ besedilo v stolpcu »Opozorilo«
-            tree.set(str(i), "Opozorilo", "GRATIS")
+            tree.set(str(i), "warning", "GRATIS")
     tree.focus("0")
     tree.selection_set("0")
 
@@ -898,7 +898,7 @@ def review_links(
             if not isinstance(current_tags, tuple):
                 current_tags = (current_tags,) if current_tags else ()
             tree.item(sel_i, tags=("gratis",) + current_tags)
-            tree.set(sel_i, "Opozorilo", "GRATIS")
+            tree.set(sel_i, "warning", "GRATIS")
 
         new_vals = [
             (
