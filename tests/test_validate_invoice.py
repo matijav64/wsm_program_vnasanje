@@ -57,8 +57,9 @@ def test_parse_invoice_minimal():
         "</Invoice>"
     )
     # V tem primeru je vsota vrstic (50 + 100) = 150, glava = 150
-    df, header_total = parse_invoice(xml)
+    df, header_total, discount_total = parse_invoice(xml)
     assert header_total == Decimal("150.00")
+    assert discount_total == Decimal("0")
     # Seštevek izračunanih vrstic:
     assert sum(df["izracunana_vrednost"]) == Decimal("150.00")
 
@@ -92,8 +93,9 @@ def test_parse_invoice_with_line_and_doc_discount():
     # Ker vsota vrstic (280.00) + doc discount (50.00) = 330.00, kar se ne ujema z
     # glavo (300.00), parse_invoice vrne `header_total` po odštetem popustu (250.00)
     # in DataFrame z `izracunana_vrednost`.
-    df, header_total = parse_invoice(xml)
+    df, header_total, discount_total = parse_invoice(xml)
     assert header_total == Decimal("250.00")
+    assert discount_total == Decimal("50.00")
     # Skupaj izračunanih vrstic:
     assert sum(df["izracunana_vrednost"]) == Decimal("280.00")
     # Potrdimo, da extract_total_amount vrne 250 (300 - 50):

@@ -5,7 +5,7 @@ ESLOG 2.0 (INVOIC) parser
 =========================
 • get_supplier_info()      → (sifra, ime) dobavitelja
 • parse_eslog_invoice()    → DataFrame vseh postavk (vključno z _DOC_ vrstico)
-• parse_invoice()          → (DataFrame vrstic, header_total) za CLI
+• parse_invoice()          → (DataFrame vrstic, header_total, discount_total) za CLI
 • validate_invoice()       → preveri vsoto vrstic proti header_total
 """
 
@@ -181,6 +181,37 @@ def extract_invoice_number(xml_path: Path | str) -> str | None:
     except Exception:
         pass
     return None
+
+
+def _get_document_discount(xml_root: ET.Element) -> Decimal:
+    """Return document level discount from <DocumentDiscount> or MOA codes."""
+    discount_el = xml_root.find("DocumentDiscount")
+    discount_str = discount_el.text if discount_el is not None else None
+
+    def _find_moa_values(codes: set[str]) -> Decimal:
+        total = Decimal("0")
+        for seg in xml_root.iter():
+            if seg.tag.split("}")[-1] != "S_MOA":
+                continue
+            code = None
+            amount = None
+            for el in seg.iter():
+                tag = el.tag.split("}")[-1]
+                if tag == "D_5025":
+                    code = (el.text or "").strip()
+                elif tag == "D_5004":
+                    amount = (el.text or "").strip()
+            if code in set(DEFAULT_DOC_DISCOUNT_CODES) and amount is not None:
+                total += Decimal(amount.replace(",", "."))
+        return total
+
+    discount = (
+        Decimal(discount_str.replace(",", "."))
+        if discount_str not in (None, "")
+        else _find_moa_values(set(DEFAULT_DOC_DISCOUNT_CODES))
+    )
+
+    return discount.quantize(Decimal("0.01"))
 
 # ──────────────────── glavni parser za ESLOG INVOIC ────────────────────
 def parse_eslog_invoice(
@@ -391,6 +422,7 @@ def parse_invoice(source: str | Path):
       • df: DataFrame s stolpci ['cena_netto','kolicina','rabata_pct','izracunana_vrednost']
         (vrednosti so Decimal v object stolpcih)
       • header_total: Decimal (InvoiceTotal – DocumentDiscount)
+      • discount_total: Decimal (znesek dokumentarnega popusta)
     Uporablja se v CLI (wsm/cli.py).
     """
     # naložimo XML
@@ -404,17 +436,23 @@ def parse_invoice(source: str | Path):
     if root.tag.endswith('Invoice') and root.find('.//e:M_INVOIC', NS) is not None:
         df_items = parse_eslog_invoice(source, {})
         header_total = extract_header_net(Path(source) if isinstance(source, (str, Path)) else source)
+        doc_rows = df_items[df_items["sifra_dobavitelja"] == "_DOC_"]
+        if doc_rows.empty:
+            discount_total = Decimal("0")
+        else:
+            discount_total = (-doc_rows["vrednost"].sum()).quantize(Decimal("0.01"))
         df = pd.DataFrame({
             'cena_netto': df_items['cena_netto'],
             'kolicina': df_items['kolicina'],
             'rabata_pct': df_items['rabata_pct'],
             'izracunana_vrednost': df_items['vrednost'],
         }, dtype=object)
-        return df, header_total
+        return df, header_total, discount_total
 
     # Preprost <Racun> format z elementi <Postavka>
     if root.tag == 'Racun' or root.find('Postavka') is not None:
         header_total = extract_total_amount(root)
+        discount_total = _get_document_discount(root)
         rows = []
         for line in root.findall('Postavka'):
             name = line.findtext('Naziv') or ''
@@ -439,10 +477,11 @@ def parse_invoice(source: str | Path):
                 'naziv': name,
             })
         df = pd.DataFrame(rows, dtype=object)
-        return df, header_total
+        return df, header_total, discount_total
 
     # izvzamemo glavo (InvoiceTotal – DocumentDiscount)
     header_total = extract_total_amount(root)
+    discount_total = _get_document_discount(root)
 
     # preberemo vse <LineItems/LineItem>
     rows = []
@@ -476,7 +515,7 @@ def parse_invoice(source: str | Path):
     else:
         df = pd.DataFrame(rows, dtype=object)
 
-    return df, header_total
+    return df, header_total, discount_total
 
 def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:
     """
