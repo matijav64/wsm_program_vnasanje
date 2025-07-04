@@ -83,7 +83,7 @@ def test_cli_review_uses_env_vars(monkeypatch, tmp_path):
     result = runner.invoke(cli.main, ["review", str(invoice)])
     assert result.exit_code == 0
 
-    expected = suppliers_dir / sanitize_folder_name("Test Supplier") / "SUP_Test Supplier_povezane.xlsx"
+    expected = suppliers_dir / "SUP" / "SUP_SUP_povezane.xlsx"
     assert captured["sup"] == str(suppliers_dir)
     assert captured["codes"] == codes_file
     assert captured["links"] == expected
@@ -142,7 +142,7 @@ def test_open_invoice_gui_uses_env_vars(monkeypatch, tmp_path):
 
     open_invoice_gui(invoice_path=invoice)
 
-    expected = suppliers_dir / sanitize_folder_name("Test Supplier") / "SUP_Test Supplier_povezane.xlsx"
+    expected = suppliers_dir / "SUP" / "SUP_SUP_povezane.xlsx"
     assert captured["sup"] == suppliers_dir
     assert captured["codes"] == codes_file
     assert captured["links"] == expected

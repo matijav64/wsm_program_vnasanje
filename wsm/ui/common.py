@@ -94,26 +94,25 @@ def open_invoice_gui(
     if supplier_code == "unknown" and vat:
         supplier_code = vat
 
-    safe_id = sanitize_folder_name(vat or name)
+    # ───── enotna mapa: supplier_code > VAT > fallback ─────
+    info = sup_map.get(supplier_code, {})
+    vat_id = info.get("vat") if isinstance(info, dict) else None
 
-    # Če že obstaja mapa za tega dobavitelja (npr. "unknown"), jo najprej
-    # uporabimo, da se datoteke ob shranjevanju pravilno preimenujejo.
-    old_info = sup_map.get(supplier_code)
-    old_folder = (
-        sanitize_folder_name(old_info.get("vat") or old_info.get("ime", ""))
-        if old_info
-        else ""
+    cand_paths = [
+        Path(suppliers) / sanitize_folder_name(supplier_code),
+        Path(suppliers) / sanitize_folder_name(vat_id) if vat_id else None,
+    ]
+    links_dir = next(
+        (p for p in cand_paths if p and p.exists()),
+        cand_paths[1] or cand_paths[0],
     )
-    if old_info and old_folder != safe_id and (suppliers / old_folder).exists():
-        links_dir = suppliers / old_folder
-        links_file = links_dir / f"{supplier_code}_{old_folder}_povezane.xlsx"
+
+    links_dir.mkdir(parents=True, exist_ok=True)
+
+    if (links_dir / f"{supplier_code}_povezane.xlsx").exists():
+        links_file = links_dir / f"{supplier_code}_povezane.xlsx"
     else:
-        links_dir = suppliers / safe_id
-        links_dir.mkdir(parents=True, exist_ok=True)
-        if supplier_code.casefold() == safe_id.casefold():
-            links_file = links_dir / f"{supplier_code}_povezane.xlsx"
-        else:
-            links_file = links_dir / f"{supplier_code}_{safe_id}_povezane.xlsx"
+        links_file = links_dir / f"{supplier_code}_{links_dir.name}_povezane.xlsx"
 
     sifre_file = wsm_codes
     if sifre_file.exists():

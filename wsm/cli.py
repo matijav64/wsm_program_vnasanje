@@ -158,24 +158,26 @@ def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct, use_pyqt):
     if not vat and map_vat:
         vat = map_vat
 
-    safe_id = sanitize_folder_name(vat or name)
     base = Path(suppliers_path)
 
-    # Če obstaja stara mapa (npr. "unknown") za isto sifro, jo uporabimo,
-    # da se ob shranjevanju prenesejo vse datoteke.
-    old_info = sup_map.get(supplier_code)
-    old_folder = (
-        sanitize_folder_name(old_info.get("vat") or old_info.get("ime", ""))
-        if old_info
-        else ""
+    # ───── enotna mapa: supplier_code > VAT > fallback ─────
+    info = sup_map.get(supplier_code, {})
+    vat_id = info.get("vat") if isinstance(info, dict) else None
+
+    cand_paths = [
+        base / sanitize_folder_name(supplier_code),
+        base / sanitize_folder_name(vat_id) if vat_id else None,
+    ]
+    links_dir = next(
+        (p for p in cand_paths if p and p.exists()),
+        cand_paths[1] or cand_paths[0],
     )
-    if old_info and old_folder != safe_id and (base / old_folder).exists():
-        links_dir = base / old_folder
-        links_file = links_dir / f"{supplier_code}_{old_folder}_povezane.xlsx"
+
+    links_dir.mkdir(parents=True, exist_ok=True)
+    if (links_dir / f"{supplier_code}_povezane.xlsx").exists():
+        links_file = links_dir / f"{supplier_code}_povezane.xlsx"
     else:
-        links_dir = base / safe_id
-        links_dir.mkdir(parents=True, exist_ok=True)
-        links_file = links_dir / f"{supplier_code}_{safe_id}_povezane.xlsx"
+        links_file = links_dir / f"{supplier_code}_{links_dir.name}_povezane.xlsx"
 
     if sifre_path.exists():
         try:
