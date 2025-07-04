@@ -1,4 +1,4 @@
-# File: wsm/ui/review_links.py
+# File: wsm/ui/review/gui.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
