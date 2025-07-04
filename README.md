@@ -40,7 +40,7 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    ```
    Za razvoj in poganjanje testov namestite tudi dodatne odvisnosti:
    ```bash
-   pip install -r requirements-dev.txt
+    pip install -r requirements.txt -r requirements-dev.txt
    ```
    Namesto zgornjih ukazov lahko uporabite skripto, ki naloži vse pakete:
    ```bash
@@ -160,8 +160,7 @@ Pred zagonom `pytest` namestite pakete iz `requirements.txt` in, če obstaja,
 ki sta potrebna za teste **Price Watch**:
 
 ```bash
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+pip install -r requirements.txt -r requirements-dev.txt
 pytest
 ```
 
