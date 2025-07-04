@@ -44,7 +44,7 @@ NS = {"e": "urn:eslog:2.00"}
 # Common document discount codes.  Extend this list or pass a custom
 # sequence to ``parse_eslog_invoice`` if your suppliers use different
 # identifiers.
-DEFAULT_DOC_DISCOUNT_CODES = ["204", "260", "131", "128"]
+DEFAULT_DOC_DISCOUNT_CODES = ["204", "260", "131", "128", "176"]
 
 # ────────────────────── dobavitelj: koda + ime ──────────────────────
 def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:

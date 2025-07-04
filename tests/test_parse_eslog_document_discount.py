@@ -117,3 +117,15 @@ def test_line_and_doc_discount_total_matches_header():
     header_total = extract_header_net(xml_path)
 
     assert (line_total + doc_value).quantize(Decimal("0.01")) == header_total
+
+
+def test_parse_eslog_invoice_handles_moa_176():
+    """Invoices with document discount code 176 should yield a _DOC_ row."""
+    xml_path = Path("tests/PR5690-Slika1.XML")
+    expected_discount = _compute_doc_discount(xml_path)
+
+    df = parse_eslog_invoice(xml_path, {})
+    doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
+
+    assert doc_row["vrednost"] == -expected_discount
+    assert doc_row["rabata_pct"] == Decimal("100.00")

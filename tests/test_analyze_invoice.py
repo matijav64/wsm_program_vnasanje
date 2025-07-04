@@ -3,11 +3,13 @@ from pathlib import Path
 
 from wsm import analyze
 from wsm.parsing.eslog import extract_header_net
+from tests.test_parse_eslog_document_discount import _compute_doc_discount
 
 
 def test_analyze_invoice_merges_duplicates():
     path = Path("tests/CUSTOMERINVOICES_2025-04-01T14-29-47_2081078.xml")
     df, total, ok = analyze.analyze_invoice(path)
+    expected_discount = -_compute_doc_discount(path)
 
     # Item 00002122 appears three times with the same discount; should be merged
     row = df[(df["sifra_artikla"] == "00002122") & (df["rabata_pct"] == Decimal("4.99"))].iloc[0]
@@ -24,4 +26,6 @@ def test_analyze_invoice_merges_duplicates():
     assert df["rabata"].isna().sum() == 0
 
     assert total == extract_header_net(path)
-    assert ok
+    doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
+    assert doc_row["vrednost"] == expected_discount
+    assert not ok
