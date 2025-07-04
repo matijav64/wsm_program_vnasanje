@@ -640,7 +640,6 @@ def review_links(
                 valid[valid["wsm_sifra"].isna()]["total_net"].sum() + doc_discount_total
             )
         total_sum = linked_total + unlinked_total
-        step_total = detect_round_step(invoice_total, total_sum)
         match_symbol = "✓" if abs(total_sum - invoice_total) <= Decimal("0.02") else "✗"
         total_frame.children["total_sum"].config(
             text=f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(invoice_total)} € {match_symbol}"
