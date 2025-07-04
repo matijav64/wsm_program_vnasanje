@@ -456,7 +456,7 @@ def review_links(
     tree.tag_configure("gratis", background="#ffe6cc")  # oranžna
     tree.tag_configure("linked", background="#ffe6cc")
     tree.tag_configure("suggestion", background="#ffe6cc")
-    tree.tag_configure("autofix", background="#eeeeee")
+    tree.tag_configure("autofix", background="#eeeeee", foreground="#333")
     vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
     tree.configure(yscrollcommand=vsb.set)
     vsb.pack(side="right", fill="y")
