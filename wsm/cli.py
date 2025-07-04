@@ -40,15 +40,15 @@ def validate(invoices):
 
 def _validate_file(file_path: Path):
     """
-    Poskrbi za validacijo posamezne datoteke: 
-    - parse_invoice -> DataFrame in glava
+    Poskrbi za validacijo posamezne datoteke:
+    - parse_invoice -> DataFrame, glava, dokumentarni popust
     - validate_invoice -> True/False
     - Izpiše [OK], [NESKLADJE] ali [NAPAKA PARSANJA]
     """
     filename = file_path.name
     try:
-        # parse_invoice vrača točno dva rezultata: (df, header_total)
-        df, header_total = parse_invoice(str(file_path))
+        # parse_invoice vrne tri rezultate: (df, header_total, discount_total)
+        df, header_total, _ = parse_invoice(str(file_path))
     except Exception as e:
         click.echo(f"[NAPAKA PARSANJA] {filename}: {e}")
         return
@@ -215,7 +215,7 @@ def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct, use_pyqt):
 @click.argument("invoice", type=click.Path(exists=True))
 def round_debug(invoice):
     """Prikaži podrobnosti o seštevanju vrstic in zaokroževanju."""
-    df, header_total = parse_invoice(invoice)
+    df, header_total, _ = parse_invoice(invoice)
     col = "izracunana_vrednost" if "izracunana_vrednost" in df.columns else "vrednost"
     line_sum_dec = Decimal(str(df.get(col, pd.Series(dtype=float)).sum()))
     step = detect_round_step(header_total, line_sum_dec)

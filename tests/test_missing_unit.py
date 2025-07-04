@@ -12,5 +12,5 @@ def test_missing_unit_defaults_to_kos(tmp_path):
         <Cena>7.2</Cena>
       </Postavka>
     </Racun>""")
-    df, _ = parse_invoice(xml)
+    df, _, _ = parse_invoice(xml)
     assert df.loc[0, "enota"] == "kos"
