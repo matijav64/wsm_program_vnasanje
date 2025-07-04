@@ -456,6 +456,7 @@ def review_links(
     tree.tag_configure("gratis", background="#ffe6cc")  # oranžna
     tree.tag_configure("linked", background="#ffe6cc")
     tree.tag_configure("suggestion", background="#ffe6cc")
+    tree.tag_configure("autofix", background="#eeeeee")
     vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
     tree.configure(yscrollcommand=vsb.set)
     vsb.pack(side="right", fill="y")
@@ -617,7 +618,7 @@ def review_links(
     # Skupni seštevek mora biti vsota "povezano" in "ostalo"
     total_sum = linked_total + unlinked_total
     step_total = detect_round_step(invoice_total, total_sum)
-    match_symbol = "✓" if abs(total_sum - invoice_total) <= step_total else "✗"
+    match_symbol = "✓" if abs(total_sum - invoice_total) <= Decimal("0.02") else "✗"
 
     tk.Label(
         total_frame,
@@ -640,7 +641,7 @@ def review_links(
             )
         total_sum = linked_total + unlinked_total
         step_total = detect_round_step(invoice_total, total_sum)
-        match_symbol = "✓" if abs(total_sum - invoice_total) <= step_total else "✗"
+        match_symbol = "✓" if abs(total_sum - invoice_total) <= Decimal("0.02") else "✗"
         total_frame.children["total_sum"].config(
             text=f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(invoice_total)} € {match_symbol}"
         )
@@ -661,11 +662,24 @@ def review_links(
     # --- Unit change widgets ---
     unit_options = ["kos", "kg", "L"]
 
-    save_btn = tk.Button(
-        btn_frame,
-        text="Shrani & zapri",
-        width=14,
-        command=lambda e=None: _save_and_close(
+    def _finalize_and_save(_=None):
+        calc_total = df["total_net"].sum() + doc_discount_total
+        diff = invoice_total - calc_total
+        if abs(diff) > Decimal("0.02"):
+            last = df.index[-1]
+            df.at[last, "total_net"] += diff
+            df.at[last, "cena_po_rabatu"] = (
+                df.at[last, "total_net"] / df.at[last, "kolicina_norm"]
+            ).quantize(Decimal("0.0001"))
+            df.at[last, "warning"] = f"AUTOFIX {diff:+.2f} €"
+            tree.set(str(last), "warning", f"AUTOFIX {diff:+.2f} €")
+            current_tags = tree.item(str(last)).get("tags", ())
+            if not isinstance(current_tags, tuple):
+                current_tags = (current_tags,) if current_tags else ()
+            tree.item(str(last), tags=("autofix",) + current_tags)
+        _update_summary()
+        _update_totals()
+        _save_and_close(
             df,
             manual_old,
             wsm_df,
@@ -677,7 +691,13 @@ def review_links(
             suppliers_file,
             invoice_path=invoice_path,
             vat=supplier_vat,
-        ),
+        )
+
+    save_btn = tk.Button(
+        btn_frame,
+        text="Shrani & zapri",
+        width=14,
+        command=_finalize_and_save,
     )
 
     def _exit():
@@ -692,22 +712,7 @@ def review_links(
     exit_btn.pack(side="right", padx=(6, 0))
     save_btn.pack(side="right", padx=(6, 0))
 
-    root.bind(
-        "<F10>",
-        lambda e: _save_and_close(
-            df,
-            manual_old,
-            wsm_df,
-            links_file,
-            root,
-            supplier_name,
-            supplier_code,
-            sup_map,
-            suppliers_file,
-            invoice_path=invoice_path,
-            vat=supplier_vat,
-        ),
-    )
+    root.bind("<F10>", _finalize_and_save)
 
     nazivi = wsm_df["wsm_naziv"].dropna().tolist()
     n2s = dict(zip(wsm_df["wsm_naziv"], wsm_df["wsm_sifra"]))
