@@ -412,6 +412,35 @@ def parse_invoice(source: str | Path):
         }, dtype=object)
         return df, header_total
 
+    # Preprost <Racun> format z elementi <Postavka>
+    if root.tag == 'Racun' or root.find('Postavka') is not None:
+        header_total = extract_total_amount(root)
+        rows = []
+        for line in root.findall('Postavka'):
+            name = line.findtext('Naziv') or ''
+            qty_str = line.findtext('Kolicina') or '0'
+            price_str = line.findtext('Cena') or '0'
+            unit = line.attrib.get('enota', '').strip().lower()
+            if not unit:
+                name_l = name.lower()
+                if re.search(r"\bkos\b", name_l):
+                    unit = 'kos'
+                elif re.search(r"\bkg\b", name_l):
+                    unit = 'kg'
+            price = Decimal(price_str.replace(',', '.'))
+            qty = Decimal(qty_str.replace(',', '.'))
+            izracun_val = (price * qty).quantize(Decimal('0.01'), ROUND_HALF_UP)
+            rows.append({
+                'cena_netto': price,
+                'kolicina': qty,
+                'rabata_pct': Decimal('0'),
+                'izracunana_vrednost': izracun_val,
+                'enota': unit,
+                'naziv': name,
+            })
+        df = pd.DataFrame(rows, dtype=object)
+        return df, header_total
+
     # izvzamemo glavo (InvoiceTotal – DocumentDiscount)
     header_total = extract_total_amount(root)
 
