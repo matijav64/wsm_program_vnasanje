@@ -599,3 +599,41 @@ def load_last_price(label: str, suppliers_dir: Path) -> Decimal | None:
             latest_price = price
 
     return latest_price
+
+
+def average_cost(df: pd.DataFrame, *, skip_zero: bool | None = None) -> Decimal:
+    """Return weighted average unit cost from invoice lines.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        DataFrame with columns ``cena_netto`` and ``kolicina``.
+    skip_zero : bool, optional
+        When ``True`` lines with zero price are ignored. Defaults to the value
+        of the ``AVG_COST_SKIP_ZERO`` environment variable.
+    """
+    if skip_zero is None:
+        env = os.getenv("AVG_COST_SKIP_ZERO", "0")
+        skip_zero = env.lower() not in {"0", "false", "no"}
+
+    if df.empty or "cena_netto" not in df.columns or "kolicina" not in df.columns:
+        return Decimal("0")
+
+    total_val = Decimal("0")
+    total_qty = Decimal("0")
+    for _, row in df.iterrows():
+        try:
+            price = Decimal(str(row["cena_netto"]))
+            qty = Decimal(str(row["kolicina"]))
+        except Exception:
+            continue
+        if skip_zero and price == 0:
+            continue
+        total_val += price * qty
+        total_qty += qty
+
+    if total_qty == 0:
+        return Decimal("0")
+
+    avg = total_val / total_qty
+    return avg.quantize(Decimal("0.0001"))
