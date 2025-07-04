@@ -82,7 +82,7 @@ def _save_and_close(
                     if target.exists():
                         target = target.with_stem(target.stem + "_old")
                     links_file.rename(target)
-                for p in old_folder.iterdir():
+                for p in old_folder.glob("*.xls*"):
                     dest = new_folder / p.name
                     if dest.exists():
                         dest = dest.with_stem(dest.stem + "_old")
@@ -93,7 +93,7 @@ def _save_and_close(
             log.warning(f"Napaka pri preimenovanju {old_folder} v {new_folder}: {exc}")
             try:
                 new_folder.mkdir(exist_ok=True)
-                for p in old_folder.iterdir():
+                for p in old_folder.glob("*.xls*"):
                     dest = new_folder / p.name
                     if dest.exists():
                         dest = dest.with_stem(dest.stem + "_old")
