@@ -496,6 +496,8 @@ def review_links(
         df.at[i, "warning"] = tooltip
         if "is_gratis" in row and row["is_gratis"]:
             current_tags = tree.item(str(i)).get("tags", ())
+            if not isinstance(current_tags, tuple):
+                current_tags = (current_tags,) if current_tags else ()
             tree.item(str(i), tags=current_tags + ("gratis",))
     tree.focus("0")
     tree.selection_set("0")
@@ -887,8 +889,9 @@ def review_links(
         _show_tooltip(sel_i, tooltip)
         if "is_gratis" in df.columns and df.at[idx, "is_gratis"]:
             current_tags = tree.item(sel_i).get("tags", ())
-            if "gratis" not in current_tags:
-                tree.item(sel_i, tags=current_tags + ("gratis",))
+            if not isinstance(current_tags, tuple):
+                current_tags = (current_tags,) if current_tags else ()
+            tree.item(sel_i, tags=current_tags + ("gratis",))
 
         new_vals = [
             (
