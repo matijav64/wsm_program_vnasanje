@@ -453,7 +453,9 @@ def review_links(
     ]
     tree = ttk.Treeview(frame, columns=cols, show="headings", height=tree_height)
     tree.tag_configure("price_warn", background="orange")
-    tree.tag_configure("gratis", foreground="#666", background="#f4f4f4")
+    tree.tag_config("gratis", background="#ffe6cc")  # oranžna
+    tree.tag_config("linked", background="#ffe6cc")
+    tree.tag_config("suggestion", background="#ffe6cc")
     vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
     tree.configure(yscrollcommand=vsb.set)
     vsb.pack(side="right", fill="y")
@@ -498,7 +500,11 @@ def review_links(
             current_tags = tree.item(str(i)).get("tags", ())
             if not isinstance(current_tags, tuple):
                 current_tags = (current_tags,) if current_tags else ()
-            tree.item(str(i), tags=current_tags + ("gratis",))
+            #  ➜ 'gratis' naj bo PRVI, da barva vedno prime
+            tree.item(str(i), tags=("gratis",) + current_tags)
+
+            #  ➜ besedilo v stolpcu »Opozorilo«
+            tree.set(str(i), "Opozorilo", "GRATIS")
     tree.focus("0")
     tree.selection_set("0")
 
@@ -891,7 +897,8 @@ def review_links(
             current_tags = tree.item(sel_i).get("tags", ())
             if not isinstance(current_tags, tuple):
                 current_tags = (current_tags,) if current_tags else ()
-            tree.item(sel_i, tags=current_tags + ("gratis",))
+            tree.item(sel_i, tags=("gratis",) + current_tags)
+            tree.set(sel_i, "Opozorilo", "GRATIS")
 
         new_vals = [
             (

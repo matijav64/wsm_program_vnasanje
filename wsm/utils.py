@@ -175,7 +175,7 @@ def extract_keywords(links_dir: Path, keywords_path: Path) -> pd.DataFrame:
             cnt: Dict[str, int] = {}
             for n in names:
                 for t in token_rx.findall(str(n).lower()):
-                    if len(t) < 3:
+                    if len(t) < 4:
                         continue
                     cnt[t] = cnt.get(t, 0) + 1
             for token, c in cnt.items():
