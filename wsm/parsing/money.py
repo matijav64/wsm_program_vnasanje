@@ -62,7 +62,7 @@ def extract_total_amount(xml_root: ET.Element) -> Decimal:
     discount = (
         Decimal(discount_str.replace(",", "."))
         if discount_str not in (None, "")
-        else _find_moa_values({"176", "204"})
+        else _find_moa_values({"176", "204", "260", "500"})
     )
 
     return (base - discount).quantize(Decimal("0.01"))
