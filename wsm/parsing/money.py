@@ -31,11 +31,39 @@ def extract_total_amount(xml_root: ET.Element) -> Decimal:
     Prebere osnovno glavo (<InvoiceTotal>) in, če obstaja, odšteje vrednost iz
     <DocumentDiscount>. Če katerikoli manjka, privzame 0.00.
     """
-    base_str = xml_root.findtext("InvoiceTotal") or "0.00"
-    discount_str = xml_root.findtext("DocumentDiscount") or "0.00"
+    base_el = xml_root.find("InvoiceTotal")
+    discount_el = xml_root.find("DocumentDiscount")
 
-    base = Decimal(base_str.replace(",", "."))
-    discount = Decimal(discount_str.replace(",", "."))
+    base_str = base_el.text if base_el is not None else None
+    discount_str = discount_el.text if discount_el is not None else None
+
+    def _find_moa_values(codes: set[str]) -> Decimal:
+        total = Decimal("0")
+        for seg in xml_root.iter():
+            if seg.tag.split("}")[-1] != "S_MOA":
+                continue
+            code = None
+            amount = None
+            for el in seg.iter():
+                tag = el.tag.split("}")[-1]
+                if tag == "D_5025":
+                    code = (el.text or "").strip()
+                elif tag == "D_5004":
+                    amount = (el.text or "").strip()
+            if code in codes and amount is not None:
+                total += Decimal(amount.replace(",", "."))
+        return total
+
+    base = (
+        Decimal(base_str.replace(",", "."))
+        if base_str not in (None, "")
+        else _find_moa_values({"79"})
+    )
+    discount = (
+        Decimal(discount_str.replace(",", "."))
+        if discount_str not in (None, "")
+        else _find_moa_values({"176", "204"})
+    )
 
     return (base - discount).quantize(Decimal("0.01"))
 
