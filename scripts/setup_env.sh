@@ -5,9 +5,9 @@
 set -e
 
 if [ -f requirements.txt ]; then
-    pip install -r requirements.txt
+    python -m pip install -r requirements.txt
 fi
 
 if [ -f requirements-dev.txt ]; then
-    pip install -r requirements-dev.txt
+    python -m pip install -r requirements-dev.txt
 fi
