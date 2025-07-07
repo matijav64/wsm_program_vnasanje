@@ -15,6 +15,7 @@ from wsm.analyze import analyze_invoice
 from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
 from wsm.parsing.eslog import get_supplier_name
 from wsm.utils import sanitize_folder_name, _load_supplier_map
+from wsm.supplier_store import _norm_vat
 from wsm.ui.review.gui import review_links
 
 
@@ -94,18 +95,20 @@ def open_invoice_gui(
     if supplier_code == "unknown" and vat:
         supplier_code = vat
 
-    # ───── enotna mapa: supplier_code > VAT > fallback ─────
     info = sup_map.get(supplier_code, {})
-    vat_id = info.get("vat") if isinstance(info, dict) else None
+    vat_id = vat or (info.get("vat") if isinstance(info, dict) else None)
+    vat_norm = _norm_vat(vat_id or "")
+    vat_safe = sanitize_folder_name(vat_norm) if vat_norm else None
+    code_safe = sanitize_folder_name(supplier_code)
 
-    cand_paths = [
-        Path(suppliers) / sanitize_folder_name(supplier_code),
-        Path(suppliers) / sanitize_folder_name(vat_id) if vat_id else None,
-    ]
-    links_dir = next(
-        (p for p in cand_paths if p and p.exists()),
-        cand_paths[1] or cand_paths[0],
-    )
+    cand_paths = []
+    if vat_safe:
+        cand_paths.append(Path(suppliers) / vat_safe)
+    if code_safe != vat_safe:
+        cand_paths.append(Path(suppliers) / code_safe)
+    cand_paths.append(Path(suppliers) / "unknown")
+
+    links_dir = next((p for p in cand_paths if p.exists()), cand_paths[0])
 
     links_dir.mkdir(parents=True, exist_ok=True)
 
