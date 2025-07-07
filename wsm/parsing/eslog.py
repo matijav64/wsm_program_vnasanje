@@ -499,20 +499,42 @@ def parse_invoice(source: str | Path):
 
     # preberemo vse <LineItems/LineItem>
     rows = []
+
     for li in root.findall("LineItems/LineItem"):
         price_str = li.findtext("PriceNet") or "0.00"
         qty_str = li.findtext("Quantity") or "0.00"
         discount_pct_str = li.findtext("DiscountPct") or "0.00"
 
-        cena = Decimal(price_str.replace(",", "."))
         kolic = Decimal(qty_str.replace(",", "."))
-        rabata_pct = Decimal(discount_pct_str.replace(",", "."))
 
-        izracun_val = (
-            cena
-            * kolic
-            * (Decimal("1") - rabata_pct / Decimal("100"))
-        ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+        # Some suppliers provide the final line value in MOA 203.  If present,
+        # use it and derive the unit price from quantity.
+        net_el = None
+        for moa in li.findall(".//S_MOA"):
+            code = _text(moa.find("./C_C516/D_5025"))
+            if code == "203":
+                candidate = moa.find("./C_C516/D_5004")
+                if candidate is not None and _text(candidate):
+                    net_el = candidate
+                    break
+
+        if net_el is not None:
+            izracun_val = _decimal(net_el)
+            if kolic != 0:
+                cena = (
+                    izracun_val / kolic
+                ).quantize(Decimal("0.0001"), ROUND_HALF_UP)
+            else:
+                cena = Decimal("0")
+            rabata_pct = Decimal("0")
+        else:
+            cena = Decimal(price_str.replace(",", "."))
+            rabata_pct = Decimal(discount_pct_str.replace(",", "."))
+            izracun_val = (
+                cena
+                * kolic
+                * (Decimal("1") - rabata_pct / Decimal("100"))
+            ).quantize(Decimal("0.01"), ROUND_HALF_UP)
 
         rows.append({
             "cena_netto":           cena,
