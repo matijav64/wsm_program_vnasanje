@@ -641,8 +641,9 @@ def review_links(
         if abs(diff) > Decimal("0.02"):
             last = df.index[-1]
             df.at[last, "total_net"] += diff
+            qty = Decimal(str(df.at[last, "kolicina_norm"]))
             df.at[last, "cena_po_rabatu"] = (
-                df.at[last, "total_net"] / df.at[last, "kolicina_norm"]
+                df.at[last, "total_net"] / qty
             ).quantize(Decimal("0.0001"))
             df.at[last, "warning"] = f"AUTOFIX {diff:+.2f} €"
             tree.set(str(last), "warning", f"AUTOFIX {diff:+.2f} €")
