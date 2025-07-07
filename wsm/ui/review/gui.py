@@ -625,7 +625,6 @@ def review_links(
         )
     # Skupni seštevek mora biti vsota "povezano" in "ostalo"
     total_sum = linked_total + unlinked_total
-    step_total = detect_round_step(invoice_total, total_sum)
     match_symbol = "✓" if abs(total_sum - invoice_total) <= Decimal("0.02") else "✗"
 
     tk.Label(
