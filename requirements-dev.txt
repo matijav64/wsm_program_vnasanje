@@ -10,3 +10,4 @@ matplotlib
 pytest
 pytest-cov
 mplcursors
+lxml>=5.2
