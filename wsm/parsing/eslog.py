@@ -15,6 +15,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 import re
 import xml.etree.ElementTree as ET
+from lxml import etree as LET
 from typing import List, Dict, Optional, Tuple
 
 import pandas as pd
@@ -249,7 +250,7 @@ def parse_eslog_invoice(
     """
     supplier_code, _ = get_supplier_info(xml_path)
 
-    tree = ET.parse(xml_path)
+    tree = LET.parse(xml_path)
     root = tree.getroot()
     items: List[Dict] = []
 
@@ -282,17 +283,30 @@ def parse_eslog_invoice(
 
         desc = _text(sg26.find(".//e:S_IMD/e:C_C273/e:D_7008", NS))
 
-        # cene AAA/AAB
-        price_net = price_gross = Decimal("0")
-        for pri in sg26.findall(".//e:S_PRI", NS):
-            qual = _text(pri.find("./e:C_C509/e:D_5125", NS))
-            amt = _decimal(pri.find("./e:C_C509/e:D_5118", NS))
-            if qual == "AAA":
-                price_net = amt
-            elif qual == "AAB":
-                price_gross = amt
+        # read percent discount and gross/net prices
+        pcd_nodes = sg26.xpath(".//e:S_PCD/e:C_C501/e:D_5482", namespaces=NS)
+        pcd_pct = _decimal(pcd_nodes[0] if pcd_nodes else None)
+
+        gross_nodes = sg26.xpath(
+            ".//e:S_PRI[e:C_C509/e:D_5125='AAB']/e:C_C509/e:D_5118",
+            namespaces=NS,
+        )
+        price_gross = _decimal(gross_nodes[0] if gross_nodes else None)
+
+        net_nodes = sg26.xpath(
+            ".//e:S_PRI[e:C_C509/e:D_5125='AAA']/e:C_C509/e:D_5118",
+            namespaces=NS,
+        )
+        price_net = _decimal(net_nodes[0] if net_nodes else None)
+
         if price_gross == 0:
             price_gross = price_net
+
+        if price_net == 0 and price_gross != 0 and pcd_pct != 0:
+            price_net = (
+                price_gross
+                * (Decimal("1") - pcd_pct / Decimal("100"))
+            ).quantize(Decimal("0.0001"), ROUND_HALF_UP)
 
         # neto znesek vrstice (MOA 203)
         net_amount = Decimal("0")
