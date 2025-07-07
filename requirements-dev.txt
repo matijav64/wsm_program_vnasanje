@@ -1,5 +1,12 @@
 -r requirements.txt
+
+# Development dependencies
+pandas
+openpyxl
+pdfplumber
+PyQt5
+matplotlib
+
 pytest
 pytest-cov
-matplotlib
 mplcursors

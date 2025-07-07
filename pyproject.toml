@@ -15,6 +15,13 @@ dependencies = ["pandas", "pdfplumber", "openpyxl", "click"]
 [project.optional-dependencies]
 pyqt = ["PyQt5>=5.15"]
 plot = ["matplotlib", "mplcursors"]
+dev = [
+    "pandas",
+    "openpyxl",
+    "pdfplumber",
+    "PyQt5",
+    "matplotlib",
+]
 
 [project.scripts]
 wsm = "wsm.cli:main"
