@@ -34,25 +34,33 @@ def _apply_price_warning(
     *,
     threshold: Decimal = PRICE_DIFF_THRESHOLD,
 ) -> str | None:
-    """Apply tag if price difference exceeds ``threshold`` percent.
+    """Highlight items where the unit price changed significantly.
 
-    Returns the tooltip text or ``None`` when no warning is needed.
+    When the absolute difference between ``new_price`` and ``prev_price`` does
+    not exceed two cents, the tag is removed and an empty string is returned so
+    that any existing tooltip text is cleared. Otherwise the price difference is
+    shown in euros if it exceeds ``threshold`` percent.
     """
     if prev_price is None or prev_price == 0:
         tree.item(item_id, tags=())
         return None
 
     new_val = Decimal(str(new_price))
+    diff = (new_val - prev_price).quantize(Decimal("0.01"))
+    if abs(diff) <= Decimal("0.02"):
+        tree.item(item_id, tags=())
+        return ""
+
     diff_pct = ((new_val - prev_price) / prev_price * Decimal("100")).quantize(
         Decimal("0.01")
     )
 
     if abs(diff_pct) > threshold:
         tree.item(item_id, tags=("price_warn",))
-        return f"Prejšnja cena: {_fmt(prev_price)} ({_fmt(diff_pct)} %)"
+        return f"±{diff:.2f} €"
 
     tree.item(item_id, tags=())
-    return None
+    return ""
 
 
 
