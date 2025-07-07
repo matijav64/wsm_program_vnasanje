@@ -228,7 +228,12 @@ def review_links(
     log.debug(f"df po inicializaciji: {df.head().to_dict()}")
 
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"]
-    doc_discount_total = df_doc["vrednost"].sum()
+    doc_discount_total_raw = df_doc["vrednost"].sum()
+    doc_discount_total = (
+        doc_discount_total_raw
+        if isinstance(doc_discount_total_raw, Decimal)
+        else Decimal(str(doc_discount_total_raw))
+    )
     df = df[df["sifra_dobavitelja"] != "_DOC_"]
     # Ensure a clean sequential index so Treeview item IDs are predictable
     df = df.reset_index(drop=True)
@@ -293,7 +298,9 @@ def review_links(
     # If totals differ slightly (<=5 cent), adjust the document discount when
     # its line exists. Otherwise record the difference separately so that totals
     # still match the invoice without showing an extra row.
-    calculated_total = df["total_net"].sum() + doc_discount_total
+    total_raw = df["total_net"].sum()
+    total_sum = total_raw if isinstance(total_raw, Decimal) else Decimal(str(total_raw))
+    calculated_total = total_sum + doc_discount_total
     diff = invoice_total - calculated_total
     step = detect_round_step(invoice_total, calculated_total)
     if abs(diff) <= step and diff != 0:
@@ -635,11 +642,32 @@ def review_links(
     ).pack(side="left", padx=10)
 
     def _update_totals():
-        calc_total = df["total_net"].sum() + doc_discount_total
-        diff = invoice_total - calc_total
+        line_total_raw = df["total_net"].sum()
+        line_total = (
+            line_total_raw
+            if isinstance(line_total_raw, Decimal)
+            else Decimal(str(line_total_raw))
+        )
+        dd_total = (
+            doc_discount_total
+            if isinstance(doc_discount_total, Decimal)
+            else Decimal(str(doc_discount_total))
+        )
+        inv_total = (
+            invoice_total
+            if isinstance(invoice_total, Decimal)
+            else Decimal(str(invoice_total))
+        )
+
+        calc_total = line_total + (dd_total if not df_doc.empty else Decimal("0"))
+        diff = inv_total - calc_total
         if abs(diff) > Decimal("0.02"):
+            if df.empty:
+                raise ValueError("Cannot autofix totals on empty DataFrame")
             last = df.index[-1]
-            df.at[last, "total_net"] += diff
+            current = df.at[last, "total_net"]
+            current_dec = current if isinstance(current, Decimal) else Decimal(str(current))
+            df.at[last, "total_net"] = current_dec + diff
             qty = Decimal(str(df.at[last, "kolicina_norm"]))
             df.at[last, "cena_po_rabatu"] = (
                 df.at[last, "total_net"] / qty
@@ -650,23 +678,49 @@ def review_links(
             if not isinstance(current_tags, tuple):
                 current_tags = (current_tags,) if current_tags else ()
             tree.item(str(last), tags=("autofix",) + current_tags)
-            calc_total = df["total_net"].sum() + doc_discount_total
+            line_total_raw = df["total_net"].sum()
+            line_total = (
+                line_total_raw
+                if isinstance(line_total_raw, Decimal)
+                else Decimal(str(line_total_raw))
+            )
+            calc_total = line_total + (dd_total if not df_doc.empty else Decimal("0"))
 
         valid = df[~df["is_gratis"]]
         if valid["wsm_sifra"].notna().any():
+            linked_raw = valid[valid["wsm_sifra"].notna()]["total_net"].sum()
             linked_total = (
-                valid[valid["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
+                linked_raw if isinstance(linked_raw, Decimal) else Decimal(str(linked_raw))
             )
-            unlinked_total = valid[valid["wsm_sifra"].isna()]["total_net"].sum()
-        else:
-            linked_total = valid[valid["wsm_sifra"].notna()]["total_net"].sum()
+            if not df_doc.empty:
+                linked_total += dd_total
+            unlinked_raw = valid[valid["wsm_sifra"].isna()]["total_net"].sum()
             unlinked_total = (
-                valid[valid["wsm_sifra"].isna()]["total_net"].sum() + doc_discount_total
+                unlinked_raw
+                if isinstance(unlinked_raw, Decimal)
+                else Decimal(str(unlinked_raw))
             )
+        else:
+            linked_raw = valid[valid["wsm_sifra"].notna()]["total_net"].sum()
+            linked_total = (
+                linked_raw if isinstance(linked_raw, Decimal) else Decimal(str(linked_raw))
+            )
+            unlinked_raw = valid[valid["wsm_sifra"].isna()]["total_net"].sum()
+            unlinked_total = (
+                unlinked_raw
+                if isinstance(unlinked_raw, Decimal)
+                else Decimal(str(unlinked_raw))
+            )
+            if not df_doc.empty:
+                unlinked_total += dd_total
+
         total_sum = linked_total + unlinked_total
-        match_symbol = "✓" if abs(total_sum - invoice_total) <= Decimal("0.02") else "✗"
+        match_symbol = "✓" if abs(total_sum - inv_total) <= Decimal("0.02") else "✗"
         total_frame.children["total_sum"].config(
-            text=f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(invoice_total)} € {match_symbol}"
+            text=(
+                f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = "
+                f"Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(inv_total)} € {match_symbol}"
+            )
         )
 
     bottom = tk.Frame(root)
