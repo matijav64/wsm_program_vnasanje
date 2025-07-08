@@ -118,31 +118,34 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
         tree = ET.parse(xml_path)
         root = tree.getroot()
 
-        # Locate the seller party (SU or SE) and search only within that group
-        seller_group = None
-        for sg2 in root.findall(".//e:G_SG2", NS):
-            nad = sg2.find("./e:S_NAD", NS)
-            if _text(nad.find("./e:D_3035", NS)) in {"SU", "SE"}:
-                seller_group = sg2
+        # Collect seller-related groups (SU or SE) in document order
+        groups: List[ET.Element] = [
+            sg2
+            for sg2 in root.findall(".//e:G_SG2", NS)
+            if _text(sg2.find("./e:S_NAD/e:D_3035", NS)) in {"SU", "SE"}
+        ]
+        if not groups:
+            groups = [root]
+
+        for grp in groups:
+            for rff in grp.findall(".//e:S_RFF", NS):
+                rff_code = _text(rff.find("./e:C_C506/e:D_1153", NS))
+                if rff_code in {"VA", "AHP", "0199"}:
+                    vat_val = _text(rff.find("./e:C_C506/e:D_1154", NS))
+                    if vat_val:
+                        vat = vat_val
+                        break
+            if vat:
                 break
-
-        search_root = seller_group if seller_group is not None else root
-
-        for rff in search_root.findall(".//e:S_RFF", NS):
-            rff_code = _text(rff.find("./e:C_C506/e:D_1153", NS))
-            if rff_code in {"VA", "AHP", "0199"}:
-                vat_val = _text(rff.find("./e:C_C506/e:D_1154", NS))
-                if vat_val:
-                    vat = vat_val
-                    break
-        if not vat:
-            for com in search_root.findall(".//e:S_COM", NS):
+            for com in grp.findall(".//e:S_COM", NS):
                 com_code = _text(com.find("./e:C_C076/e:D_3155", NS))
                 if com_code == "9949":
                     vat_val = _text(com.find("./e:C_C076/e:D_3148", NS))
                     if vat_val:
                         vat = vat_val
                         break
+            if vat:
+                break
     except Exception:
         vat = None
     return code, name, vat
