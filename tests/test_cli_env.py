@@ -139,10 +139,11 @@ def test_open_invoice_gui_uses_env_vars(monkeypatch, tmp_path):
     monkeypatch.setattr("wsm.utils.povezi_z_wsm", fake_povezi)
     monkeypatch.setattr("wsm.ui.common.get_supplier_name", lambda p: "Test Supplier")
     monkeypatch.setattr("wsm.ui.common._load_supplier_map", lambda p: {})
+    monkeypatch.setattr("tkinter.messagebox.showwarning", lambda *a, **k: None)
 
     open_invoice_gui(invoice_path=invoice)
 
-    expected = suppliers_dir / "SUP" / "SUP_SUP_povezane.xlsx"
+    expected = suppliers_dir / "SUP_links_env_povezane.xlsx"
     assert captured["sup"] == suppliers_dir
     assert captured["codes"] == codes_file
     assert captured["links"] == expected

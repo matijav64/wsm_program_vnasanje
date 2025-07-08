@@ -69,57 +69,65 @@ def _save_and_close(
 
     old_safe = links_file.parent.name
     new_key = choose_supplier_key(vat, supplier_code)
-    new_safe = sanitize_folder_name(new_key)
-    if new_safe != old_safe:
-        old_folder = links_file.parent
-        new_folder = Path(sup_file) / new_safe
-        moved = False
-        try:
-            if not new_folder.exists():
-                shutil.move(str(old_folder), str(new_folder))
-                moved = True
-            else:
-                target = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
-                if links_file.exists():
-                    if target.exists():
-                        target = target.with_stem(target.stem + "_old")
-                    links_file.rename(target)
-                for p in old_folder.iterdir():
-                    dest = new_folder / p.name
-                    if dest.exists():
-                        dest = dest.with_stem(dest.stem + "_old")
-                    shutil.move(str(p), str(dest))
-                shutil.rmtree(old_folder, ignore_errors=True)
-                moved = True
-        except Exception as exc:
-            log.warning(f"Napaka pri preimenovanju {old_folder} v {new_folder}: {exc}")
+    if not new_key:
+        messagebox.showwarning(
+            "Opozorilo",
+            "Davčna številka dobavitelja ni znana; mapa ne bo preimenovana.",
+        )
+        new_folder = links_file.parent
+        new_safe = old_safe
+    else:
+        new_safe = sanitize_folder_name(new_key)
+        if new_safe != old_safe:
+            old_folder = links_file.parent
+            new_folder = Path(sup_file) / new_safe
+            moved = False
             try:
-                new_folder.mkdir(exist_ok=True)
-                for p in old_folder.iterdir():
-                    dest = new_folder / p.name
-                    if dest.exists():
-                        dest = dest.with_stem(dest.stem + "_old")
-                    shutil.move(str(p), str(dest))
-                shutil.rmtree(old_folder, ignore_errors=True)
-                moved = True
-            except Exception as exc2:
-                log.warning(
-                    f"Napaka pri prenosu vsebine {old_folder} v {new_folder}: {exc2}"
-                )
-        if moved:
+                if not new_folder.exists():
+                    shutil.move(str(old_folder), str(new_folder))
+                    moved = True
+                else:
+                    target = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
+                    if links_file.exists():
+                        if target.exists():
+                            target = target.with_stem(target.stem + "_old")
+                        links_file.rename(target)
+                    for p in old_folder.iterdir():
+                        dest = new_folder / p.name
+                        if dest.exists():
+                            dest = dest.with_stem(dest.stem + "_old")
+                        shutil.move(str(p), str(dest))
+                    shutil.rmtree(old_folder, ignore_errors=True)
+                    moved = True
+            except Exception as exc:
+                log.warning(f"Napaka pri preimenovanju {old_folder} v {new_folder}: {exc}")
+                try:
+                    new_folder.mkdir(exist_ok=True)
+                    for p in old_folder.iterdir():
+                        dest = new_folder / p.name
+                        if dest.exists():
+                            dest = dest.with_stem(dest.stem + "_old")
+                        shutil.move(str(p), str(dest))
+                    shutil.rmtree(old_folder, ignore_errors=True)
+                    moved = True
+                except Exception as exc2:
+                    log.warning(
+                        f"Napaka pri prenosu vsebine {old_folder} v {new_folder}: {exc2}"
+                    )
+            if moved:
+                if supplier_code.casefold() == new_safe.casefold():
+                    links_file = new_folder / f"{supplier_code}_povezane.xlsx"
+                else:
+                    links_file = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
+                unk_folder = Path(sup_file) / "unknown"
+                if unk_folder.exists():
+                    shutil.rmtree(unk_folder, ignore_errors=True)
+        else:
+            new_folder = Path(sup_file) / new_safe
             if supplier_code.casefold() == new_safe.casefold():
                 links_file = new_folder / f"{supplier_code}_povezane.xlsx"
             else:
                 links_file = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
-            unk_folder = Path(sup_file) / "unknown"
-            if unk_folder.exists():
-                shutil.rmtree(unk_folder, ignore_errors=True)
-    else:
-        new_folder = Path(sup_file) / new_safe
-        if supplier_code.casefold() == new_safe.casefold():
-            links_file = new_folder / f"{supplier_code}_povezane.xlsx"
-        else:
-            links_file = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
 
     # pospravi stare _VAT_VAT_povezane.xlsx v isti mapi
     for p in links_file.parent.glob(f"{supplier_code}_{supplier_code}_povezane.xlsx"):
