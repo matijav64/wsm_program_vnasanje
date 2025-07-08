@@ -1,3 +1,5 @@
+import pytest
+pytest.importorskip("openpyxl")
 import json
 from decimal import Decimal
 import pandas as pd

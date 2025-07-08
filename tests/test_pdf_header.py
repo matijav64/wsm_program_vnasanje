@@ -1,3 +1,5 @@
+import pytest
+pytest.importorskip("pdfplumber")
 from pathlib import Path
 from wsm.parsing.pdf import extract_service_date, extract_invoice_number
 
