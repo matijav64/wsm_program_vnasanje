@@ -94,6 +94,26 @@ def review_links_qt(
     doc_discount_total = df_doc["vrednost"].sum()
     df = df[df["sifra_dobavitelja"] != "_DOC_"].reset_index(drop=True)
 
+    header_totals = {
+        "net": invoice_total,
+        "vat": Decimal("0"),
+        "gross": invoice_total,
+    }
+    if invoice_path and invoice_path.suffix.lower() == ".xml":
+        try:
+            from wsm.parsing.eslog import (
+                extract_header_net,
+                extract_total_tax,
+                extract_header_gross,
+            )
+
+            header_totals["net"] = extract_header_net(invoice_path)
+            header_totals["vat"] = extract_total_tax(invoice_path)
+            header_totals["gross"] = extract_header_gross(invoice_path)
+            invoice_total = header_totals["net"]
+        except Exception as exc:  # pragma: no cover - robust against IO errors
+            log.warning(f"Napaka pri branju zneskov glave: {exc}")
+
     df["cena_pred_rabatom"] = df.apply(
         lambda r: (r["vrednost"] + r["rabata"]) / r["kolicina"] if r["kolicina"] else Decimal("0"),
         axis=1,
@@ -237,11 +257,11 @@ def review_links_qt(
         linked_total = df[df["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
         unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum()
         total_sum = linked_total + unlinked_total
-        step_total = detect_round_step(invoice_total, total_sum)
-        match_symbol = "✓" if abs(total_sum - invoice_total) <= step_total else "✗"
+        step_total = detect_round_step(header_totals["net"], total_sum)
+        match_symbol = "✓" if abs(total_sum - header_totals["net"]) <= step_total else "✗"
         total_label.setText(
             f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = "
-            f"Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(invoice_total)} € {match_symbol}"
+            f"Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(header_totals['net'])} € {match_symbol}"
         )
 
     update_summary()
