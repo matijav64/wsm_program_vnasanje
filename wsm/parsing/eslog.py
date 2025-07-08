@@ -135,13 +135,14 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
 
 # ─────────────────────── vsota iz glave ───────────────────────
 def extract_header_net(xml_path: Path | str) -> Decimal:
-    """Vrne znesek iz MOA 389 (neto brez DDV)."""
+    """Vrne znesek iz MOA 389 (neto brez DDV) oz. po potrebi iz MOA 79."""
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
-        for moa in root.findall('.//e:G_SG50/e:S_MOA', NS):
-            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == '389':
-                return _decimal(moa.find('./e:C_C516/e:D_5004', NS))
+        for code in ("389", "79"):
+            for moa in root.findall('.//e:G_SG50/e:S_MOA', NS):
+                if _text(moa.find('./e:C_C516/e:D_5025', NS)) == code:
+                    return _decimal(moa.find('./e:C_C516/e:D_5004', NS))
     except Exception:
         pass
     return Decimal('0')
