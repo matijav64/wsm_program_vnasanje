@@ -122,29 +122,7 @@ def review_links_qt(
     )
     df["kolicina_norm"] = df["kolicina_norm"].astype(float)
 
-    calculated_total = df["total_net"].sum() + doc_discount_total
-    diff = invoice_total - calculated_total
-    step = detect_round_step(invoice_total, calculated_total)
-    if abs(diff) <= step and diff != 0:
-        doc_discount_total += diff
-        if not df_doc.empty:
-            df_doc.loc[df_doc.index, "vrednost"] += diff
-            df_doc.loc[df_doc.index, "cena_bruto"] += abs(diff)
-            df_doc.loc[df_doc.index, "rabata"] += abs(diff)
-        else:
-            df_doc = pd.DataFrame([
-                {
-                    "sifra_dobavitelja": "_DOC_",
-                    "naziv": "Samodejni popravek",
-                    "kolicina": Decimal("1"),
-                    "enota": "",
-                    "cena_bruto": abs(diff),
-                    "cena_netto": Decimal("0"),
-                    "rabata": abs(diff),
-                    "rabata_pct": Decimal("100.00"),
-                    "vrednost": diff,
-                }
-            ])
+
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
     win = QtWidgets.QMainWindow()
