@@ -167,14 +167,17 @@ def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct, use_pyqt):
     vat_safe = sanitize_folder_name(vat_norm) if vat_norm else None
     code_safe = sanitize_folder_name(supplier_code)
 
-    cand_paths = []
-    if vat_safe:
-        cand_paths.append(base / vat_safe)
-    if code_safe != vat_safe:
-        cand_paths.append(base / code_safe)
-    cand_paths.append(base / "unknown")
+    vat_path = base / vat_safe if vat_safe else None
+    code_path = base / code_safe
 
-    links_dir = next((p for p in cand_paths if p.exists()), cand_paths[0])
+    if map_vat and vat_path:
+        links_dir = vat_path
+    elif code_path.exists():
+        links_dir = code_path
+    elif vat_path and vat_path.exists():
+        links_dir = vat_path
+    else:
+        links_dir = code_path
 
     links_dir.mkdir(parents=True, exist_ok=True)
     if (links_dir / f"{supplier_code}_povezane.xlsx").exists():

@@ -13,13 +13,17 @@ log = logging.getLogger(__name__)
 
 
 def _norm_vat(s: str) -> str:
-    """Return digits-only VAT number without a leading ``SI``."""
+    """Return VAT number with ``SI`` prefix and digits only."""
     if not isinstance(s, str):
         return ""
     s = s.strip()
+    if not s:
+        return ""
     if s.upper().startswith("SI"):
-        s = s[2:]
-    return "".join(ch for ch in s if ch.isdigit())
+        digits = "".join(ch for ch in s[2:] if ch.isdigit())
+    else:
+        digits = "".join(ch for ch in s if ch.isdigit())
+    return f"SI{digits}" if digits else ""
 
 
 @lru_cache(maxsize=None)

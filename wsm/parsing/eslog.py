@@ -147,6 +147,20 @@ def extract_header_net(xml_path: Path | str) -> Decimal:
         pass
     return Decimal('0')
 
+
+def extract_header_gross(xml_path: Path | str) -> Decimal:
+    """Return gross amount from MOA 9 or 388."""
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        for code in ("9", "388"):
+            for moa in root.findall('.//e:G_SG50/e:S_MOA', NS):
+                if _text(moa.find('./e:C_C516/e:D_5025', NS)) == code:
+                    return _decimal(moa.find('./e:C_C516/e:D_5004', NS))
+    except Exception:
+        pass
+    return Decimal('0')
+
 # ───────────────────── datum opravljene storitve ─────────────────────
 def extract_service_date(xml_path: Path | str) -> str | None:
     """Vrne datum opravljene storitve (DTM 35) ali datum računa (DTM 137)."""
