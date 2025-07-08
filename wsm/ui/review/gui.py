@@ -316,44 +316,7 @@ def review_links(
     df["warning"] = pd.NA
     log.debug(f"df po normalizaciji: {df.head().to_dict()}")
 
-    # If totals differ slightly (<=5 cent), adjust the document discount when
-    # its line exists. Otherwise record the difference separately so that totals
-    # still match the invoice without showing an extra row.
-    total_raw = df["total_net"].sum()
-    total_sum = total_raw if isinstance(total_raw, Decimal) else Decimal(str(total_raw))
-    calculated_total = total_sum + doc_discount_total
-    diff = invoice_total - calculated_total
-    step = detect_round_step(invoice_total, calculated_total)
-    if abs(diff) <= step and diff != 0:
-        if not df_doc.empty:
-            log.debug(
-                f"Prilagajam dokumentarni popust za razliko {diff}: "
-                f"{doc_discount_total} -> {doc_discount_total + diff}"
-            )
-            doc_discount_total += diff
-            df_doc.loc[df_doc.index, "vrednost"] += diff
-            df_doc.loc[df_doc.index, "cena_bruto"] += abs(diff)
-            df_doc.loc[df_doc.index, "rabata"] += abs(diff)
-        else:
-            log.debug(
-                f"Dodajam _DOC_ vrstico za razliko {diff} med vrsticami in računom"
-            )
-            df_doc = pd.DataFrame(
-                [
-                    {
-                        "sifra_dobavitelja": "_DOC_",
-                        "naziv": "Samodejni popravek",
-                        "kolicina": Decimal("1"),
-                        "enota": "",
-                        "cena_bruto": abs(diff),
-                        "cena_netto": Decimal("0"),
-                        "rabata": abs(diff),
-                        "rabata_pct": Decimal("100.00"),
-                        "vrednost": diff,
-                    }
-                ]
-            )
-            doc_discount_total += diff
+
 
     # Combine duplicate invoice lines except for gratis items
     df = _merge_same_items(df)

@@ -92,3 +92,41 @@ def test_header_totals_display_and_no_autofix(tmp_path):
     assert ns["var_vat"].get() == "2.2"
     assert ns["var_total"].get() == "12.2"
 
+
+def test_no_doc_row_added_for_small_diff(tmp_path):
+    xml = (
+        "<Invoice xmlns='urn:eslog:2.00'>"
+        "  <M_INVOIC>"
+        "    <G_SG26>"
+        "      <S_QTY><C_C186><D_6060>1</D_6060><D_6411>PCE</D_6411></C_C186></S_QTY>"
+        "      <S_LIN><C_C212><D_7140>0001</D_7140></C_C212></S_LIN>"
+        "      <S_IMD><C_C273><D_7008>Item</D_7008></C_C273></S_IMD>"
+        "      <S_PRI><C_C509><D_5125>AAA</D_5125><D_5118>10.02</D_5118></C_C509></S_PRI>"
+        "      <S_MOA><C_C516><D_5025>203</D_5025><D_5004>10.02</D_5004></C_C516></S_MOA>"
+        "      <G_SG34><S_TAX><C_C243><D_5278>22</D_5278></C_C243></S_TAX></G_SG34>"
+        "    </G_SG26>"
+        "    <G_SG50>"
+        "      <S_MOA><C_C516><D_5025>389</D_5025><D_5004>10</D_5004></C_C516></S_MOA>"
+        "    </G_SG50>"
+        "    <G_SG50>"
+        "      <S_MOA><C_C516><D_5025>388</D_5025><D_5004>12.20</D_5004></C_C516></S_MOA>"
+        "    </G_SG50>"
+        "    <G_SG52>"
+        "      <S_TAX><C_C243><D_5278>22</D_5278></C_C243></S_TAX>"
+        "      <S_MOA><C_C516><D_5025>124</D_5025><D_5004>2.20</D_5004></C_C516></S_MOA>"
+        "    </G_SG52>"
+        "  </M_INVOIC>"
+        "</Invoice>"
+    )
+    xml_path = tmp_path / "inv.xml"
+    xml_path.write_text(xml)
+
+    df = parse_eslog_invoice(xml_path, {})
+    header_net = extract_header_net(xml_path)
+    assert df[df["sifra_dobavitelja"] == "_DOC_"].empty
+    total_calc = df[df["sifra_dobavitelja"] != "_DOC_"]["vrednost"].sum()
+    step = detect_round_step(header_net, total_calc)
+    diff = header_net - total_calc
+    assert abs(diff) <= step and diff != 0
+    assert df[df["sifra_dobavitelja"] == "_DOC_"].empty
+
