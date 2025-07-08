@@ -92,10 +92,19 @@ def open_invoice_gui(
     vat_id = vat or (info.get("vat") if isinstance(info, dict) else None)
 
     key = choose_supplier_key(vat_id, supplier_code)
-    key_safe = sanitize_folder_name(key)
-    links_dir = Path(suppliers) / key_safe
+    base_dir = Path(suppliers)
+    base_dir.mkdir(parents=True, exist_ok=True)
+    if not key:
+        messagebox.showwarning(
+            "Opozorilo",
+            "Davčna številka dobavitelja ni znana; mapa ne bo ustvarjena.",
+        )
+        links_dir = base_dir
+    else:
+        key_safe = sanitize_folder_name(key)
+        links_dir = base_dir / key_safe
+        links_dir.mkdir(parents=True, exist_ok=True)
 
-    links_dir.mkdir(parents=True, exist_ok=True)
 
     if (links_dir / f"{supplier_code}_povezane.xlsx").exists():
         links_file = links_dir / f"{supplier_code}_povezane.xlsx"
