@@ -15,7 +15,7 @@ from wsm.analyze import analyze_invoice
 from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
 from wsm.parsing.eslog import get_supplier_name
 from wsm.utils import sanitize_folder_name, _load_supplier_map
-from wsm.supplier_store import _norm_vat
+from wsm.supplier_store import _norm_vat, choose_supplier_key
 from wsm.ui.review.gui import review_links
 
 
@@ -90,21 +90,10 @@ def open_invoice_gui(
 
     info = sup_map.get(supplier_code, {})
     vat_id = vat or (info.get("vat") if isinstance(info, dict) else None)
-    vat_norm = _norm_vat(vat_id or "")
-    vat_safe = sanitize_folder_name(vat_norm) if vat_norm else None
-    code_safe = sanitize_folder_name(supplier_code)
 
-    vat_path = Path(suppliers) / vat_safe if vat_safe else None
-    code_path = Path(suppliers) / code_safe
-
-    if map_vat and vat_path:
-        links_dir = vat_path
-    elif code_path.exists():
-        links_dir = code_path
-    elif vat_path and vat_path.exists():
-        links_dir = vat_path
-    else:
-        links_dir = code_path
+    key = choose_supplier_key(vat_id, supplier_code)
+    key_safe = sanitize_folder_name(key)
+    links_dir = Path(suppliers) / key_safe
 
     links_dir.mkdir(parents=True, exist_ok=True)
 
