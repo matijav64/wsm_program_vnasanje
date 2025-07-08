@@ -192,6 +192,21 @@ def extract_invoice_number(xml_path: Path | str) -> str | None:
     return None
 
 
+def extract_total_tax(xml_path: Path | str) -> Decimal:
+    """Sum MOA values with qualifier 124 inside all ``G_SG52`` groups."""
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        total = Decimal("0")
+        for sg52 in root.findall(".//e:G_SG52", NS):
+            for moa in sg52.findall("./e:S_MOA", NS):
+                if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "124":
+                    total += _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+        return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
+    except Exception:
+        return Decimal("0")
+
+
 def _get_document_discount(xml_root: ET.Element) -> Decimal:
     """Return document level discount from <DocumentDiscount> or MOA codes."""
     discount_el = xml_root.find("DocumentDiscount")
