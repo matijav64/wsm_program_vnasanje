@@ -663,30 +663,15 @@ def review_links(
 
         calc_total = line_total + (dd_total if not df_doc.empty else Decimal("0"))
         diff = inv_total - calc_total
-        if abs(diff) > Decimal("0.02"):
-            if df.empty:
-                raise ValueError("Cannot autofix totals on empty DataFrame")
-            last = df.index[-1]
-            current = df.at[last, "total_net"]
-            current_dec = current if isinstance(current, Decimal) else Decimal(str(current))
-            df.at[last, "total_net"] = current_dec + diff
-            qty = Decimal(str(df.at[last, "kolicina_norm"]))
-            df.at[last, "cena_po_rabatu"] = (
-                df.at[last, "total_net"] / qty
-            ).quantize(Decimal("0.0001"))
-            df.at[last, "warning"] = f"AUTOFIX {diff:+.2f} €"
-            tree.set(str(last), "warning", f"AUTOFIX {diff:+.2f} €")
-            current_tags = tree.item(str(last)).get("tags", ())
-            if not isinstance(current_tags, tuple):
-                current_tags = (current_tags,) if current_tags else ()
-            tree.item(str(last), tags=("autofix",) + current_tags)
-            line_total_raw = df["total_net"].sum()
-            line_total = (
-                line_total_raw
-                if isinstance(line_total_raw, Decimal)
-                else Decimal(str(line_total_raw))
+        step = detect_round_step(inv_total, calc_total)
+        if abs(diff) > step:
+            messagebox.showwarning(
+                "Opozorilo",
+                (
+                    "Razlika med postavkami in računom je "
+                    f"{diff:+.2f} € in presega dovoljeno zaokroževanje."
+                ),
             )
-            calc_total = line_total + (dd_total if not df_doc.empty else Decimal("0"))
 
         valid = df[~df["is_gratis"]]
         if valid["wsm_sifra"].notna().any():
