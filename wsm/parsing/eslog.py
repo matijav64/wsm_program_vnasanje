@@ -33,8 +33,15 @@ def _text(el: ET.Element | None) -> str:
 
 def _decimal(el: ET.Element | None) -> Decimal:
     try:
-        txt = _text(el).replace(",", ".")
-        return Decimal(txt) if txt else Decimal("0")
+        txt = _text(el)
+        if not txt:
+            return Decimal("0")
+
+        txt = txt.replace("\xa0", "").replace(" ", "")
+        if "," in txt:
+            txt = txt.replace(".", "").replace(",", ".")
+
+        return Decimal(txt)
     except Exception:
         return Decimal("0")
 
