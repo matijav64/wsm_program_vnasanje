@@ -19,6 +19,11 @@ from tkinter import ttk, messagebox
 from wsm.parsing.money import detect_round_step
 from wsm.utils import short_supplier_name, _clean
 from wsm.constants import PRICE_DIFF_THRESHOLD
+from wsm.parsing.eslog import (
+    extract_header_net,
+    extract_total_tax,
+    extract_header_gross,
+)
 from .helpers import _fmt, _norm_unit, _merge_same_items
 from .io import _save_and_close, _load_supplier_map, _write_supplier_map
 
@@ -156,6 +161,20 @@ def review_links(
 
     log.info(f"Default name retrieved: {default_name}")
     log.debug(f"Supplier info: {supplier_info}")
+
+    header_totals = {
+        "net": invoice_total,
+        "vat": Decimal("0"),
+        "gross": invoice_total,
+    }
+    if invoice_path and invoice_path.suffix.lower() == ".xml":
+        try:
+            header_totals["net"] = extract_header_net(invoice_path)
+            header_totals["vat"] = extract_total_tax(invoice_path)
+            header_totals["gross"] = extract_header_gross(invoice_path)
+            invoice_total = header_totals["net"]
+        except Exception as exc:
+            log.warning(f"Napaka pri branju zneskov glave: {exc}")
 
     try:
         manual_old = pd.read_excel(links_file, dtype=str)
@@ -362,6 +381,9 @@ def review_links(
     supplier_var = tk.StringVar()
     date_var = tk.StringVar()
     invoice_var = tk.StringVar()
+    var_net = tk.StringVar()
+    var_vat = tk.StringVar()
+    var_total = tk.StringVar()
 
     def _refresh_header():
         parts_full = [supplier_name]
@@ -395,6 +417,11 @@ def review_links(
             f"_refresh_header: supplier_var={supplier_var.get()}, "
             f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
         )
+
+    def _refresh_header_totals():
+        var_net.set(_fmt(header_totals["net"]))
+        var_vat.set(_fmt(header_totals["vat"]))
+        var_total.set(_fmt(header_totals["gross"]))
 
     header_lbl = tk.Label(
         root,
@@ -434,10 +461,20 @@ def review_links(
     # Refresh header once widgets exist. ``after_idle`` ensures widgets are
     # fully initialized before values are set so the entries show up
     root.after_idle(_refresh_header)
+    root.after_idle(_refresh_header_totals)
     log.debug(
         f"after_idle scheduled: supplier_var={supplier_var.get()}, "
         f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
     )
+
+    totals_frame = tk.Frame(root)
+    totals_frame.pack(anchor="w", padx=8, pady=(0, 12))
+    tk.Label(totals_frame, text="Neto:").grid(row=0, column=0, sticky="w")
+    tk.Label(totals_frame, textvariable=var_net).grid(row=0, column=1, sticky="w", padx=(0, 12))
+    tk.Label(totals_frame, text="DDV:").grid(row=0, column=2, sticky="w")
+    tk.Label(totals_frame, textvariable=var_vat).grid(row=0, column=3, sticky="w", padx=(0, 12))
+    tk.Label(totals_frame, text="Skupaj:").grid(row=0, column=4, sticky="w")
+    tk.Label(totals_frame, textvariable=var_total).grid(row=0, column=5, sticky="w")
 
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
@@ -634,11 +671,11 @@ def review_links(
         )
     # Skupni seštevek mora biti vsota "povezano" in "ostalo"
     total_sum = linked_total + unlinked_total
-    match_symbol = "✓" if abs(total_sum - invoice_total) <= Decimal("0.02") else "✗"
+    match_symbol = "✓" if abs(total_sum - header_totals["net"]) <= Decimal("0.02") else "✗"
 
     tk.Label(
         total_frame,
-        text=f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(invoice_total)} € {match_symbol}",
+        text=f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(header_totals['net'])} € {match_symbol}",
         font=("Arial", 10, "bold"),
         name="total_sum",
     ).pack(side="left", padx=10)
@@ -656,9 +693,9 @@ def review_links(
             else Decimal(str(doc_discount_total))
         )
         inv_total = (
-            invoice_total
-            if isinstance(invoice_total, Decimal)
-            else Decimal(str(invoice_total))
+            header_totals["net"]
+            if isinstance(header_totals["net"], Decimal)
+            else Decimal(str(header_totals["net"]))
         )
 
         calc_total = line_total + (dd_total if not df_doc.empty else Decimal("0"))

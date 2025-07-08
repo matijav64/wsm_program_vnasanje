@@ -77,20 +77,13 @@ def open_invoice_gui(
     supplier_code = main_supplier_code(df) or "unknown"
     sup_map = _load_supplier_map(Path(suppliers))
     map_vat = sup_map.get(supplier_code, {}).get("vat") if sup_map else None
-    vat = None
+    vat = map_vat
     if invoice_path.suffix.lower() == ".xml":
-        from wsm.parsing.eslog import get_supplier_info_vat
-
         name = get_supplier_name(invoice_path) or supplier_code
-        _, _, vat_num = get_supplier_info_vat(invoice_path)
-        if vat_num:
-            vat = vat_num
     elif invoice_path.suffix.lower() == ".pdf":
         name = get_supplier_name_from_pdf(invoice_path) or supplier_code
     else:
         name = supplier_code
-    if not vat and map_vat:
-        vat = map_vat
     # Če je koda še "unknown" in VAT obstaja, uporabi kar davčno številko
     if supplier_code == "unknown" and vat:
         supplier_code = vat
@@ -101,14 +94,17 @@ def open_invoice_gui(
     vat_safe = sanitize_folder_name(vat_norm) if vat_norm else None
     code_safe = sanitize_folder_name(supplier_code)
 
-    cand_paths = []
-    if vat_safe:
-        cand_paths.append(Path(suppliers) / vat_safe)
-    if code_safe != vat_safe:
-        cand_paths.append(Path(suppliers) / code_safe)
-    cand_paths.append(Path(suppliers) / "unknown")
+    vat_path = Path(suppliers) / vat_safe if vat_safe else None
+    code_path = Path(suppliers) / code_safe
 
-    links_dir = next((p for p in cand_paths if p.exists()), cand_paths[0])
+    if map_vat and vat_path:
+        links_dir = vat_path
+    elif code_path.exists():
+        links_dir = code_path
+    elif vat_path and vat_path.exists():
+        links_dir = vat_path
+    else:
+        links_dir = code_path
 
     links_dir.mkdir(parents=True, exist_ok=True)
 
