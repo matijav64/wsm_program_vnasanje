@@ -65,9 +65,11 @@ def _save_and_close(
         new_info["ime"] = supplier_name
         changed = True
     from wsm.utils import sanitize_folder_name
+    from wsm.supplier_store import choose_supplier_key
 
     old_safe = links_file.parent.name
-    new_safe = sanitize_folder_name(vat or supplier_name)
+    new_key = choose_supplier_key(vat, supplier_code)
+    new_safe = sanitize_folder_name(new_key)
     if new_safe != old_safe:
         old_folder = links_file.parent
         new_folder = Path(sup_file) / new_safe

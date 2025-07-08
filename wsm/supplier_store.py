@@ -26,6 +26,20 @@ def _norm_vat(s: str) -> str:
     return f"SI{digits}" if digits else ""
 
 
+def choose_supplier_key(vat: str | None, code: str | None = None) -> str:
+    """Return the VAT number when available, otherwise ``code``.
+
+    The VAT number is first normalized with :func:`_norm_vat`.  If the result
+    is non-empty it is returned; otherwise the ``code`` is used as-is.  When
+    ``code`` is ``None`` an empty string is returned.
+    """
+
+    vat_norm = _norm_vat(vat or "")
+    if vat_norm:
+        return vat_norm
+    return str(code or "")
+
+
 @lru_cache(maxsize=None)
 def load_suppliers(sup_file: Path | str) -> dict[str, dict]:
     """Load supplier info from per-supplier JSON files or a legacy Excel."""
