@@ -291,7 +291,9 @@ def review_links(
             df["enota_norm"].value_counts().to_dict(),
         )
 
-    df["kolicina_norm"] = df["kolicina_norm"].astype(float)
+    # Keep ``kolicina_norm`` as ``Decimal`` to avoid losing precision in
+    # subsequent calculations and when saving the file. Previously the column
+    # was cast to ``float`` which could introduce rounding errors.
     df["warning"] = pd.NA
     log.debug(f"df po normalizaciji: {df.head().to_dict()}")
 
