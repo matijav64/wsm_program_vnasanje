@@ -1,3 +1,5 @@
+import pytest
+pytest.importorskip("openpyxl")
 from decimal import Decimal
 import pandas as pd
 import inspect

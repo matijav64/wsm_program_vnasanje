@@ -1,3 +1,5 @@
+import pytest
+pytest.importorskip("openpyxl")
 import json
 import pandas as pd
 from wsm.ui.price_watch import (
