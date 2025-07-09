@@ -100,20 +100,44 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
         seller_group = None
         for sg2 in root.findall(".//e:G_SG2", NS):
             nad = sg2.find("./e:S_NAD", NS)
-            if _text(nad.find("./e:D_3035", NS)) in {"SU", "SE"}:
-                seller_group = sg2
-                break
+            if nad is not None:
+                typ_el = nad.find("./e:D_3035", NS) or next(
+                    (el for el in nad.iter() if el.tag.split("}")[-1] == "D_3035"),
+                    None,
+                )
+                if _text(typ_el) in {"SU", "SE"}:
+                    seller_group = sg2
+                    break
 
         search_root = seller_group if seller_group is not None else root
 
-        for rff in search_root.findall(".//e:S_RFF", NS):
-            rff_code = _text(rff.find("./e:C_C506/e:D_1153", NS))
-            if rff_code in {"VA", "AHP", "0199"}:
-                vat_val = _text(rff.find("./e:C_C506/e:D_1154", NS))
-                if vat_val:
-                    vat = vat_val
-                    break
-        if not vat:
+        fallback_vat = None
+        for sg3 in search_root.findall("./e:G_SG3", NS):
+            rff = sg3.find("./e:S_RFF", NS)
+            if rff is None:
+                continue
+            code_el = rff.find("./e:C_C506/e:D_1153", NS) or next(
+                (el for el in rff.iter() if el.tag.split("}")[-1] == "D_1153"),
+                None,
+            )
+            val_el = rff.find("./e:C_C506/e:D_1154", NS) or next(
+                (el for el in rff.iter() if el.tag.split("}")[-1] == "D_1154"),
+                None,
+            )
+            rff_code = _text(code_el)
+            vat_val = _text(val_el)
+            if rff_code == "VA" and vat_val:
+                vat = vat_val
+                break
+            if fallback_vat is None and (
+                rff_code in {"AHP", "0199"} or vat_val.startswith("SI")
+            ):
+                fallback_vat = vat_val
+
+        if vat is None:
+            vat = fallback_vat
+
+        if vat is None:
             for com in search_root.findall(".//e:S_COM", NS):
                 com_code = _text(com.find("./e:C_C076/e:D_3155", NS))
                 if com_code == "9949":
@@ -121,6 +145,11 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
                     if vat_val:
                         vat = vat_val
                         break
+
+        if vat:
+            vat = vat.replace(" ", "").upper()
+            if not re.match(r"^SI\d{8}$", vat):
+                vat = None
     except Exception:
         vat = None
     return code, name, vat
