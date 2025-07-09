@@ -50,6 +50,16 @@ NS = {"e": "urn:eslog:2.00"}
 DEFAULT_DOC_DISCOUNT_CODES = ["204", "260", "131", "128"]
 
 # ────────────────────────── line helpers ──────────────────────────
+def _apply_discount(gross: Decimal, disc: Decimal) -> Decimal:
+    """Return ``gross - disc`` rounded to two decimals."""
+    return (gross - disc).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+
+def _discount_pct(gross: Decimal, pct: Decimal) -> Decimal:
+    """Return discount amount from ``pct`` of ``gross`` rounded to two decimals."""
+    return (gross * pct / Decimal("100")).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+
 def _line_gross(sg26: ET.Element) -> Decimal:
     """Return line gross amount before discounts."""
     for moa in sg26.findall('.//e:S_MOA', NS):
@@ -79,18 +89,15 @@ def _line_discount(sg26: ET.Element) -> Decimal:
         # fixed discount amount
         for moa in sg39.findall('.//e:G_SG42/e:S_MOA', NS):
             if _text(moa.find('./e:C_C516/e:D_5025', NS)) == '204':
-                return _decimal(moa.find('./e:C_C516/e:D_5004', NS)).quantize(
-                    Decimal('0.01'), ROUND_HALF_UP
-                )
+                amt = _decimal(moa.find('./e:C_C516/e:D_5004', NS))
+                return amt.quantize(Decimal('0.01'), ROUND_HALF_UP)
         # percentage discount
         pcd = sg39.find('.//e:S_PCD', NS)
         if pcd is not None and _text(pcd.find('./e:C_C501/e:D_5245', NS)) == '1':
             pct = _decimal(pcd.find('./e:C_C501/e:D_5482', NS))
             if pct != 0:
                 gross = _line_gross(sg26)
-                return (gross * pct / Decimal('100')).quantize(
-                    Decimal('0.01'), ROUND_HALF_UP
-                )
+                return _discount_pct(gross, pct)
     return Decimal('0')
 
 
@@ -98,7 +105,7 @@ def _line_net(sg26: ET.Element) -> Decimal:
     """Return net line amount (gross minus discount)."""
     gross = _line_gross(sg26)
     disc = _line_discount(sg26)
-    return (gross - disc).quantize(Decimal('0.01'), ROUND_HALF_UP)
+    return _apply_discount(gross, disc)
 
 
 def _line_tax(sg26: ET.Element) -> Decimal:
