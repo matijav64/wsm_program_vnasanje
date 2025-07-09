@@ -157,6 +157,8 @@ def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct, use_pyqt):
         name = supplier_code
     if not vat and map_vat:
         vat = map_vat
+    if vat and (supplier_code == "unknown" or supplier_code not in sup_map):
+        supplier_code = vat
 
     base = Path(suppliers_path)
 
