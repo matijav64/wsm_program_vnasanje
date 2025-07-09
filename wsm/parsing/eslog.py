@@ -109,13 +109,28 @@ def _line_net(sg26: ET.Element) -> Decimal:
 
 
 def _line_tax(sg26: ET.Element) -> Decimal:
-    """Return VAT amount for the line from MOA 124 segments."""
+    """Return VAT amount for the line.
+
+    If MOA 124 segments are missing, the amount is calculated from the line
+    net value and VAT rate.
+    """
     total = Decimal("0")
     for sg34 in sg26.findall('.//e:G_SG34', NS):
         for moa in sg34.findall('./e:S_MOA', NS):
             if _text(moa.find('./e:C_C516/e:D_5025', NS)) == '124':
                 total += _decimal(moa.find('./e:C_C516/e:D_5004', NS))
-    return total.quantize(Decimal('0.01'), ROUND_HALF_UP)
+
+    if total == 0:
+        rate = Decimal("0")
+        for tax in sg26.findall('.//e:G_SG34/e:S_TAX', NS):
+            r = _decimal(tax.find('./e:C_C243/e:D_5278', NS))
+            if r != 0:
+                rate = r
+                break
+        if rate != 0:
+            total = _line_net(sg26) * rate / Decimal("100")
+
+    return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 # ────────────────────── dobavitelj: koda + ime ──────────────────────
 def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
