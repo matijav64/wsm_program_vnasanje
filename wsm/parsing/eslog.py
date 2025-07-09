@@ -100,6 +100,16 @@ def _line_net(sg26: ET.Element) -> Decimal:
     disc = _line_discount(sg26)
     return (gross - disc).quantize(Decimal('0.01'), ROUND_HALF_UP)
 
+
+def _line_tax(sg26: ET.Element) -> Decimal:
+    """Return VAT amount for the line from MOA 124 segments."""
+    total = Decimal("0")
+    for sg34 in sg26.findall('.//e:G_SG34', NS):
+        for moa in sg34.findall('./e:S_MOA', NS):
+            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == '124':
+                total += _decimal(moa.find('./e:C_C516/e:D_5004', NS))
+    return total.quantize(Decimal('0.01'), ROUND_HALF_UP)
+
 # ────────────────────── dobavitelj: koda + ime ──────────────────────
 def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
     """
@@ -221,6 +231,19 @@ def extract_header_net(xml_path: Path | str) -> Decimal:
         pass
     return Decimal('0')
 
+
+def extract_grand_total(xml_path: Path | str) -> Decimal:
+    """Return invoice grand total from MOA 9."""
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        for moa in root.findall('.//e:G_SG50/e:S_MOA', NS):
+            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == '9':
+                return _decimal(moa.find('./e:C_C516/e:D_5004', NS))
+    except Exception:
+        pass
+    return Decimal('0')
+
 # ───────────────────── datum opravljene storitve ─────────────────────
 def extract_service_date(xml_path: Path | str) -> str | None:
     """Vrne datum opravljene storitve (DTM 35) ali datum računa (DTM 137)."""
@@ -304,6 +327,8 @@ def parse_eslog_invoice(
     tree = ET.parse(xml_path)
     root = tree.getroot()
     items: List[Dict] = []
+    net_total = Decimal("0")
+    tax_total = Decimal("0")
 
     # ───────────── LINE ITEMS ─────────────
     for sg26 in root.findall(".//e:G_SG26", NS):
@@ -411,6 +436,10 @@ def parse_eslog_invoice(
 
         is_gratis = rabata_pct >= Decimal("99.9")
 
+        line_tax = _line_tax(sg26)
+        net_total += net_amount
+        tax_total += line_tax
+
         items.append({
             "sifra_dobavitelja": supplier_code,
             "naziv":            desc,
@@ -450,6 +479,7 @@ def parse_eslog_invoice(
 
 
     if doc_discount != 0:
+        net_total -= doc_discount
         items.append({
             "sifra_dobavitelja": "_DOC_",
             "naziv":            "Popust na ravni računa",
@@ -466,6 +496,16 @@ def parse_eslog_invoice(
     df = pd.DataFrame(items)
     if not df.empty:
         df.sort_values(["sifra_dobavitelja", "naziv"], inplace=True, ignore_index=True)
+
+    calculated_total = (net_total + tax_total).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    grand_total = extract_grand_total(xml_path)
+    if abs(calculated_total - grand_total) > Decimal("0.01"):
+        log.warning(
+            "Invoice total mismatch: MOA 9 %s vs calculated %s",
+            grand_total,
+            calculated_total,
+        )
+
     return df
 
 # ───────────────────── PRILAGOJENA funkcija za CLI ─────────────────────
