@@ -80,7 +80,7 @@ def test_open_invoice_gui_prefers_vat_folder(monkeypatch, tmp_path):
 
     open_invoice_gui(invoice_path=invoice, suppliers=suppliers_dir)
 
-    expected_dir = suppliers_dir / "SUP"
-    expected = expected_dir / "SUP_SUP_povezane.xlsx"
+    expected_dir = suppliers_dir / "SI111"
+    expected = expected_dir / "SI111_SI111_povezane.xlsx"
     assert captured["links"] == expected
     assert expected_dir.exists()

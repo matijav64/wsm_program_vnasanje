@@ -90,8 +90,8 @@ def open_invoice_gui(
         name = supplier_code
     if not vat and map_vat:
         vat = map_vat
-    # Če je koda še "unknown" in VAT obstaja, uporabi kar davčno številko
-    if supplier_code == "unknown" and vat:
+    # Če nimamo vnosa v zemljevidu dobaviteljev, uporabi VAT kot kodo
+    if vat and (supplier_code == "unknown" or supplier_code not in sup_map):
         supplier_code = vat
 
     # ───── enotna mapa: supplier_code > VAT > fallback ─────
