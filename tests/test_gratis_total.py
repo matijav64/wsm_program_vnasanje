@@ -6,7 +6,7 @@ from wsm.parsing.eslog import parse_eslog_invoice
 
 
 def _calc_totals(xml_path: Path):
-    df = parse_eslog_invoice(xml_path, {})
+    df, ok = parse_eslog_invoice(xml_path)
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"]
     doc_discount_total = df_doc["vrednost"].sum()
     df = df[df["sifra_dobavitelja"] != "_DOC_"].copy()
@@ -18,6 +18,7 @@ def _calc_totals(xml_path: Path):
     valid = df[~df["is_gratis"]]
     linked_total = valid[valid["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
     unlinked_total = valid[valid["wsm_sifra"].isna()]["total_net"].sum()
+    assert ok
     return linked_total, unlinked_total
 
 

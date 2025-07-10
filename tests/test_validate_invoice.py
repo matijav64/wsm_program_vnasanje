@@ -62,6 +62,7 @@ def test_parse_invoice_minimal():
     assert discount_total == Decimal("0")
     # Seštevek izračunanih vrstic:
     assert sum(df["izracunana_vrednost"]) == Decimal("150.00")
+    assert ok
 
 
 def test_parse_invoice_with_line_and_doc_discount():
@@ -98,6 +99,7 @@ def test_parse_invoice_with_line_and_doc_discount():
     assert discount_total == Decimal("50.00")
     # Skupaj izračunanih vrstic:
     assert sum(df["izracunana_vrednost"]) == Decimal("280.00")
+    assert ok
     # Potrdimo, da extract_total_amount vrne 250 (300 - 50):
     from xml.etree import ElementTree as ET
 

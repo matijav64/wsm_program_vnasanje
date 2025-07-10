@@ -14,12 +14,14 @@ import decimal
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 import re
+import logging
 import xml.etree.ElementTree as ET
 from lxml import etree as LET
 from typing import List, Dict, Optional, Tuple
 
 import pandas as pd
 from .utils import _normalize_date
+from .codes import Moa, Dtm
 
 # Uvoz pomožnih funkcij iz money.py:
 from wsm.parsing.money import (
@@ -180,6 +182,40 @@ def extract_header_gross(xml_path: Path | str) -> Decimal:
     return Decimal("0")
 
 
+
+def extract_grand_total(xml_path: Path | str) -> Decimal:
+    """Return invoice grand total from MOA 9."""
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        for moa in root.findall('.//e:G_SG50/e:S_MOA', NS):
+            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == Moa.GRAND_TOTAL.value:
+                return _decimal(moa.find('./e:C_C516/e:D_5004', NS))
+    except Exception:
+        pass
+    return Decimal('0')
+
+
+def _tax_rate_from_header(root: ET.Element) -> Decimal:
+    """Return default VAT rate from header ``S_TAX`` segment if present."""
+    try:
+        for tax in root.findall('.//e:G_SG16//e:S_TAX', NS):
+            rate = _decimal(tax.find('./e:C_C243/e:D_5278', NS))
+            if rate != 0:
+                return rate / Decimal('100')
+        for tax in root.findall('.//G_SG16//S_TAX'):
+            rate_el = tax.find('./C_C243/D_5278')
+            if rate_el is not None:
+                try:
+                    rate = Decimal((rate_el.text or '0').replace(',', '.'))
+                    if rate != 0:
+                        return rate / Decimal('100')
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return Decimal('0')
+
 # ───────────────────── datum opravljene storitve ─────────────────────
 def extract_service_date(xml_path: Path | str) -> str | None:
     """Vrne datum opravljene storitve (DTM 35) ali datum računa (DTM 137)."""
@@ -277,9 +313,8 @@ def _get_document_discount(xml_root: ET.Element) -> Decimal:
 # ──────────────────── glavni parser za ESLOG INVOIC ────────────────────
 def parse_eslog_invoice(
     xml_path: str | Path,
-    sup_map: dict,
     discount_codes: List[str] | None = None,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, bool]:
     """
     Parsira ESLOG INVOIC XML in vrne DataFrame vseh postavk:
       • glavne postavke <G_SG26>
@@ -301,18 +336,21 @@ def parse_eslog_invoice(
     ----------
     xml_path : str | Path
         Pot do eSLOG XML datoteke.
-    sup_map : dict
-        Mapa dobaviteljev za prilagoditve. Trenutno se uporablja
-        predvsem pri normalizaciji enot (funkcija ``_norm_unit``).
     discount_codes : list[str] | None, optional
         Seznam kod za dokumentarni popust.  Privzeto je
         ``DEFAULT_DOC_DISCOUNT_CODES``.
+    Če nobena vrstica ne vsebuje zneska DDV (MOA 124), se skupni DDV izračuna
+    iz vsote neto postavk in stopnje DDV iz glave (če obstaja).
+    Vrne tudi ``bool`` flag, ki označuje ali vsota ``net_total + tax_total``
+    ustreza znesku iz segmenta ``MOA 9``.
     """
     supplier_code, _ = get_supplier_info(xml_path)
 
     tree = LET.parse(xml_path)
     root = tree.getroot()
     items: List[Dict] = []
+    net_total = Decimal("0")
+    tax_total = Decimal("0")
 
     # ───────────── LINE ITEMS ─────────────
     for sg26 in root.findall(".//e:G_SG26", NS):
@@ -324,22 +362,11 @@ def parse_eslog_invoice(
         # poiščemo šifro artikla
         art_code = ""
         lin_code = _text(sg26.find(".//e:S_LIN/e:C_C212/e:D_7140", NS))
-        lin_digits = re.sub(r"\D+", "", lin_code)
-        if len(lin_digits) >= 12:
-            art_code = lin_digits
-        else:
-            for pia in sg26.findall(".//e:S_PIA", NS):
-                qual = _text(pia.find("./e:C_C212/e:D_7143", NS))
-                code = _text(pia.find("./e:C_C212/e:D_7140", NS))
-                digits = re.sub(r"\D+", "", code)
-                if qual in {"SA", "SRV"} and digits and not art_code:
-                    art_code = digits
-                    if qual == "SA":
-                        break
-                elif not art_code and digits:
-                    art_code = digits
-            if not art_code:
-                art_code = lin_digits
+        art_code = re.sub(r"\D+", "", lin_code)
+        if not art_code:
+            pia_first = sg26.find(".//e:S_PIA/e:C_C212/e:D_7140", NS)
+            if pia_first is not None:
+                art_code = re.sub(r"\D+", "", pia_first.text or "")
 
         desc = _text(sg26.find(".//e:S_IMD/e:C_C273/e:D_7008", NS))
 
@@ -368,15 +395,26 @@ def parse_eslog_invoice(
             ).quantize(Decimal("0.0001"), ROUND_HALF_UP)
 
         # neto znesek vrstice (MOA 203)
-        net_amount = Decimal("0")
+        net_amount_moa: Decimal | None = None
         for moa in sg26.findall(".//e:S_MOA", NS):
             if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "203":
 
                 net_amount = _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(
                     Decimal("0.01"), ROUND_HALF_UP
                 )
-
                 break
+
+        calc_net = _line_net(sg26)
+        if net_amount_moa is None:
+            net_amount = calc_net
+        else:
+            net_amount = net_amount_moa
+            if net_amount != calc_net:
+                log.warning(
+                    "Line net mismatch: MOA 203 %s vs calculated %s",
+                    net_amount,
+                    calc_net,
+                )
 
         # stopnja DDV (npr. 9.5 ali 22)
         vat_rate = Decimal("0")
@@ -387,7 +425,7 @@ def parse_eslog_invoice(
                 break
 
         # rabat na ravni vrstice
-        rebate = Decimal("0")
+        rebate = _line_discount(sg26)
         explicit_pct: Decimal | None = None
         for sg39 in sg26.findall(".//e:G_SG39", NS):
             if _text(sg39.find("./e:S_ALC/e:D_5463", NS)) != "A":
@@ -442,6 +480,13 @@ def parse_eslog_invoice(
             }
         )
 
+    if tax_total == 0:
+        default_rate = _tax_rate_from_header(root)
+        if default_rate != 0:
+            tax_total = (net_total * default_rate).quantize(
+                Decimal("0.01"), ROUND_HALF_UP
+            )
+
     # ───────── DOCUMENT DISCOUNT (če obstaja) ─────────
     discount_codes = list(discount_codes or DEFAULT_DOC_DISCOUNT_CODES)
     discounts = {code: Decimal("0") for code in discount_codes}
@@ -483,7 +528,19 @@ def parse_eslog_invoice(
     df = pd.DataFrame(items)
     if not df.empty:
         df.sort_values(["sifra_dobavitelja", "naziv"], inplace=True, ignore_index=True)
-    return df
+
+    calculated_total = (net_total + tax_total).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    grand_total = extract_grand_total(xml_path)
+    ok = True
+    if grand_total != 0 and abs(calculated_total - grand_total) > Decimal("0.01"):
+        log.warning(
+            "Invoice total mismatch: MOA 9 %s vs calculated %s",
+            grand_total,
+            calculated_total,
+        )
+        ok = False
+
+    return df, ok
 
 
 # ───────────────────── PRILAGOJENA funkcija za CLI ─────────────────────

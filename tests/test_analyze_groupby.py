@@ -47,8 +47,8 @@ def test_grouping_by_code_and_discount(monkeypatch):
         },
     ])
 
-    # Patch parse_eslog_invoice to return our DataFrame
-    monkeypatch.setattr(analyze, 'parse_eslog_invoice', lambda path, sup: data)
+    # Patch parse_eslog_invoice to return our DataFrame and status
+    monkeypatch.setattr(analyze, 'parse_eslog_invoice', lambda path: (data, True))
     # Identity normalization
     monkeypatch.setattr(analyze, '_norm_unit', lambda q, u, n, vat=None, code=None: (q, u))
     # Header total equals sum of values

@@ -14,6 +14,7 @@ def _calc_unlinked_total(xml_path: Path) -> Decimal:
     # all lines linked
     df["wsm_sifra"] = "X"
     unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum()
+    assert ok
     return unlinked_total
 
 
