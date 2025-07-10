@@ -47,14 +47,14 @@ def _validate_file(file_path: Path):
     """
     filename = file_path.name
     try:
-        # parse_invoice vrača točno dva rezultata: (df, header_total)
-        df, header_total = parse_invoice(str(file_path))
+        # parse_invoice sedaj vrne tudi status ujemanja zneska MOA 9
+        df, header_total, total_ok = parse_invoice(str(file_path))
     except Exception as e:
         click.echo(f"[NAPAKA PARSANJA] {filename}: {e}")
         return
 
     try:
-        ok = validate_invoice(df, header_total)
+        ok = validate_invoice(df, header_total) and total_ok
     except Exception as e:
         click.echo(f"[NAPAKA VALIDACIJE] {filename}: {e}")
         return
@@ -217,7 +217,7 @@ def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct, use_pyqt):
 @click.argument("invoice", type=click.Path(exists=True))
 def round_debug(invoice):
     """Prikaži podrobnosti o seštevanju vrstic in zaokroževanju."""
-    df, header_total = parse_invoice(invoice)
+    df, header_total, _ = parse_invoice(invoice)
     col = "izracunana_vrednost" if "izracunana_vrednost" in df.columns else "vrednost"
     line_sum_dec = Decimal(str(df.get(col, pd.Series(dtype=float)).sum()))
     step = detect_round_step(header_total, line_sum_dec)

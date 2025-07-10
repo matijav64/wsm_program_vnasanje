@@ -315,7 +315,7 @@ def parse_eslog_invoice(
     xml_path: str | Path,
     sup_map: dict,
     discount_codes: List[str] | None = None,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, bool]:
     """
     Parsira ESLOG INVOIC XML in vrne DataFrame vseh postavk:
       • glavne postavke <G_SG26>
@@ -343,6 +343,8 @@ def parse_eslog_invoice(
     discount_codes : list[str] | None, optional
         Seznam kod za dokumentarni popust.  Privzeto je
         ``DEFAULT_DOC_DISCOUNT_CODES``.
+    Vrne tudi ``bool`` flag, ki označuje ali vsota izračunanih
+    vrednosti (neto + DDV) ustreza znesku iz segmenta ``MOA 9``.
     """
     supplier_code, _ = get_supplier_info(xml_path)
 
@@ -521,14 +523,16 @@ def parse_eslog_invoice(
 
     calculated_total = (net_total + tax_total).quantize(Decimal("0.01"), ROUND_HALF_UP)
     grand_total = extract_grand_total(xml_path)
-    if abs(calculated_total - grand_total) > Decimal("0.01"):
+    ok = True
+    if grand_total != 0 and abs(calculated_total - grand_total) > Decimal("0.01"):
         log.warning(
             "Invoice total mismatch: MOA 9 %s vs calculated %s",
             grand_total,
             calculated_total,
         )
+        ok = False
 
-    return df
+    return df, ok
 
 # ───────────────────── PRILAGOJENA funkcija za CLI ─────────────────────
 def parse_invoice(source: str | Path):
@@ -549,7 +553,7 @@ def parse_invoice(source: str | Path):
 
     # Ali je pravi eSLOG (urn:eslog:2.00)?
     if root.tag.endswith('Invoice') and root.find('.//e:M_INVOIC', NS) is not None:
-        df_items = parse_eslog_invoice(source, {})
+        df_items, totals_ok = parse_eslog_invoice(source, {})
         header_total = extract_header_net(Path(source) if isinstance(source, (str, Path)) else source)
         df = pd.DataFrame({
             'cena_netto': df_items['cena_netto'],
@@ -557,7 +561,7 @@ def parse_invoice(source: str | Path):
             'rabata_pct': df_items['rabata_pct'],
             'izracunana_vrednost': df_items['vrednost'],
         }, dtype=object)
-        return df, header_total
+        return df, header_total, totals_ok
 
     # Preprost <Racun> format z elementi <Postavka>
     if root.tag == 'Racun' or root.find('Postavka') is not None:
@@ -586,7 +590,7 @@ def parse_invoice(source: str | Path):
                 'naziv': name,
             })
         df = pd.DataFrame(rows, dtype=object)
-        return df, header_total
+        return df, header_total, True
 
     # izvzamemo glavo (InvoiceTotal – DocumentDiscount)
     header_total = extract_total_amount(root)
@@ -623,7 +627,7 @@ def parse_invoice(source: str | Path):
     else:
         df = pd.DataFrame(rows, dtype=object)
 
-    return df, header_total
+    return df, header_total, True
 
 def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:
     """

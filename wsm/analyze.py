@@ -18,7 +18,7 @@ def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[p
     from the first occurrence.
     """
     sup_map = _load_supplier_map(Path(suppliers_file)) if suppliers_file else {}
-    df = parse_eslog_invoice(xml_path, sup_map)
+    df, grand_ok = parse_eslog_invoice(xml_path, sup_map)
 
     # normalize units
     df[['kolicina', 'enota']] = [
@@ -64,5 +64,5 @@ def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[p
     raw_sum = Decimal(str(result['vrednost'].sum()))
     step = detect_round_step(header_total, raw_sum)
     line_sum = round_to_step(raw_sum, step)
-    ok = abs(line_sum - header_total) <= step
+    ok = abs(line_sum - header_total) <= step and grand_ok
     return result, header_total, ok
