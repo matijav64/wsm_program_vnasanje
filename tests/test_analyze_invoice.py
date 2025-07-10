@@ -9,8 +9,8 @@ def test_analyze_invoice_merges_duplicates():
     path = Path("tests/CUSTOMERINVOICES_2025-04-01T14-29-47_2081078.xml")
     df, total, ok = analyze.analyze_invoice(path)
 
-    # Item 00002122 appears three times with the same discount; should be merged
-    row = df[(df["sifra_artikla"] == "00002122") & (df["rabata_pct"] == Decimal("4.99"))].iloc[0]
+    # Item 54490086 appears three times with the same discount; should be merged
+    row = df[(df["sifra_artikla"] == "54490086") & (df["rabata_pct"] == Decimal("4.99"))].iloc[0]
     assert row["kolicina"] == Decimal("72.00")
     assert row["vrednost"] == Decimal("50.25")
 
