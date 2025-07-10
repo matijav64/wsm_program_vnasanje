@@ -3,6 +3,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 from wsm.parsing.eslog import parse_eslog_invoice, _line_tax, NS
+from wsm.parsing.codes import Moa
 
 
 def test_vat_rounding_totals():
@@ -17,7 +18,7 @@ def test_vat_rounding_totals():
     moa124_total = Decimal('0')
     for sg in lines:
         for moa in sg.findall('.//e:S_MOA', NS):
-            if moa.find('./e:C_C516/e:D_5025', NS) is not None and moa.find('./e:C_C516/e:D_5025', NS).text == '124':
+            if moa.find('./e:C_C516/e:D_5025', NS) is not None and moa.find('./e:C_C516/e:D_5025', NS).text == Moa.VAT.value:
                 val = Decimal((moa.find('./e:C_C516/e:D_5004', NS).text or '0').replace(',', '.'))
                 moa124_total += val
     assert tax_total == moa124_total == Decimal('188.94')
