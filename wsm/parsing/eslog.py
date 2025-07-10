@@ -5,7 +5,7 @@ ESLOG 2.0 (INVOIC) parser
 =========================
 • get_supplier_info()      → (sifra, ime) dobavitelja
 • parse_eslog_invoice()    → DataFrame vseh postavk (vključno z _DOC_ vrstico)
-• parse_invoice()          → (DataFrame vrstic, header_total) za CLI
+• parse_invoice()          → (DataFrame vrstic, header_total, ok) za CLI
 • validate_invoice()       → preveri vsoto vrstic proti header_total
 """
 
@@ -339,8 +339,8 @@ def parse_eslog_invoice(
     discount_codes : list[str] | None, optional
         Seznam kod za dokumentarni popust.  Privzeto je
         ``DEFAULT_DOC_DISCOUNT_CODES``.
-    Vrne tudi ``bool`` flag, ki označuje ali vsota izračunanih
-    vrednosti (neto + DDV) ustreza znesku iz segmenta ``MOA 9``.
+    Vrne tudi ``bool`` flag, ki označuje ali vsota ``net_total + tax_total``
+    ustreza znesku iz segmenta ``MOA 9``.
     """
     supplier_code, _ = get_supplier_info(xml_path)
 
@@ -527,6 +527,8 @@ def parse_invoice(source: str | Path):
       • df: DataFrame s stolpci ['cena_netto','kolicina','rabata_pct','izracunana_vrednost']
         (vrednosti so Decimal v object stolpcih)
       • header_total: Decimal (InvoiceTotal – DocumentDiscount)
+      • totals_ok: bool, ``True`` če se seštevek ``net_total + tax_total`` ujema z
+        zneskom iz ``MOA 9``
     Uporablja se v CLI (wsm/cli.py).
     """
     # naložimo XML
