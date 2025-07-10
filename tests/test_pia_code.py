@@ -7,7 +7,7 @@ from wsm.parsing.eslog import parse_eslog_invoice
 
 def test_parse_eslog_invoice_reads_code_from_pia():
     xml = Path('tests/VP2025-1799-racun.xml')
-    df, ok = parse_eslog_invoice(xml, {})
+    df, ok = parse_eslog_invoice(xml)
     df = df[df['sifra_dobavitelja'] != '_DOC_']
     assert list(df['sifra_artikla']) == [
         '4025127091881',

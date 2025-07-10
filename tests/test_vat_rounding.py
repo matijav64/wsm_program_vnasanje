@@ -7,7 +7,7 @@ from wsm.parsing.eslog import parse_eslog_invoice, _line_tax, NS
 
 def test_vat_rounding_totals():
     xml_path = Path('tests/25-24412.xml')
-    df, ok = parse_eslog_invoice(xml_path, {})
+    df, ok = parse_eslog_invoice(xml_path)
 
     root = ET.parse(xml_path).getroot()
     lines = root.findall('.//e:G_SG26', NS)

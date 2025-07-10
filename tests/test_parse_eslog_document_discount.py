@@ -41,7 +41,7 @@ def _compute_doc_discount(xml_path: Path) -> Decimal:
 def test_parse_eslog_invoice_returns_doc_discount_row():
     xml_path = Path("tests/PR5697-Slika2.XML")
     expected_discount = _compute_doc_discount(xml_path)
-    df, ok = parse_eslog_invoice(xml_path, {})
+    df, ok = parse_eslog_invoice(xml_path)
     doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
     
     assert doc_row["vrednost"] == -expected_discount
@@ -69,7 +69,7 @@ def test_parse_eslog_invoice_handles_additional_discount_codes(tmp_path):
     xml_path = tmp_path / "disc131.xml"
     xml_path.write_text(xml)
 
-    df, ok = parse_eslog_invoice(xml_path, {})
+    df, ok = parse_eslog_invoice(xml_path)
     doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
 
     assert doc_row["vrednost"] == Decimal("-2.50")
@@ -100,7 +100,7 @@ def test_parse_eslog_invoice_sums_multiple_discount_codes(tmp_path):
     xml_path = tmp_path / "disc_multi.xml"
     xml_path.write_text(xml)
 
-    df, ok = parse_eslog_invoice(xml_path, {})
+    df, ok = parse_eslog_invoice(xml_path)
     doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
 
     assert doc_row["vrednost"] == Decimal("-3.50")
@@ -110,7 +110,7 @@ def test_parse_eslog_invoice_sums_multiple_discount_codes(tmp_path):
 
 def test_line_and_doc_discount_total_matches_header():
     xml_path = Path("tests/minimal_doc_discount.xml")
-    df, ok = parse_eslog_invoice(xml_path, {})
+    df, ok = parse_eslog_invoice(xml_path)
 
     doc_rows = df[df["sifra_dobavitelja"] == "_DOC_"]
     assert not doc_rows.empty
