@@ -20,6 +20,7 @@ from typing import List, Dict, Optional, Tuple
 
 import pandas as pd
 from .utils import _normalize_date
+from .codes import Moa, Dtm
 
 # Uvoz pomožnih funkcij iz money.py:
 from wsm.parsing.money import extract_total_amount, validate_invoice as validate_line_values
@@ -47,7 +48,7 @@ NS = {"e": "urn:eslog:2.00"}
 # Common document discount codes.  Extend this list or pass a custom
 # sequence to ``parse_eslog_invoice`` if your suppliers use different
 # identifiers.
-DEFAULT_DOC_DISCOUNT_CODES = ["204", "260", "131", "128"]
+DEFAULT_DOC_DISCOUNT_CODES = [Moa.DISCOUNT.value, "260", "131", "128"]
 
 # ────────────────────────── line helpers ──────────────────────────
 def _apply_discount(gross: Decimal, disc: Decimal) -> Decimal:
@@ -63,7 +64,7 @@ def _discount_pct(gross: Decimal, pct: Decimal) -> Decimal:
 def _line_gross(sg26: ET.Element) -> Decimal:
     """Return line gross amount before discounts."""
     for moa in sg26.findall('.//e:S_MOA', NS):
-        if _text(moa.find('./e:C_C516/e:D_5025', NS)) == '38':
+        if _text(moa.find('./e:C_C516/e:D_5025', NS)) == Moa.GROSS.value:
             return _decimal(moa.find('./e:C_C516/e:D_5004', NS)).quantize(
                 Decimal('0.01'), ROUND_HALF_UP
             )
@@ -88,7 +89,7 @@ def _line_discount(sg26: ET.Element) -> Decimal:
             continue
         # fixed discount amount
         for moa in sg39.findall('.//e:G_SG42/e:S_MOA', NS):
-            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == '204':
+            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == Moa.DISCOUNT.value:
                 amt = _decimal(moa.find('./e:C_C516/e:D_5004', NS))
                 return amt.quantize(Decimal('0.01'), ROUND_HALF_UP)
         # percentage discount
@@ -117,7 +118,7 @@ def _line_tax(sg26: ET.Element) -> Decimal:
     total = Decimal("0")
     for sg34 in sg26.findall('.//e:G_SG34', NS):
         for moa in sg34.findall('./e:S_MOA', NS):
-            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == '124':
+            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == Moa.VAT.value:
                 total += _decimal(moa.find('./e:C_C516/e:D_5004', NS))
 
     if total == 0:
@@ -247,7 +248,7 @@ def extract_header_net(xml_path: Path | str) -> Decimal:
         tree = ET.parse(xml_path)
         root = tree.getroot()
         for moa in root.findall('.//e:G_SG50/e:S_MOA', NS):
-            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == '389':
+            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == Moa.HEADER_NET.value:
                 return _decimal(moa.find('./e:C_C516/e:D_5004', NS))
     except Exception:
         pass
@@ -260,7 +261,7 @@ def extract_grand_total(xml_path: Path | str) -> Decimal:
         tree = ET.parse(xml_path)
         root = tree.getroot()
         for moa in root.findall('.//e:G_SG50/e:S_MOA', NS):
-            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == '9':
+            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == Moa.GRAND_TOTAL.value:
                 return _decimal(moa.find('./e:C_C516/e:D_5004', NS))
     except Exception:
         pass
@@ -273,12 +274,12 @@ def extract_service_date(xml_path: Path | str) -> str | None:
         tree = ET.parse(xml_path)
         root = tree.getroot()
         for dtm in root.findall('.//e:S_DTM', NS):
-            if _text(dtm.find('./e:C_C507/e:D_2005', NS)) == '35':
+            if _text(dtm.find('./e:C_C507/e:D_2005', NS)) == Dtm.SERVICE_DATE.value:
                 date = _text(dtm.find('./e:C_C507/e:D_2380', NS))
                 if date:
                     return _normalize_date(date)
         for dtm in root.findall('.//e:S_DTM', NS):
-            if _text(dtm.find('./e:C_C507/e:D_2005', NS)) == '137':
+            if _text(dtm.find('./e:C_C507/e:D_2005', NS)) == Dtm.INVOICE_DATE.value:
                 date = _text(dtm.find('./e:C_C507/e:D_2380', NS))
                 if date:
                     return _normalize_date(date)
@@ -383,7 +384,7 @@ def parse_eslog_invoice(
         # neto znesek vrstice (MOA 203)
         net_amount_moa: Decimal | None = None
         for moa in sg26.findall(".//e:S_MOA", NS):
-            if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "203":
+            if _text(moa.find("./e:C_C516/e:D_5025", NS)) == Moa.NET.value:
                 net_amount_moa = (
                     _decimal(moa.find("./e:C_C516/e:D_5004", NS))
                     .quantize(Decimal("0.01"), ROUND_HALF_UP)
