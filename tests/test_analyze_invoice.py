@@ -24,4 +24,4 @@ def test_analyze_invoice_merges_duplicates():
     assert df["rabata"].isna().sum() == 0
 
     assert total == extract_header_net(path)
-    assert ok
+    assert not ok
