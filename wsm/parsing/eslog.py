@@ -267,6 +267,27 @@ def extract_grand_total(xml_path: Path | str) -> Decimal:
         pass
     return Decimal('0')
 
+
+def _tax_rate_from_header(root: ET.Element) -> Decimal:
+    """Return default VAT rate from header ``S_TAX`` segment if present."""
+    try:
+        for tax in root.findall('.//e:G_SG16//e:S_TAX', NS):
+            rate = _decimal(tax.find('./e:C_C243/e:D_5278', NS))
+            if rate != 0:
+                return rate / Decimal('100')
+        for tax in root.findall('.//G_SG16//S_TAX'):
+            rate_el = tax.find('./C_C243/D_5278')
+            if rate_el is not None:
+                try:
+                    rate = Decimal((rate_el.text or '0').replace(',', '.'))
+                    if rate != 0:
+                        return rate / Decimal('100')
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return Decimal('0')
+
 # ───────────────────── datum opravljene storitve ─────────────────────
 def extract_service_date(xml_path: Path | str) -> str | None:
     """Vrne datum opravljene storitve (DTM 35) ali datum računa (DTM 137)."""
@@ -340,6 +361,8 @@ def parse_eslog_invoice(
     discount_codes : list[str] | None, optional
         Seznam kod za dokumentarni popust.  Privzeto je
         ``DEFAULT_DOC_DISCOUNT_CODES``.
+    Če nobena vrstica ne vsebuje zneska DDV (MOA 124), se skupni DDV izračuna
+    iz vsote neto postavk in stopnje DDV iz glave (če obstaja).
     Vrne tudi ``bool`` flag, ki označuje ali vsota ``net_total + tax_total``
     ustreza znesku iz segmenta ``MOA 9``.
     """
@@ -464,6 +487,13 @@ def parse_eslog_invoice(
             "ddv_stopnja":      vat_rate,
             "sifra_artikla":    art_code,
         })
+
+    if tax_total == 0:
+        default_rate = _tax_rate_from_header(root)
+        if default_rate != 0:
+            tax_total = (net_total * default_rate).quantize(
+                Decimal("0.01"), ROUND_HALF_UP
+            )
 
     # ───────── DOCUMENT DISCOUNT (če obstaja) ─────────
     discount_codes = list(discount_codes or DEFAULT_DOC_DISCOUNT_CODES)
