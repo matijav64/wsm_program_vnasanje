@@ -364,22 +364,11 @@ def parse_eslog_invoice(
         # poiščemo šifro artikla
         art_code = ""
         lin_code = _text(sg26.find(".//e:S_LIN/e:C_C212/e:D_7140", NS))
-        lin_digits = re.sub(r"\D+", "", lin_code)
-        if len(lin_digits) >= 12:
-            art_code = lin_digits
-        else:
-            for pia in sg26.findall(".//e:S_PIA", NS):
-                qual = _text(pia.find("./e:C_C212/e:D_7143", NS))
-                code = _text(pia.find("./e:C_C212/e:D_7140", NS))
-                digits = re.sub(r"\D+", "", code)
-                if qual in {"SA", "SRV"} and digits and not art_code:
-                    art_code = digits
-                    if qual == "SA":
-                        break
-                elif not art_code and digits:
-                    art_code = digits
-            if not art_code:
-                art_code = lin_digits
+        art_code = re.sub(r"\D+", "", lin_code)
+        if not art_code:
+            pia_first = sg26.find(".//e:S_PIA/e:C_C212/e:D_7140", NS)
+            if pia_first is not None:
+                art_code = re.sub(r"\D+", "", pia_first.text or "")
 
         desc = _text(sg26.find(".//e:S_IMD/e:C_C273/e:D_7008", NS))
 
