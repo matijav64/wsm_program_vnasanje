@@ -7,7 +7,7 @@ from wsm.parsing.money import detect_round_step
 
 
 def _calc_unlinked_total(xml_path: Path) -> Decimal:
-    df, ok = parse_eslog_invoice(xml_path, {})
+    df, ok = parse_eslog_invoice(xml_path)
     invoice_total = extract_header_net(xml_path)
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"].copy()
     doc_discount_total = df_doc["vrednost"].sum()

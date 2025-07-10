@@ -5,7 +5,6 @@ import pandas as pd
 
 from wsm.parsing.eslog import parse_eslog_invoice
 from wsm.ui.review.helpers import _norm_unit
-from wsm.supplier_store import load_suppliers as _load_supplier_map
 from wsm.parsing.eslog import extract_header_net
 from wsm.parsing.money import detect_round_step, round_to_step
 
@@ -17,8 +16,7 @@ def analyze_invoice(xml_path: str, suppliers_file: str | None = None) -> tuple[p
     percentage (``rabata_pct``) are merged together. The product name is kept
     from the first occurrence.
     """
-    sup_map = _load_supplier_map(Path(suppliers_file)) if suppliers_file else {}
-    df, grand_ok = parse_eslog_invoice(xml_path, sup_map)
+    df, grand_ok = parse_eslog_invoice(xml_path)
 
     # normalize units
     df[['kolicina', 'enota']] = [

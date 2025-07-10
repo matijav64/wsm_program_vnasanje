@@ -6,7 +6,7 @@ from wsm.parsing.eslog import parse_eslog_invoice
 
 
 def _calc_totals(xml_path: Path):
-    df, ok = parse_eslog_invoice(xml_path, {})
+    df, ok = parse_eslog_invoice(xml_path)
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"]
     doc_discount_total = df_doc["vrednost"].sum()
     df = df[df["sifra_dobavitelja"] != "_DOC_"].copy()

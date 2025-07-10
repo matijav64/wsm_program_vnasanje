@@ -313,7 +313,6 @@ def extract_invoice_number(xml_path: Path | str) -> str | None:
 # ──────────────────── glavni parser za ESLOG INVOIC ────────────────────
 def parse_eslog_invoice(
     xml_path: str | Path,
-    sup_map: dict,
     discount_codes: List[str] | None = None,
 ) -> tuple[pd.DataFrame, bool]:
     """
@@ -337,9 +336,6 @@ def parse_eslog_invoice(
     ----------
     xml_path : str | Path
         Pot do eSLOG XML datoteke.
-    sup_map : dict
-        Mapa dobaviteljev za prilagoditve. Trenutno se uporablja
-        predvsem pri normalizaciji enot (funkcija ``_norm_unit``).
     discount_codes : list[str] | None, optional
         Seznam kod za dokumentarni popust.  Privzeto je
         ``DEFAULT_DOC_DISCOUNT_CODES``.
@@ -542,7 +538,7 @@ def parse_invoice(source: str | Path):
 
     # Ali je pravi eSLOG (urn:eslog:2.00)?
     if root.tag.endswith('Invoice') and root.find('.//e:M_INVOIC', NS) is not None:
-        df_items, totals_ok = parse_eslog_invoice(source, {})
+        df_items, totals_ok = parse_eslog_invoice(source)
         header_total = extract_header_net(Path(source) if isinstance(source, (str, Path)) else source)
         df = pd.DataFrame({
             'cena_netto': df_items['cena_netto'],
