@@ -12,6 +12,34 @@ from .utils import sanitize_folder_name
 log = logging.getLogger(__name__)
 
 
+def _norm_vat(s: str) -> str:
+    """Return VAT number with ``SI`` prefix and digits only."""
+    if not isinstance(s, str):
+        return ""
+    s = s.strip()
+    if not s:
+        return ""
+    if s.upper().startswith("SI"):
+        digits = "".join(ch for ch in s[2:] if ch.isdigit())
+    else:
+        digits = "".join(ch for ch in s if ch.isdigit())
+    return f"SI{digits}" if digits else ""
+
+
+def choose_supplier_key(vat: str | None, code: str | None = None) -> str:
+    """Return the normalized VAT number or ``""`` when unavailable.
+
+    The ``code`` parameter is ignored.  The VAT number is normalized with
+    :func:`_norm_vat` and returned if non-empty.  Otherwise an empty string is
+    returned.
+    """
+
+    vat_norm = _norm_vat(vat or "")
+    if vat_norm:
+        return vat_norm
+    return ""
+
+
 @lru_cache(maxsize=None)
 def load_suppliers(sup_file: Path | str) -> dict[str, dict]:
     """Load supplier info from per-supplier JSON files or a legacy Excel."""
@@ -30,7 +58,7 @@ def load_suppliers(sup_file: Path | str) -> dict[str, dict]:
             for _, row in df_sup.iterrows():
                 sifra = str(row["sifra"]).strip()
                 ime = str(row["ime"]).strip()
-                vat = str(row.get("vat") or row.get("davcna") or "").strip()
+                vat = _norm_vat(str(row.get("vat") or row.get("davcna") or ""))
                 sup_map[sifra] = {"ime": ime or sifra, "vat": vat}
                 log.debug("Dodan v sup_map: sifra=%s, ime=%s", sifra, ime)
             return sup_map
@@ -52,7 +80,9 @@ def load_suppliers(sup_file: Path | str) -> dict[str, dict]:
                 log.error("Napaka pri branju %s: %s", info_path, e)
         sifra = str(data.get("sifra", "")).strip()
         ime = str(data.get("ime", "")).strip() or folder.name
-        vat = str(data.get("vat") or data.get("davcna") or "").strip()
+        vat = _norm_vat(str(data.get("vat") or data.get("davcna") or ""))
+        if not vat:
+            vat = _norm_vat(folder.name)
         if vat:
             safe_vat = sanitize_folder_name(vat)
             if safe_vat != folder.name:
@@ -73,10 +103,11 @@ def load_suppliers(sup_file: Path | str) -> dict[str, dict]:
                             except OSError:
                                 pass
                     else:
-                        for p in folder.iterdir():
-                            target = new_folder / p.name
-                            if not target.exists():
-                                p.rename(target)
+                        for p in folder.glob("*.xls*"):
+                            dest = new_folder / p.name
+                            if dest.exists():
+                                dest = dest.with_stem(dest.stem + "_old")
+                            shutil.move(str(p), str(dest))
                         try:
                             folder.rmdir()
                         except OSError:
@@ -119,10 +150,15 @@ def load_suppliers(sup_file: Path | str) -> dict[str, dict]:
                 sup_map[code] = {"ime": folder.name, "vat": ""}
                 log.debug("Dodan iz price_history: sifra=%s, ime=%s", code, folder.name)
         if folder.name and folder.name not in {info.get("ime") for info in sup_map.values()}:
-            code = sanitize_folder_name(folder.name)
-            if code not in sup_map:
-                sup_map[code] = {"ime": folder.name, "vat": ""}
-                log.debug("Dodan iz imena mape: sifra=%s, ime=%s", code, folder.name)
+            folder_vat = _norm_vat(folder.name)
+            if folder_vat and folder_vat not in sup_map:
+                sup_map[folder_vat] = {"ime": folder.name, "vat": folder_vat}
+                log.debug("Dodan iz imena mape (VAT): sifra=%s, ime=%s", folder_vat, folder.name)
+            else:
+                code = sanitize_folder_name(folder.name)
+                if code not in sup_map:
+                    sup_map[code] = {"ime": folder.name, "vat": ""}
+                    log.debug("Dodan iz imena mape: sifra=%s, ime=%s", code, folder.name)
     log.info("Najdeni dobavitelji: %s", list(sup_map.keys()))
     return sup_map
 
@@ -148,7 +184,8 @@ def save_supplier(sup_map: dict, sup_file: Path) -> None:
         links_dir = sup_file.parent
 
     for code, info in sup_map.items():
-        folder = links_dir / sanitize_folder_name(info.get("vat") or info["ime"])
+        vat_val = _norm_vat(info.get("vat")) if isinstance(info.get("vat"), str) else ""
+        folder = links_dir / sanitize_folder_name(vat_val or info["ime"])
         folder.mkdir(parents=True, exist_ok=True)
         info_path = folder / "supplier.json"
         try:

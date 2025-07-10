@@ -19,6 +19,11 @@ from tkinter import ttk, messagebox
 from wsm.parsing.money import detect_round_step
 from wsm.utils import short_supplier_name, _clean
 from wsm.constants import PRICE_DIFF_THRESHOLD
+from wsm.parsing.eslog import (
+    extract_header_net,
+    extract_total_tax,
+    extract_header_gross,
+)
 from .helpers import _fmt, _norm_unit, _merge_same_items
 from .io import _save_and_close, _load_supplier_map, _write_supplier_map
 
@@ -34,25 +39,33 @@ def _apply_price_warning(
     *,
     threshold: Decimal = PRICE_DIFF_THRESHOLD,
 ) -> str | None:
-    """Apply tag if price difference exceeds ``threshold`` percent.
+    """Highlight items where the unit price changed significantly.
 
-    Returns the tooltip text or ``None`` when no warning is needed.
+    When the absolute difference between ``new_price`` and ``prev_price`` does
+    not exceed two cents, the tag is removed and an empty string is returned so
+    that any existing tooltip text is cleared. Otherwise the price difference is
+    shown in euros if it exceeds ``threshold`` percent.
     """
     if prev_price is None or prev_price == 0:
         tree.item(item_id, tags=())
         return None
 
     new_val = Decimal(str(new_price))
+    diff = (new_val - prev_price).quantize(Decimal("0.01"))
+    if abs(diff) <= Decimal("0.02"):
+        tree.item(item_id, tags=())
+        return ""
+
     diff_pct = ((new_val - prev_price) / prev_price * Decimal("100")).quantize(
         Decimal("0.01")
     )
 
     if abs(diff_pct) > threshold:
         tree.item(item_id, tags=("price_warn",))
-        return f"Prejšnja cena: {_fmt(prev_price)} ({_fmt(diff_pct)} %)"
+        return f"±{diff:.2f} €"
 
     tree.item(item_id, tags=())
-    return None
+    return ""
 
 
 
@@ -149,6 +162,20 @@ def review_links(
     log.info(f"Default name retrieved: {default_name}")
     log.debug(f"Supplier info: {supplier_info}")
 
+    header_totals = {
+        "net": invoice_total,
+        "vat": Decimal("0"),
+        "gross": invoice_total,
+    }
+    if invoice_path and invoice_path.suffix.lower() == ".xml":
+        try:
+            header_totals["net"] = extract_header_net(invoice_path)
+            header_totals["vat"] = extract_total_tax(invoice_path)
+            header_totals["gross"] = extract_header_gross(invoice_path)
+            invoice_total = header_totals["net"]
+        except Exception as exc:
+            log.warning(f"Napaka pri branju zneskov glave: {exc}")
+
     try:
         manual_old = pd.read_excel(links_file, dtype=str)
         log.info("Processing complete")
@@ -220,7 +247,12 @@ def review_links(
     log.debug(f"df po inicializaciji: {df.head().to_dict()}")
 
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"]
-    doc_discount_total = df_doc["vrednost"].sum()
+    doc_discount_total_raw = df_doc["vrednost"].sum()
+    doc_discount_total = (
+        doc_discount_total_raw
+        if isinstance(doc_discount_total_raw, Decimal)
+        else Decimal(str(doc_discount_total_raw))
+    )
     df = df[df["sifra_dobavitelja"] != "_DOC_"]
     # Ensure a clean sequential index so Treeview item IDs are predictable
     df = df.reset_index(drop=True)
@@ -278,46 +310,13 @@ def review_links(
             df["enota_norm"].value_counts().to_dict(),
         )
 
-    df["kolicina_norm"] = df["kolicina_norm"].astype(float)
+    # Keep ``kolicina_norm`` as ``Decimal`` to avoid losing precision in
+    # subsequent calculations and when saving the file. Previously the column
+    # was cast to ``float`` which could introduce rounding errors.
     df["warning"] = pd.NA
     log.debug(f"df po normalizaciji: {df.head().to_dict()}")
 
-    # If totals differ slightly (<=5 cent), adjust the document discount when
-    # its line exists. Otherwise record the difference separately so that totals
-    # still match the invoice without showing an extra row.
-    calculated_total = df["total_net"].sum() + doc_discount_total
-    diff = invoice_total - calculated_total
-    step = detect_round_step(invoice_total, calculated_total)
-    if abs(diff) <= step and diff != 0:
-        if not df_doc.empty:
-            log.debug(
-                f"Prilagajam dokumentarni popust za razliko {diff}: "
-                f"{doc_discount_total} -> {doc_discount_total + diff}"
-            )
-            doc_discount_total += diff
-            df_doc.loc[df_doc.index, "vrednost"] += diff
-            df_doc.loc[df_doc.index, "cena_bruto"] += abs(diff)
-            df_doc.loc[df_doc.index, "rabata"] += abs(diff)
-        else:
-            log.debug(
-                f"Dodajam _DOC_ vrstico za razliko {diff} med vrsticami in računom"
-            )
-            df_doc = pd.DataFrame(
-                [
-                    {
-                        "sifra_dobavitelja": "_DOC_",
-                        "naziv": "Samodejni popravek",
-                        "kolicina": Decimal("1"),
-                        "enota": "",
-                        "cena_bruto": abs(diff),
-                        "cena_netto": Decimal("0"),
-                        "rabata": abs(diff),
-                        "rabata_pct": Decimal("100.00"),
-                        "vrednost": diff,
-                    }
-                ]
-            )
-            doc_discount_total += diff
+
 
     # Combine duplicate invoice lines except for gratis items
     df = _merge_same_items(df)
@@ -345,6 +344,9 @@ def review_links(
     supplier_var = tk.StringVar()
     date_var = tk.StringVar()
     invoice_var = tk.StringVar()
+    var_net = tk.StringVar()
+    var_vat = tk.StringVar()
+    var_total = tk.StringVar()
 
     def _refresh_header():
         parts_full = [supplier_name]
@@ -378,6 +380,11 @@ def review_links(
             f"_refresh_header: supplier_var={supplier_var.get()}, "
             f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
         )
+
+    def _refresh_header_totals():
+        var_net.set(_fmt(header_totals["net"]))
+        var_vat.set(_fmt(header_totals["vat"]))
+        var_total.set(_fmt(header_totals["gross"]))
 
     header_lbl = tk.Label(
         root,
@@ -417,10 +424,20 @@ def review_links(
     # Refresh header once widgets exist. ``after_idle`` ensures widgets are
     # fully initialized before values are set so the entries show up
     root.after_idle(_refresh_header)
+    root.after_idle(_refresh_header_totals)
     log.debug(
         f"after_idle scheduled: supplier_var={supplier_var.get()}, "
         f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
     )
+
+    totals_frame = tk.Frame(root)
+    totals_frame.pack(anchor="w", padx=8, pady=(0, 12))
+    tk.Label(totals_frame, text="Neto:").grid(row=0, column=0, sticky="w")
+    tk.Label(totals_frame, textvariable=var_net).grid(row=0, column=1, sticky="w", padx=(0, 12))
+    tk.Label(totals_frame, text="DDV:").grid(row=0, column=2, sticky="w")
+    tk.Label(totals_frame, textvariable=var_vat).grid(row=0, column=3, sticky="w", padx=(0, 12))
+    tk.Label(totals_frame, text="Skupaj:").grid(row=0, column=4, sticky="w")
+    tk.Label(totals_frame, textvariable=var_total).grid(row=0, column=5, sticky="w")
 
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
@@ -456,7 +473,7 @@ def review_links(
     tree.tag_configure("gratis", background="#ffe6cc")  # oranžna
     tree.tag_configure("linked", background="#ffe6cc")
     tree.tag_configure("suggestion", background="#ffe6cc")
-    tree.tag_configure("autofix", background="#eeeeee")
+    tree.tag_configure("autofix", background="#eeeeee", foreground="#444")
     vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
     tree.configure(yscrollcommand=vsb.set)
     vsb.pack(side="right", fill="y")
@@ -617,32 +634,80 @@ def review_links(
         )
     # Skupni seštevek mora biti vsota "povezano" in "ostalo"
     total_sum = linked_total + unlinked_total
-    step_total = detect_round_step(invoice_total, total_sum)
-    match_symbol = "✓" if abs(total_sum - invoice_total) <= Decimal("0.02") else "✗"
+    match_symbol = "✓" if abs(total_sum - header_totals["net"]) <= Decimal("0.02") else "✗"
 
     tk.Label(
         total_frame,
-        text=f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(invoice_total)} € {match_symbol}",
+        text=f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(header_totals['net'])} € {match_symbol}",
         font=("Arial", 10, "bold"),
         name="total_sum",
     ).pack(side="left", padx=10)
 
     def _update_totals():
+        line_total_raw = df["total_net"].sum()
+        line_total = (
+            line_total_raw
+            if isinstance(line_total_raw, Decimal)
+            else Decimal(str(line_total_raw))
+        )
+        dd_total = (
+            doc_discount_total
+            if isinstance(doc_discount_total, Decimal)
+            else Decimal(str(doc_discount_total))
+        )
+        inv_total = (
+            header_totals["net"]
+            if isinstance(header_totals["net"], Decimal)
+            else Decimal(str(header_totals["net"]))
+        )
+
+        calc_total = line_total + (dd_total if not df_doc.empty else Decimal("0"))
+        diff = inv_total - calc_total
+        step = detect_round_step(inv_total, calc_total)
+        if abs(diff) > step:
+            messagebox.showwarning(
+                "Opozorilo",
+                (
+                    "Razlika med postavkami in računom je "
+                    f"{diff:+.2f} € in presega dovoljeno zaokroževanje."
+                ),
+            )
+
         valid = df[~df["is_gratis"]]
         if valid["wsm_sifra"].notna().any():
+            linked_raw = valid[valid["wsm_sifra"].notna()]["total_net"].sum()
             linked_total = (
-                valid[valid["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
+                linked_raw if isinstance(linked_raw, Decimal) else Decimal(str(linked_raw))
             )
-            unlinked_total = valid[valid["wsm_sifra"].isna()]["total_net"].sum()
-        else:
-            linked_total = valid[valid["wsm_sifra"].notna()]["total_net"].sum()
+            if not df_doc.empty:
+                linked_total += dd_total
+            unlinked_raw = valid[valid["wsm_sifra"].isna()]["total_net"].sum()
             unlinked_total = (
-                valid[valid["wsm_sifra"].isna()]["total_net"].sum() + doc_discount_total
+                unlinked_raw
+                if isinstance(unlinked_raw, Decimal)
+                else Decimal(str(unlinked_raw))
             )
+        else:
+            linked_raw = valid[valid["wsm_sifra"].notna()]["total_net"].sum()
+            linked_total = (
+                linked_raw if isinstance(linked_raw, Decimal) else Decimal(str(linked_raw))
+            )
+            unlinked_raw = valid[valid["wsm_sifra"].isna()]["total_net"].sum()
+            unlinked_total = (
+                unlinked_raw
+                if isinstance(unlinked_raw, Decimal)
+                else Decimal(str(unlinked_raw))
+            )
+            if not df_doc.empty:
+                unlinked_total += dd_total
+
         total_sum = linked_total + unlinked_total
-        match_symbol = "✓" if abs(total_sum - invoice_total) <= Decimal("0.02") else "✗"
+        match_symbol = "✓" if abs(total_sum - inv_total) <= Decimal("0.02") else "✗"
         total_frame.children["total_sum"].config(
-            text=f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(invoice_total)} € {match_symbol}"
+            text=(
+                f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = "
+                f"Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(inv_total)} € {match_symbol}"
+            )
         )
 
     bottom = tk.Frame(root)
@@ -662,20 +727,6 @@ def review_links(
     unit_options = ["kos", "kg", "L"]
 
     def _finalize_and_save(_=None):
-        calc_total = df["total_net"].sum() + doc_discount_total
-        diff = invoice_total - calc_total
-        if abs(diff) > Decimal("0.02"):
-            last = df.index[-1]
-            df.at[last, "total_net"] += diff
-            df.at[last, "cena_po_rabatu"] = (
-                df.at[last, "total_net"] / df.at[last, "kolicina_norm"]
-            ).quantize(Decimal("0.0001"))
-            df.at[last, "warning"] = f"AUTOFIX {diff:+.2f} €"
-            tree.set(str(last), "warning", f"AUTOFIX {diff:+.2f} €")
-            current_tags = tree.item(str(last)).get("tags", ())
-            if not isinstance(current_tags, tuple):
-                current_tags = (current_tags,) if current_tags else ()
-            tree.item(str(last), tags=("autofix",) + current_tags)
         _update_summary()
         _update_totals()
         _save_and_close(

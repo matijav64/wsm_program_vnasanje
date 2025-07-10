@@ -5,7 +5,7 @@ ESLOG 2.0 (INVOIC) parser
 =========================
 • get_supplier_info()      → (sifra, ime) dobavitelja
 • parse_eslog_invoice()    → DataFrame vseh postavk (vključno z _DOC_ vrstico)
-• parse_invoice()          → (DataFrame vrstic, header_total, ok) za CLI
+• parse_invoice()          → (DataFrame vrstic, header_total, discount_total) za CLI
 • validate_invoice()       → preveri vsoto vrstic proti header_total
 """
 
@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 import logging
 import xml.etree.ElementTree as ET
+from lxml import etree as LET
 from typing import List, Dict, Optional, Tuple
 
 import pandas as pd
@@ -23,21 +24,31 @@ from .utils import _normalize_date
 from .codes import Moa, Dtm
 
 # Uvoz pomožnih funkcij iz money.py:
-from wsm.parsing.money import extract_total_amount, validate_invoice as validate_line_values
+from wsm.parsing.money import (
+    extract_total_amount,
+    validate_invoice as validate_line_values,
+)
 
 # Use higher precision to avoid premature rounding when summing values.
 decimal.getcontext().prec = 28  # Python's default precision
 
-log = logging.getLogger(__name__)
 
 # ────────────────────────── pomožne funkcije ──────────────────────────
 def _text(el: ET.Element | None) -> str:
     return el.text.strip() if el is not None and el.text else ""
 
+
 def _decimal(el: ET.Element | None) -> Decimal:
     try:
-        txt = _text(el).replace(",", ".")
-        return Decimal(txt) if txt else Decimal("0")
+        txt = _text(el)
+        if not txt:
+            return Decimal("0")
+
+        txt = txt.replace("\xa0", "").replace(" ", "")
+        if "," in txt:
+            txt = txt.replace(".", "").replace(",", ".")
+
+        return Decimal(txt)
     except Exception:
         return Decimal("0")
 
@@ -48,90 +59,8 @@ NS = {"e": "urn:eslog:2.00"}
 # Common document discount codes.  Extend this list or pass a custom
 # sequence to ``parse_eslog_invoice`` if your suppliers use different
 # identifiers.
-DEFAULT_DOC_DISCOUNT_CODES = [Moa.DISCOUNT.value, "260", "131", "128"]
+DEFAULT_DOC_DISCOUNT_CODES = ["204", "260", "131", "128", "176", "500"]
 
-# ────────────────────────── line helpers ──────────────────────────
-def _apply_discount(gross: Decimal, disc: Decimal) -> Decimal:
-    """Return ``gross - disc`` rounded to two decimals."""
-    return (gross - disc).quantize(Decimal("0.01"), ROUND_HALF_UP)
-
-
-def _discount_pct(gross: Decimal, pct: Decimal) -> Decimal:
-    """Return discount amount from ``pct`` of ``gross`` rounded to two decimals."""
-    return (gross * pct / Decimal("100")).quantize(Decimal("0.01"), ROUND_HALF_UP)
-
-
-def _line_gross(sg26: ET.Element) -> Decimal:
-    """Return line gross amount before discounts."""
-    for moa in sg26.findall('.//e:S_MOA', NS):
-        if _text(moa.find('./e:C_C516/e:D_5025', NS)) == Moa.GROSS.value:
-            return _decimal(moa.find('./e:C_C516/e:D_5004', NS)).quantize(
-                Decimal('0.01'), ROUND_HALF_UP
-            )
-
-    qty = _decimal(sg26.find('.//e:S_QTY/e:C_C186/e:D_6060', NS))
-    price = Decimal('0')
-    for pri in sg26.findall('.//e:S_PRI', NS):
-        qual = _text(pri.find('./e:C_C509/e:D_5125', NS))
-        amt = _decimal(pri.find('./e:C_C509/e:D_5118', NS))
-        if qual == 'AAA' and amt != 0 and price == 0:
-            price = amt
-        if qual == 'AAB' and amt != 0:
-            price = amt
-            break
-    return (price * qty).quantize(Decimal('0.01'), ROUND_HALF_UP)
-
-
-def _line_discount(sg26: ET.Element) -> Decimal:
-    """Return discount amount for the line."""
-    for sg39 in sg26.findall('.//e:G_SG39', NS):
-        if _text(sg39.find('./e:S_ALC/e:D_5463', NS)) != 'A':
-            continue
-        # fixed discount amount
-        for moa in sg39.findall('.//e:G_SG42/e:S_MOA', NS):
-            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == Moa.DISCOUNT.value:
-                amt = _decimal(moa.find('./e:C_C516/e:D_5004', NS))
-                return amt.quantize(Decimal('0.01'), ROUND_HALF_UP)
-        # percentage discount
-        pcd = sg39.find('.//e:S_PCD', NS)
-        if pcd is not None and _text(pcd.find('./e:C_C501/e:D_5245', NS)) == '1':
-            pct = _decimal(pcd.find('./e:C_C501/e:D_5482', NS))
-            if pct != 0:
-                gross = _line_gross(sg26)
-                return _discount_pct(gross, pct)
-    return Decimal('0')
-
-
-def _line_net(sg26: ET.Element) -> Decimal:
-    """Return net line amount (gross minus discount)."""
-    gross = _line_gross(sg26)
-    disc = _line_discount(sg26)
-    return _apply_discount(gross, disc)
-
-
-def _line_tax(sg26: ET.Element) -> Decimal:
-    """Return VAT amount for the line.
-
-    If MOA 124 segments are missing, the amount is calculated from the line
-    net value and VAT rate.
-    """
-    total = Decimal("0")
-    for sg34 in sg26.findall('.//e:G_SG34', NS):
-        for moa in sg34.findall('./e:S_MOA', NS):
-            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == Moa.VAT.value:
-                total += _decimal(moa.find('./e:C_C516/e:D_5004', NS))
-
-    if total == 0:
-        rate = Decimal("0")
-        for tax in sg26.findall('.//e:G_SG34/e:S_TAX', NS):
-            r = _decimal(tax.find('./e:C_C243/e:D_5278', NS))
-            if r != 0:
-                rate = r
-                break
-        if rate != 0:
-            total = _line_net(sg26) * rate / Decimal("100")
-
-    return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 # ────────────────────── dobavitelj: koda + ime ──────────────────────
 def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
@@ -151,16 +80,22 @@ def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
             nodes = [el for el in root.iter() if el.tag.split("}")[-1] == "S_NAD"]
 
         for nad in nodes:
-            typ_el = nad.find("./e:D_3035", NS) or next((el for el in nad if el.tag.split("}")[-1] == "D_3035"), None)
+            typ_el = nad.find("./e:D_3035", NS) or next(
+                (el for el in nad if el.tag.split("}")[-1] == "D_3035"), None
+            )
             typ = _text(typ_el)
             if typ == "SU":
-                code_el = nad.find(".//e:C_C082/e:D_3039", NS) or next((el for el in nad.iter() if el.tag.split("}")[-1] == "D_3039"), None)
+                code_el = nad.find(".//e:C_C082/e:D_3039", NS) or next(
+                    (el for el in nad.iter() if el.tag.split("}")[-1] == "D_3039"), None
+                )
                 name_els = nad.findall(".//e:C_C080/e:D_3036", NS)
                 name = " ".join(_text(el) for el in name_els if _text(el))
                 return _text(code_el), name
 
             if typ == "SE" and not seller_name:
-                code_el = nad.find(".//e:C_C082/e:D_3039", NS) or next((el for el in nad.iter() if el.tag.split("}")[-1] == "D_3039"), None)
+                code_el = nad.find(".//e:C_C082/e:D_3039", NS) or next(
+                    (el for el in nad.iter() if el.tag.split("}")[-1] == "D_3039"), None
+                )
                 name_els = nad.findall(".//e:C_C080/e:D_3036", NS)
                 name = " ".join(_text(el) for el in name_els if _text(el))
                 seller_code = _text(code_el)
@@ -170,9 +105,11 @@ def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
     except Exception:
         return "", ""
 
+
 def get_supplier_name(xml_path: str | Path) -> Optional[str]:
     _, name = get_supplier_info(xml_path)
     return name or None
+
 
 # ────────────────────── dobavitelj: koda + ime + davčna ──────────────────────
 def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
@@ -183,76 +120,67 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
         tree = ET.parse(xml_path)
         root = tree.getroot()
 
-        # Locate the seller party (SU or SE) and search only within that group
-        seller_group = None
-        for sg2 in root.findall(".//e:G_SG2", NS):
-            nad = sg2.find("./e:S_NAD", NS)
-            if nad is not None:
-                typ_el = nad.find("./e:D_3035", NS) or next(
-                    (el for el in nad.iter() if el.tag.split("}")[-1] == "D_3035"),
-                    None,
-                )
-                if _text(typ_el) in {"SU", "SE"}:
-                    seller_group = sg2
-                    break
+        # Collect seller-related groups (SU or SE) in document order
+        groups: List[ET.Element] = [
+            sg2
+            for sg2 in root.findall(".//e:G_SG2", NS)
+            if _text(sg2.find("./e:S_NAD/e:D_3035", NS)) in {"SU", "SE"}
+        ]
+        if not groups:
+            groups = [root]
 
-        search_root = seller_group if seller_group is not None else root
-
-        fallback_vat = None
-        for sg3 in search_root.findall("./e:G_SG3", NS):
-            rff = sg3.find("./e:S_RFF", NS)
-            if rff is None:
-                continue
-            code_el = rff.find("./e:C_C506/e:D_1153", NS) or next(
-                (el for el in rff.iter() if el.tag.split("}")[-1] == "D_1153"),
-                None,
-            )
-            val_el = rff.find("./e:C_C506/e:D_1154", NS) or next(
-                (el for el in rff.iter() if el.tag.split("}")[-1] == "D_1154"),
-                None,
-            )
-            rff_code = _text(code_el)
-            vat_val = _text(val_el)
-            if rff_code == "VA" and vat_val:
-                vat = vat_val
+        for grp in groups:
+            for rff in grp.findall(".//e:S_RFF", NS):
+                rff_code = _text(rff.find("./e:C_C506/e:D_1153", NS))
+                if rff_code in {"VA", "AHP", "0199"}:
+                    vat_val = _text(rff.find("./e:C_C506/e:D_1154", NS))
+                    if vat_val:
+                        vat = vat_val
+                        break
+            if vat:
                 break
-            if fallback_vat is None and (
-                rff_code in {"AHP", "0199"} or vat_val.startswith("SI")
-            ):
-                fallback_vat = vat_val
-
-        if vat is None:
-            vat = fallback_vat
-
-        if vat is None:
-            for com in search_root.findall(".//e:S_COM", NS):
+            for com in grp.findall(".//e:S_COM", NS):
                 com_code = _text(com.find("./e:C_C076/e:D_3155", NS))
                 if com_code == "9949":
                     vat_val = _text(com.find("./e:C_C076/e:D_3148", NS))
                     if vat_val:
                         vat = vat_val
                         break
-
-        if vat:
-            vat = vat.replace(" ", "").upper()
-            if not re.match(r"^SI\d{8}$", vat):
-                vat = None
+            if vat:
+                break
     except Exception:
         vat = None
     return code, name, vat
 
+
 # ─────────────────────── vsota iz glave ───────────────────────
 def extract_header_net(xml_path: Path | str) -> Decimal:
-    """Vrne znesek iz MOA 389 (neto brez DDV)."""
+    """Vrne znesek iz MOA 389 (neto brez DDV) oz. po potrebi iz MOA 79."""
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
-        for moa in root.findall('.//e:G_SG50/e:S_MOA', NS):
-            if _text(moa.find('./e:C_C516/e:D_5025', NS)) == Moa.HEADER_NET.value:
-                return _decimal(moa.find('./e:C_C516/e:D_5004', NS))
+        for code in ("389", "79"):
+            for moa in root.findall(".//e:G_SG50/e:S_MOA", NS):
+                if _text(moa.find("./e:C_C516/e:D_5025", NS)) == code:
+                    return _decimal(moa.find("./e:C_C516/e:D_5004", NS))
     except Exception:
         pass
-    return Decimal('0')
+    return Decimal("0")
+
+
+def extract_header_gross(xml_path: Path | str) -> Decimal:
+    """Return gross amount from MOA 9 or 388."""
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        for code in ("9", "388"):
+            for moa in root.findall(".//e:G_SG50/e:S_MOA", NS):
+                if _text(moa.find("./e:C_C516/e:D_5025", NS)) == code:
+                    return _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+    except Exception:
+        pass
+    return Decimal("0")
+
 
 
 def extract_grand_total(xml_path: Path | str) -> Decimal:
@@ -294,19 +222,20 @@ def extract_service_date(xml_path: Path | str) -> str | None:
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
-        for dtm in root.findall('.//e:S_DTM', NS):
-            if _text(dtm.find('./e:C_C507/e:D_2005', NS)) == Dtm.SERVICE_DATE.value:
-                date = _text(dtm.find('./e:C_C507/e:D_2380', NS))
+        for dtm in root.findall(".//e:S_DTM", NS):
+            if _text(dtm.find("./e:C_C507/e:D_2005", NS)) == "35":
+                date = _text(dtm.find("./e:C_C507/e:D_2380", NS))
                 if date:
                     return _normalize_date(date)
-        for dtm in root.findall('.//e:S_DTM', NS):
-            if _text(dtm.find('./e:C_C507/e:D_2005', NS)) == Dtm.INVOICE_DATE.value:
-                date = _text(dtm.find('./e:C_C507/e:D_2380', NS))
+        for dtm in root.findall(".//e:S_DTM", NS):
+            if _text(dtm.find("./e:C_C507/e:D_2005", NS)) == "137":
+                date = _text(dtm.find("./e:C_C507/e:D_2380", NS))
                 if date:
                     return _normalize_date(date)
     except Exception:
         pass
     return None
+
 
 # ───────────────────── številka računa ─────────────────────
 def extract_invoice_number(xml_path: Path | str) -> str | None:
@@ -314,16 +243,18 @@ def extract_invoice_number(xml_path: Path | str) -> str | None:
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
-        bgm = root.find('.//e:S_BGM', NS)
+        bgm = root.find(".//e:S_BGM", NS)
         if bgm is None:
             for node in root.iter():
-                if node.tag.split('}')[-1] == 'S_BGM':
+                if node.tag.split("}")[-1] == "S_BGM":
                     bgm = node
                     break
         if bgm is not None:
-            num_el = bgm.find('.//e:C_C106/e:D_1004', NS)
+            num_el = bgm.find(".//e:C_C106/e:D_1004", NS)
             if num_el is None:
-                num_el = next((el for el in bgm.iter() if el.tag.split('}')[-1] == 'D_1004'), None)
+                num_el = next(
+                    (el for el in bgm.iter() if el.tag.split("}")[-1] == "D_1004"), None
+                )
             if num_el is not None:
                 num = _text(num_el)
                 if num:
@@ -331,6 +262,53 @@ def extract_invoice_number(xml_path: Path | str) -> str | None:
     except Exception:
         pass
     return None
+
+
+def extract_total_tax(xml_path: Path | str) -> Decimal:
+    """Sum MOA values with qualifier 124 inside all ``G_SG52`` groups."""
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        total = Decimal("0")
+        for sg52 in root.findall(".//e:G_SG52", NS):
+            for moa in sg52.findall("./e:S_MOA", NS):
+                if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "124":
+                    total += _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+        return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
+    except Exception:
+        return Decimal("0")
+
+
+def _get_document_discount(xml_root: ET.Element) -> Decimal:
+    """Return document level discount from <DocumentDiscount> or MOA codes."""
+    discount_el = xml_root.find("DocumentDiscount")
+    discount_str = discount_el.text if discount_el is not None else None
+
+    def _find_moa_values(codes: set[str]) -> Decimal:
+        total = Decimal("0")
+        for seg in xml_root.iter():
+            if seg.tag.split("}")[-1] != "S_MOA":
+                continue
+            code = None
+            amount = None
+            for el in seg.iter():
+                tag = el.tag.split("}")[-1]
+                if tag == "D_5025":
+                    code = (el.text or "").strip()
+                elif tag == "D_5004":
+                    amount = (el.text or "").strip()
+            if code in set(DEFAULT_DOC_DISCOUNT_CODES) and amount is not None:
+                total += Decimal(amount.replace(",", "."))
+        return total
+
+    discount = (
+        Decimal(discount_str.replace(",", "."))
+        if discount_str not in (None, "")
+        else _find_moa_values(set(DEFAULT_DOC_DISCOUNT_CODES))
+    )
+
+    return discount.quantize(Decimal("0.01"))
+
 
 # ──────────────────── glavni parser za ESLOG INVOIC ────────────────────
 def parse_eslog_invoice(
@@ -368,7 +346,7 @@ def parse_eslog_invoice(
     """
     supplier_code, _ = get_supplier_info(xml_path)
 
-    tree = ET.parse(xml_path)
+    tree = LET.parse(xml_path)
     root = tree.getroot()
     items: List[Dict] = []
     net_total = Decimal("0")
@@ -392,25 +370,37 @@ def parse_eslog_invoice(
 
         desc = _text(sg26.find(".//e:S_IMD/e:C_C273/e:D_7008", NS))
 
-        # cene AAA/AAB
-        price_net = price_gross = Decimal("0")
-        for pri in sg26.findall(".//e:S_PRI", NS):
-            qual = _text(pri.find("./e:C_C509/e:D_5125", NS))
-            amt = _decimal(pri.find("./e:C_C509/e:D_5118", NS))
-            if qual == "AAA":
-                price_net = amt
-            elif qual == "AAB":
-                price_gross = amt
+        # read percent discount and gross/net prices
+        pcd_nodes = sg26.xpath(".//e:S_PCD/e:C_C501/e:D_5482", namespaces=NS)
+        pcd_pct = _decimal(pcd_nodes[0] if pcd_nodes else None)
+
+        gross_nodes = sg26.xpath(
+            ".//e:S_PRI[e:C_C509/e:D_5125='AAB']/e:C_C509/e:D_5118",
+            namespaces=NS,
+        )
+        price_gross = _decimal(gross_nodes[0] if gross_nodes else None)
+
+        net_nodes = sg26.xpath(
+            ".//e:S_PRI[e:C_C509/e:D_5125='AAA']/e:C_C509/e:D_5118",
+            namespaces=NS,
+        )
+        price_net = _decimal(net_nodes[0] if net_nodes else None)
+
         if price_gross == 0:
             price_gross = price_net
+
+        if price_net == 0 and price_gross != 0 and pcd_pct != 0:
+            price_net = (
+                price_gross * (Decimal("1") - pcd_pct / Decimal("100"))
+            ).quantize(Decimal("0.0001"), ROUND_HALF_UP)
 
         # neto znesek vrstice (MOA 203)
         net_amount_moa: Decimal | None = None
         for moa in sg26.findall(".//e:S_MOA", NS):
-            if _text(moa.find("./e:C_C516/e:D_5025", NS)) == Moa.NET.value:
-                net_amount_moa = (
-                    _decimal(moa.find("./e:C_C516/e:D_5004", NS))
-                    .quantize(Decimal("0.01"), ROUND_HALF_UP)
+            if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "203":
+
+                net_amount = _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(
+                    Decimal("0.01"), ROUND_HALF_UP
                 )
                 break
 
@@ -440,13 +430,17 @@ def parse_eslog_invoice(
         for sg39 in sg26.findall(".//e:G_SG39", NS):
             if _text(sg39.find("./e:S_ALC/e:D_5463", NS)) != "A":
                 continue
-            pcd = sg39.find("./e:S_PCD", NS)
-            if pcd is not None and _text(pcd.find("./e:C_C501/e:D_5245", NS)) == "1":
-                pct = _decimal(pcd.find("./e:C_C501/e:D_5482", NS))
-                if pct != 0:
-                    explicit_pct = pct.quantize(Decimal("0.01"), ROUND_HALF_UP)
-                    break
+            pct = _decimal(sg39.find("./e:S_PCD/e:C_C501/e:D_5482", NS))
+            if pct != 0:
 
+                explicit_pct = pct.quantize(Decimal("0.01"), ROUND_HALF_UP)
+            for moa in sg39.findall(".//e:G_SG42/e:S_MOA", NS):
+                if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "204":
+                    rebate += _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(
+                        Decimal("0.01"), ROUND_HALF_UP
+                    )
+
+        rebate = rebate.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
         # izračun cen pred in po rabatu
         if qty:
@@ -460,33 +454,31 @@ def parse_eslog_invoice(
         else:
             if rebate > 0 and qty and cena_pred > 0:
 
-                rabata_pct = (
-                    (rebate / qty) / cena_pred * Decimal("100")
-                ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+                rabata_pct = ((rebate / qty) / cena_pred * Decimal("100")).quantize(
+                    Decimal("0.01"), ROUND_HALF_UP
+                )
 
             else:
                 rabata_pct = Decimal("0.00")
 
         is_gratis = rabata_pct >= Decimal("99.9")
 
-        line_tax = _line_tax(sg26)
-        net_total += net_amount
-        tax_total += line_tax
-
-        items.append({
-            "sifra_dobavitelja": supplier_code,
-            "naziv":            desc,
-            "kolicina":         qty,
-            "enota":            unit,
-            "cena_bruto":       cena_pred,
-            "cena_netto":       cena_post,
-            "rabata":           rebate,
-            "rabata_pct":       rabata_pct,
-            "is_gratis":        is_gratis,
-            "vrednost":         net_amount,
-            "ddv_stopnja":      vat_rate,
-            "sifra_artikla":    art_code,
-        })
+        items.append(
+            {
+                "sifra_dobavitelja": supplier_code,
+                "naziv": desc,
+                "kolicina": qty,
+                "enota": unit,
+                "cena_bruto": cena_pred,
+                "cena_netto": cena_post,
+                "rabata": rebate,
+                "rabata_pct": rabata_pct,
+                "is_gratis": is_gratis,
+                "vrednost": net_amount,
+                "ddv_stopnja": vat_rate,
+                "sifra_artikla": art_code,
+            }
+        )
 
     if tax_total == 0:
         default_rate = _tax_rate_from_header(root)
@@ -498,18 +490,18 @@ def parse_eslog_invoice(
     # ───────── DOCUMENT DISCOUNT (če obstaja) ─────────
     discount_codes = list(discount_codes or DEFAULT_DOC_DISCOUNT_CODES)
     discounts = {code: Decimal("0") for code in discount_codes}
-    seen_values: set[Decimal] = set()
+    seen_segments: set[tuple[str, Decimal, int]] = set()
     for seg in root.findall(".//e:G_SG50", NS) + root.findall(".//e:G_SG20", NS):
         for moa in seg.findall(".//e:S_MOA", NS):
             code = _text(moa.find("./e:C_C516/e:D_5025", NS))
             if code in discounts:
-                amt = (
-                    _decimal(moa.find("./e:C_C516/e:D_5004", NS))
-                    .quantize(Decimal("0.01"), ROUND_HALF_UP)
+                amt = _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(
+                    Decimal("0.01"), ROUND_HALF_UP
                 )
-                if amt in seen_values:
+                key = (code, amt, id(moa))
+                if key in seen_segments:
                     continue
-                seen_values.add(amt)
+                seen_segments.add(key)
                 discounts[code] += amt
 
     # Sum all discount code amounts instead of only the first
@@ -517,21 +509,21 @@ def parse_eslog_invoice(
         (discounts.get(code) or Decimal("0")) for code in discount_codes
     ).quantize(Decimal("0.01"), ROUND_HALF_UP)
 
-
     if doc_discount != 0:
-        net_total -= doc_discount
-        items.append({
-            "sifra_dobavitelja": "_DOC_",
-            "naziv":            "Popust na ravni računa",
-            "kolicina":         Decimal("1"),
-            "enota":            "",
-            "cena_bruto":       doc_discount,
-            "cena_netto":       Decimal("0"),
-            "rabata":           doc_discount,
-            "rabata_pct":       Decimal("100.00"),
-            "vrednost":         -doc_discount,
-            "is_gratis":        False,
-        })
+        items.append(
+            {
+                "sifra_dobavitelja": "_DOC_",
+                "naziv": "Popust na ravni računa",
+                "kolicina": Decimal("1"),
+                "enota": "",
+                "cena_bruto": doc_discount,
+                "cena_netto": Decimal("0"),
+                "rabata": doc_discount,
+                "rabata_pct": Decimal("100.00"),
+                "vrednost": -doc_discount,
+                "is_gratis": False,
+            }
+        )
 
     df = pd.DataFrame(items)
     if not df.empty:
@@ -550,6 +542,7 @@ def parse_eslog_invoice(
 
     return df, ok
 
+
 # ───────────────────── PRILAGOJENA funkcija za CLI ─────────────────────
 def parse_invoice(source: str | Path):
     """
@@ -558,8 +551,7 @@ def parse_invoice(source: str | Path):
       • df: DataFrame s stolpci ['cena_netto','kolicina','rabata_pct','izracunana_vrednost']
         (vrednosti so Decimal v object stolpcih)
       • header_total: Decimal (InvoiceTotal – DocumentDiscount)
-      • totals_ok: bool, ``True`` če se seštevek ``net_total + tax_total`` ujema z
-        zneskom iz ``MOA 9``
+      • discount_total: Decimal (znesek dokumentarnega popusta)
     Uporablja se v CLI (wsm/cli.py).
     """
     # naložimo XML
@@ -570,82 +562,117 @@ def parse_invoice(source: str | Path):
         root = ET.fromstring(source)
 
     # Ali je pravi eSLOG (urn:eslog:2.00)?
-    if root.tag.endswith('Invoice') and root.find('.//e:M_INVOIC', NS) is not None:
-        df_items, totals_ok = parse_eslog_invoice(source)
-        header_total = extract_header_net(Path(source) if isinstance(source, (str, Path)) else source)
-        df = pd.DataFrame({
-            'cena_netto': df_items['cena_netto'],
-            'kolicina': df_items['kolicina'],
-            'rabata_pct': df_items['rabata_pct'],
-            'izracunana_vrednost': df_items['vrednost'],
-        }, dtype=object)
-        return df, header_total, totals_ok
+    if root.tag.endswith("Invoice") and root.find(".//e:M_INVOIC", NS) is not None:
+        df_items = parse_eslog_invoice(source, {})
+        header_total = extract_header_net(
+            Path(source) if isinstance(source, (str, Path)) else source
+        )
+        doc_rows = df_items[df_items["sifra_dobavitelja"] == "_DOC_"]
+        if doc_rows.empty:
+            discount_total = Decimal("0")
+        else:
+            discount_total = (-doc_rows["vrednost"].sum()).quantize(Decimal("0.01"))
+        df = pd.DataFrame(
+            {
+                "cena_netto": df_items["cena_netto"],
+                "kolicina": df_items["kolicina"],
+                "rabata_pct": df_items["rabata_pct"],
+                "izracunana_vrednost": df_items["vrednost"],
+            },
+            dtype=object,
+        )
+        return df, header_total, discount_total
 
     # Preprost <Racun> format z elementi <Postavka>
-    if root.tag == 'Racun' or root.find('Postavka') is not None:
+    if root.tag == "Racun" or root.find("Postavka") is not None:
         header_total = extract_total_amount(root)
+        discount_total = _get_document_discount(root)
         rows = []
-        for line in root.findall('Postavka'):
-            name = line.findtext('Naziv') or ''
-            qty_str = line.findtext('Kolicina') or '0'
-            price_str = line.findtext('Cena') or '0'
-            unit = line.attrib.get('enota', '').strip().lower()
+        for line in root.findall("Postavka"):
+            name = line.findtext("Naziv") or ""
+            qty_str = line.findtext("Kolicina") or "0"
+            price_str = line.findtext("Cena") or "0"
+            unit = line.attrib.get("enota", "").strip().lower()
             if not unit:
                 name_l = name.lower()
                 if re.search(r"\bkos\b", name_l):
-                    unit = 'kos'
+                    unit = "kos"
                 elif re.search(r"\bkg\b", name_l):
-                    unit = 'kg'
-            price = Decimal(price_str.replace(',', '.'))
-            qty = Decimal(qty_str.replace(',', '.'))
-            izracun_val = (price * qty).quantize(Decimal('0.01'), ROUND_HALF_UP)
-            rows.append({
-                'cena_netto': price,
-                'kolicina': qty,
-                'rabata_pct': Decimal('0'),
-                'izracunana_vrednost': izracun_val,
-                'enota': unit,
-                'naziv': name,
-            })
+                    unit = "kg"
+            price = Decimal(price_str.replace(",", "."))
+            qty = Decimal(qty_str.replace(",", "."))
+            izracun_val = (price * qty).quantize(Decimal("0.01"), ROUND_HALF_UP)
+            rows.append(
+                {
+                    "cena_netto": price,
+                    "kolicina": qty,
+                    "rabata_pct": Decimal("0"),
+                    "izracunana_vrednost": izracun_val,
+                    "enota": unit,
+                    "naziv": name,
+                }
+            )
         df = pd.DataFrame(rows, dtype=object)
-        return df, header_total, True
+        return df, header_total, discount_total
 
     # izvzamemo glavo (InvoiceTotal – DocumentDiscount)
     header_total = extract_total_amount(root)
+    discount_total = _get_document_discount(root)
 
     # preberemo vse <LineItems/LineItem>
     rows = []
+
     for li in root.findall("LineItems/LineItem"):
         price_str = li.findtext("PriceNet") or "0.00"
         qty_str = li.findtext("Quantity") or "0.00"
         discount_pct_str = li.findtext("DiscountPct") or "0.00"
 
-        cena = Decimal(price_str.replace(",", "."))
         kolic = Decimal(qty_str.replace(",", "."))
-        rabata_pct = Decimal(discount_pct_str.replace(",", "."))
 
-        izracun_val = (
-            cena
-            * kolic
-            * (Decimal("1") - rabata_pct / Decimal("100"))
-        ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+        # Some suppliers provide the final line value in MOA 203.  If present,
+        # use it and derive the unit price from quantity.
+        net_el = None
+        for moa in li.findall(".//S_MOA"):
+            code = _text(moa.find("./C_C516/D_5025"))
+            if code == "203":
+                candidate = moa.find("./C_C516/D_5004")
+                if candidate is not None and _text(candidate):
+                    net_el = candidate
+                    break
 
-        rows.append({
-            "cena_netto":           cena,
-            "kolicina":             kolic,
-            "rabata_pct":           rabata_pct,
-            "izracunana_vrednost":  izracun_val,
-        })
+        if net_el is not None:
+            izracun_val = _decimal(net_el)
+            if kolic != 0:
+                cena = (izracun_val / kolic).quantize(Decimal("0.0001"), ROUND_HALF_UP)
+            else:
+                cena = Decimal("0")
+            rabata_pct = Decimal("0")
+        else:
+            cena = Decimal(price_str.replace(",", "."))
+            rabata_pct = Decimal(discount_pct_str.replace(",", "."))
+            izracun_val = (
+                cena * kolic * (Decimal("1") - rabata_pct / Decimal("100"))
+            ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+        rows.append(
+            {
+                "cena_netto": cena,
+                "kolicina": kolic,
+                "rabata_pct": rabata_pct,
+                "izracunana_vrednost": izracun_val,
+            }
+        )
 
     # Če ni nobenih vrstic, naredimo prazen DataFrame z ustreznimi stolpci
     if not rows:
-        df = pd.DataFrame(columns=[
-            "cena_netto", "kolicina", "rabata_pct", "izracunana_vrednost"
-        ])
+        df = pd.DataFrame(
+            columns=["cena_netto", "kolicina", "rabata_pct", "izracunana_vrednost"]
+        )
     else:
         df = pd.DataFrame(rows, dtype=object)
 
-    return df, header_total, True
+    return df, header_total, discount_total
+
 
 def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:
     """
@@ -656,5 +683,7 @@ def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:
     if "izracunana_vrednost" not in df.columns:
         return False
 
-    df["izracunana_vrednost"] = df["izracunana_vrednost"].apply(lambda x: Decimal(str(x)))
+    df["izracunana_vrednost"] = df["izracunana_vrednost"].apply(
+        lambda x: Decimal(str(x))
+    )
     return validate_line_values(df, header_total)

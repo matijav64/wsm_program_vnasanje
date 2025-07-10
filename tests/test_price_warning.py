@@ -18,12 +18,12 @@ def test_apply_price_warning_none():
 
 def test_apply_price_warning_within_threshold():
     tree = DummyTree()
-    tooltip = _apply_price_warning(tree, '1', Decimal('10.4'), Decimal('10'), threshold=Decimal('5'))
+    tooltip = _apply_price_warning(tree, '1', Decimal('10.01'), Decimal('10'), threshold=Decimal('5'))
     assert tree.tags.get('1') == ()
-    assert tooltip is None
+    assert tooltip == ""
 
 def test_apply_price_warning_exceeds_threshold():
     tree = DummyTree()
     tooltip = _apply_price_warning(tree, '1', Decimal('11'), Decimal('10'), threshold=Decimal('5'))
     assert tree.tags.get('1') == ('price_warn',)
-    assert "Prejšnja cena" in tooltip
+    assert tooltip == "±1.00 €"

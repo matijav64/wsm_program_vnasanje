@@ -15,6 +15,7 @@ from wsm.analyze import analyze_invoice
 from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
 from wsm.parsing.eslog import get_supplier_name
 from wsm.utils import sanitize_folder_name, _load_supplier_map
+from wsm.supplier_store import _norm_vat, choose_supplier_key
 from wsm.ui.review.gui import review_links
 
 
@@ -76,38 +77,34 @@ def open_invoice_gui(
     supplier_code = main_supplier_code(df) or "unknown"
     sup_map = _load_supplier_map(Path(suppliers))
     map_vat = sup_map.get(supplier_code, {}).get("vat") if sup_map else None
-    vat = None
+    vat = map_vat
     if invoice_path.suffix.lower() == ".xml":
-        from wsm.parsing.eslog import get_supplier_info_vat
-
         name = get_supplier_name(invoice_path) or supplier_code
-        _, _, vat_num = get_supplier_info_vat(invoice_path)
-        if vat_num:
-            vat = vat_num
     elif invoice_path.suffix.lower() == ".pdf":
         name = get_supplier_name_from_pdf(invoice_path) or supplier_code
     else:
         name = supplier_code
-    if not vat and map_vat:
-        vat = map_vat
-    # Če nimamo vnosa v zemljevidu dobaviteljev, uporabi VAT kot kodo
-    if vat and (supplier_code == "unknown" or supplier_code not in sup_map):
+    # Če je koda še "unknown" in VAT obstaja, uporabi kar davčno številko
+    if supplier_code == "unknown" and vat:
         supplier_code = vat
 
-    # ───── enotna mapa: supplier_code > VAT > fallback ─────
     info = sup_map.get(supplier_code, {})
-    vat_id = info.get("vat") if isinstance(info, dict) else None
+    vat_id = vat or (info.get("vat") if isinstance(info, dict) else None)
 
-    cand_paths = [
-        Path(suppliers) / sanitize_folder_name(supplier_code),
-        Path(suppliers) / sanitize_folder_name(vat_id) if vat_id else None,
-    ]
-    links_dir = next(
-        (p for p in cand_paths if p and p.exists()),
-        cand_paths[1] or cand_paths[0],
-    )
+    key = choose_supplier_key(vat_id, supplier_code)
+    base_dir = Path(suppliers)
+    base_dir.mkdir(parents=True, exist_ok=True)
+    if not key:
+        messagebox.showwarning(
+            "Opozorilo",
+            "Davčna številka dobavitelja ni znana; mapa ne bo ustvarjena.",
+        )
+        links_dir = base_dir
+    else:
+        key_safe = sanitize_folder_name(key)
+        links_dir = base_dir / key_safe
+        links_dir.mkdir(parents=True, exist_ok=True)
 
-    links_dir.mkdir(parents=True, exist_ok=True)
 
     if (links_dir / f"{supplier_code}_povezane.xlsx").exists():
         links_file = links_dir / f"{supplier_code}_povezane.xlsx"

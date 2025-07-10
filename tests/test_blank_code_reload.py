@@ -1,3 +1,5 @@
+import pytest
+pytest.importorskip("openpyxl")
 import pandas as pd
 from decimal import Decimal
 from wsm.ui.review.io import _save_and_close
@@ -29,8 +31,10 @@ def test_blank_supplier_code_retains_mapping(tmp_path, monkeypatch):
     links_dir.mkdir(parents=True)
     links_file = links_dir / "SUP_Test_povezane.xlsx"
     monkeypatch.setattr("wsm.utils.log_price_history", lambda *a, **k: None)
+    monkeypatch.setattr("tkinter.messagebox.showwarning", lambda *a, **k: None)
     _save_and_close(df, manual_old, wsm_df, links_file, DummyRoot(), "Test", "SUP", {}, base_dir)
-    manual_new = pd.read_excel(links_file, dtype=str)
+    new_file = links_file
+    manual_new = pd.read_excel(new_file, dtype=str)
     manual_new["sifra_dobavitelja"] = manual_new["sifra_dobavitelja"].fillna("").astype(str)
     assert manual_new["sifra_dobavitelja"].iloc[0] == ""
     manual_new["naziv_ckey"] = manual_new["naziv"].map(_clean)

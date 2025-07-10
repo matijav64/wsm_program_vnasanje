@@ -1,3 +1,5 @@
+import pytest
+pytest.importorskip("openpyxl")
 import pandas as pd
 from pathlib import Path
 

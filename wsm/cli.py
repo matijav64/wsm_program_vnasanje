@@ -10,6 +10,7 @@ from wsm.parsing.eslog import parse_invoice, validate_invoice, get_supplier_name
 from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
 from wsm.parsing.money import detect_round_step, round_to_step
 from wsm.utils import sanitize_folder_name, _load_supplier_map
+from wsm.supplier_store import _norm_vat
 from wsm.analyze import analyze_invoice
 
 @click.group()
@@ -40,15 +41,15 @@ def validate(invoices):
 
 def _validate_file(file_path: Path):
     """
-    Poskrbi za validacijo posamezne datoteke: 
-    - parse_invoice -> DataFrame in glava
+    Poskrbi za validacijo posamezne datoteke:
+    - parse_invoice -> DataFrame, glava, dokumentarni popust
     - validate_invoice -> True/False
     - Izpiše [OK], [NESKLADJE] ali [NAPAKA PARSANJA]
     """
     filename = file_path.name
     try:
-        # parse_invoice sedaj vrne tudi status ujemanja zneska MOA 9
-        df, header_total, total_ok = parse_invoice(str(file_path))
+        # parse_invoice vrne tri rezultate: (df, header_total, discount_total)
+        df, header_total, _ = parse_invoice(str(file_path))
     except Exception as e:
         click.echo(f"[NAPAKA PARSANJA] {filename}: {e}")
         return
@@ -162,18 +163,23 @@ def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct, use_pyqt):
 
     base = Path(suppliers_path)
 
-    # ───── enotna mapa: supplier_code > VAT > fallback ─────
     info = sup_map.get(supplier_code, {})
-    vat_id = info.get("vat") if isinstance(info, dict) else None
+    vat_id = vat or (info.get("vat") if isinstance(info, dict) else None)
+    vat_norm = _norm_vat(vat_id or "")
+    vat_safe = sanitize_folder_name(vat_norm) if vat_norm else None
+    code_safe = sanitize_folder_name(supplier_code)
 
-    cand_paths = [
-        base / sanitize_folder_name(supplier_code),
-        base / sanitize_folder_name(vat_id) if vat_id else None,
-    ]
-    links_dir = next(
-        (p for p in cand_paths if p and p.exists()),
-        cand_paths[1] or cand_paths[0],
-    )
+    vat_path = base / vat_safe if vat_safe else None
+    code_path = base / code_safe
+
+    if map_vat and vat_path:
+        links_dir = vat_path
+    elif code_path.exists():
+        links_dir = code_path
+    elif vat_path and vat_path.exists():
+        links_dir = vat_path
+    else:
+        links_dir = code_path
 
     links_dir.mkdir(parents=True, exist_ok=True)
     if (links_dir / f"{supplier_code}_povezane.xlsx").exists():

@@ -1,3 +1,5 @@
+import pytest
+pytest.importorskip("PyQt5")
 import pandas as pd
 from PyQt5 import QtCore
 from wsm.ui_qt import DataFrameModel

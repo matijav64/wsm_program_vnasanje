@@ -1,3 +1,5 @@
+import pytest
+pytest.importorskip("openpyxl")
 from decimal import Decimal
 import pandas as pd
 from wsm.utils import last_price_stats, load_last_price
