@@ -21,7 +21,7 @@ from typing import List, Dict, Optional, Tuple
 
 import pandas as pd
 from .utils import _normalize_date
-from .codes import Moa, Dtm
+from .codes import Moa
 
 # Uvoz pomožnih funkcij iz money.py:
 from wsm.parsing.money import (
