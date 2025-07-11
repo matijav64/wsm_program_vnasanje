@@ -493,9 +493,13 @@ def parse_eslog_invoice(
                 net_amount,
             )
 
-        net_total += net_amount
+        net_total = (net_total + net_amount).quantize(
+            Decimal("0.01"), ROUND_HALF_UP
+        )
         tax_amount = _line_tax(sg26, header_rate if header_rate != 0 else None)
-        tax_total += tax_amount
+        tax_total = (tax_total + tax_amount).quantize(
+            Decimal("0.01"), ROUND_HALF_UP
+        )
 
         # stopnja DDV (npr. 9.5 ali 22)
         vat_rate = Decimal("0")
