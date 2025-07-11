@@ -20,7 +20,6 @@ from lxml import etree as LET
 from typing import List, Dict, Optional, Tuple
 
 import pandas as pd
-import builtins
 from .utils import _normalize_date
 from .codes import Moa, Dtm
 
@@ -429,7 +428,6 @@ def parse_eslog_invoice(
     tree = LET.parse(xml_path)
     root = tree.getroot()
     header_rate = _tax_rate_from_header(root)
-    _return_ok = discount_codes is None
     items: List[Dict] = []
     net_total = Decimal("0")
     tax_total = Decimal("0")
@@ -619,11 +617,8 @@ def parse_eslog_invoice(
             grand_total,
             calculated_total,
         )
-    builtins.ok = ok
 
-    if _return_ok:
-        return df, ok
-    return df
+    return df, ok
 
 
 # ───────────────────── PRILAGOJENA funkcija za CLI ─────────────────────
@@ -646,9 +641,7 @@ def parse_invoice(source: str | Path):
 
     # Ali je pravi eSLOG (urn:eslog:2.00)?
     if root.tag.endswith("Invoice") and root.find(".//e:M_INVOIC", NS) is not None:
-        global ok
-        df_items = parse_eslog_invoice(source, {})
-        ok = builtins.ok
+        df_items, ok = parse_eslog_invoice(source)
         header_total = extract_header_net(
             Path(source) if isinstance(source, (str, Path)) else source
         )
@@ -666,7 +659,6 @@ def parse_invoice(source: str | Path):
             },
             dtype=object,
         )
-        builtins.ok = ok
         return df, header_total, discount_total
 
     # Preprost <Racun> format z elementi <Postavka>
@@ -699,7 +691,6 @@ def parse_invoice(source: str | Path):
                 }
             )
         df = pd.DataFrame(rows, dtype=object)
-        builtins.ok = True
         return df, header_total, discount_total
 
     # izvzamemo glavo (InvoiceTotal – DocumentDiscount)
@@ -758,7 +749,6 @@ def parse_invoice(source: str | Path):
     else:
         df = pd.DataFrame(rows, dtype=object)
 
-    builtins.ok = True
     return df, header_total, discount_total
 
 
