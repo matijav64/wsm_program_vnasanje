@@ -14,13 +14,16 @@ from typing import Tuple, Union, List, Dict
 
 import pandas as pd
 import logging
+
 log = logging.getLogger(__name__)
 
 
 def _load_supplier_map(path: Path) -> dict:
     """Lazy import wrapper for :func:`wsm.supplier_store.load_suppliers`."""
     from wsm.supplier_store import load_suppliers as real
+
     return real(path)
+
 
 # ────────────────────────── skupna orodja ───────────────────────────
 def sanitize_folder_name(name: str) -> str:
@@ -38,7 +41,7 @@ def sanitize_folder_name(name: str) -> str:
             f"sanitize_folder_name expects a string, got {type(name)}"
         )
     cleaned = re.sub(r'[\\/*?:"<>|]', "_", name)
-    cleaned = re.sub(r'[\x00-\x1f]', "_", cleaned)
+    cleaned = re.sub(r"[\x00-\x1f]", "_", cleaned)
 
     # Trailing dots and spaces niso dovoljeni na Windows
     cleaned = re.sub(r"[\s.]+$", "", cleaned)
@@ -71,7 +74,6 @@ def sanitize_folder_name(name: str) -> str:
     if cleaned.upper() in reserved:
         cleaned += "_"
 
-
     if cleaned == "":
         return "unknown"
 
@@ -103,11 +105,13 @@ def short_supplier_name(name: str) -> str:
         base = m.group(1)
     return base.strip()
 
+
 # Helper to retrieve the first real supplier code from a DataFrame. ``_DOC_``
 # rows appear in some invoices due to document-level discounts and should be
 # ignored when determining the main supplier.
 def main_supplier_code(df: pd.DataFrame) -> str:
-    """Return the first ``sifra_dobavitelja`` that isn't ``"_DOC_"``, blank or NaN."""
+    """Return the first ``sifra_dobavitelja`` that isn't ``"_DOC_"``,
+    blank or NaN."""
 
     if df.empty or "sifra_dobavitelja" not in df.columns:
         return ""
@@ -119,31 +123,48 @@ def main_supplier_code(df: pd.DataFrame) -> str:
 
     return ""
 
+
 # ────────────────────────── združevanje postavk ─────────────────────
 def zdruzi_artikle(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Združi identične artikle (šifra dobavitelja + naziv + rabat), sešteje količine
-    ter preračuna cene. Dokumentarne popuste (“_DOC_”) ohrani nespremenjene.
+    Združi identične artikle (šifra dobavitelja + naziv + rabat), sešteje
+    količine ter preračuna cene. Dokumentarne popuste (“_DOC_”) ohrani
+    nespremenjene.
     """
     if df.empty:
         return df
     doc_mask = df["sifra_dobavitelja"] == "_DOC_"
-    df_doc   = df[doc_mask].copy()
-    df_rest  = df[~doc_mask].copy()
+    df_doc = df[doc_mask].copy()
+    df_rest = df[~doc_mask].copy()
 
-    grouped = (df_rest
-        .groupby(["sifra_dobavitelja", "naziv", "rabata", "rabata_pct"],
-                 dropna=False, as_index=False)
-        .agg({"enota": "first", "kolicina": "sum", "vrednost": "sum"}))
+    grouped = df_rest.groupby(
+        ["sifra_dobavitelja", "naziv", "rabata", "rabata_pct"],
+        dropna=False,
+        as_index=False,
+    ).agg({"enota": "first", "kolicina": "sum", "vrednost": "sum"})
     grouped["cena_netto"] = grouped.apply(
-        lambda r: r["vrednost"] / r["kolicina"] if r["kolicina"] else Decimal("0"), axis=1)
+        lambda r: (
+            r["vrednost"] / r["kolicina"] if r["kolicina"] else Decimal("0")
+        ),
+        axis=1,
+    )
     grouped["cena_bruto"] = grouped["cena_netto"]
 
-    grouped = grouped[[
-        "sifra_dobavitelja", "naziv", "kolicina", "enota",
-        "cena_bruto", "cena_netto", "vrednost", "rabata", "rabata_pct"
-    ]]
+    grouped = grouped[
+        [
+            "sifra_dobavitelja",
+            "naziv",
+            "kolicina",
+            "enota",
+            "cena_bruto",
+            "cena_netto",
+            "vrednost",
+            "rabata",
+            "rabata_pct",
+        ]
+    ]
     return pd.concat([grouped, df_doc], ignore_index=True)
+
 
 # ────────────────────────── pomožne tabele ──────────────────────────
 def _coerce_keyword_column(df: pd.DataFrame) -> pd.DataFrame:
@@ -154,6 +175,7 @@ def _coerce_keyword_column(df: pd.DataFrame) -> pd.DataFrame:
         if col.strip().lower() == "kljucna_beseda":
             return df.rename(columns={col: "keyword"})
     return df
+
 
 def extract_keywords(links_dir: Path, keywords_path: Path) -> pd.DataFrame:
     """Prebere ročne povezave in iz njih izdela seznam ključnih besed."""
@@ -169,9 +191,9 @@ def extract_keywords(links_dir: Path, keywords_path: Path) -> pd.DataFrame:
         if "wsm_sifra" not in df.columns or "naziv" not in df.columns:
             continue
 
-        for code, names in df.dropna(subset=["wsm_sifra", "naziv"]).groupby("wsm_sifra")[
-            "naziv"
-        ]:
+        for code, names in df.dropna(subset=["wsm_sifra", "naziv"]).groupby(
+            "wsm_sifra"
+        )["naziv"]:
             cnt: Dict[str, int] = {}
             for n in names:
                 for t in token_rx.findall(str(n).lower()):
@@ -192,7 +214,9 @@ def extract_keywords(links_dir: Path, keywords_path: Path) -> pd.DataFrame:
         try:
             old = pd.read_excel(keywords_path, dtype=str)
             old = _coerce_keyword_column(old)
-            kw_df = pd.concat([old[["wsm_sifra", "keyword"]], kw_df], ignore_index=True)
+            kw_df = pd.concat(
+                [old[["wsm_sifra", "keyword"]], kw_df], ignore_index=True
+            )
             kw_df.drop_duplicates(inplace=True)
         except Exception as exc:
             log.warning(f"Napaka pri branju obstoječih ključnih besed: {exc}")
@@ -200,10 +224,11 @@ def extract_keywords(links_dir: Path, keywords_path: Path) -> pd.DataFrame:
     kw_df.to_excel(keywords_path, index=False)
     return kw_df
 
+
 def load_wsm_data(
-    sifre_path   : str,
+    sifre_path: str,
     keywords_path: str | None,
-    links_dir    : Path,
+    links_dir: Path,
     supplier_code: str,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
@@ -215,42 +240,57 @@ def load_wsm_data(
     sifre_df = pd.read_excel(sifre_path, dtype=str)
 
     if keywords_path is None:
-        keywords_path = os.getenv("WSM_KEYWORDS", "kljucne_besede_wsm_kode.xlsx")
+        keywords_path = os.getenv(
+            "WSM_KEYWORDS", "kljucne_besede_wsm_kode.xlsx"
+        )
 
     kw_all = pd.read_excel(keywords_path, dtype=str)
     kw_all = _coerce_keyword_column(kw_all)
     if "sifra_dobavitelja" in kw_all.columns:
-        kw_df = kw_all[kw_all["sifra_dobavitelja"] == supplier_code][["wsm_sifra", "keyword"]]
+        kw_df = kw_all[kw_all["sifra_dobavitelja"] == supplier_code][
+            ["wsm_sifra", "keyword"]
+        ]
     else:
-        kw_df = kw_all[["wsm_sifra", "keyword"]] if "keyword" in kw_all.columns else pd.DataFrame(columns=["wsm_sifra", "keyword"])
+        kw_df = (
+            kw_all[["wsm_sifra", "keyword"]]
+            if "keyword" in kw_all.columns
+            else pd.DataFrame(columns=["wsm_sifra", "keyword"])
+        )
 
     suppliers_file = links_dir
     sup_map = _load_supplier_map(suppliers_file)
-    
+
     supplier_info = sup_map.get(supplier_code, {})
     supplier_name = (
         supplier_info.get("ime", supplier_code)
         if isinstance(supplier_info, dict)
         else supplier_code
     )
-    vat_id = supplier_info.get("vat") if isinstance(supplier_info, dict) else None
+    vat_id = (
+        supplier_info.get("vat") if isinstance(supplier_info, dict) else None
+    )
     safe_id = sanitize_folder_name(vat_id or supplier_name)
 
-    links_path = links_dir / safe_id / f"{supplier_code}_{safe_id}_povezane.xlsx"
+    links_path = (
+        links_dir / safe_id / f"{supplier_code}_{safe_id}_povezane.xlsx"
+    )
     if links_path.exists():
         links_df = pd.read_excel(links_path, dtype=str)
     else:
-        links_df = pd.DataFrame(columns=["sifra_dobavitelja", "naziv", "naziv_ckey", "wsm_sifra"])
+        links_df = pd.DataFrame(
+            columns=["sifra_dobavitelja", "naziv", "naziv_ckey", "wsm_sifra"]
+        )
 
     return sifre_df, kw_df, links_df
 
+
 # ────────────────────────── samodejno povezovanje ───────────────────
 def povezi_z_wsm(
-    df_items      : pd.DataFrame,
-    sifre_path    : str,
-    keywords_path : str | None = None,
-    links_dir     : Path | None = None,
-    supplier_code : str | None = None
+    df_items: pd.DataFrame,
+    sifre_path: str,
+    keywords_path: str | None = None,
+    links_dir: Path | None = None,
+    supplier_code: str | None = None,
 ) -> pd.DataFrame:
     """
     Poskusi vsaki vrstici v ``df_items`` pripisati WSM kodo:
@@ -264,7 +304,9 @@ def povezi_z_wsm(
     ``kljucne_besede_wsm_kode.xlsx``.
     """
     if keywords_path is None:
-        keywords_path = os.getenv("WSM_KEYWORDS", "kljucne_besede_wsm_kode.xlsx")
+        keywords_path = os.getenv(
+            "WSM_KEYWORDS", "kljucne_besede_wsm_kode.xlsx"
+        )
     if links_dir is None or supplier_code is None:
         raise TypeError("links_dir and supplier_code must be provided")
     kw_path = Path(keywords_path)
@@ -279,35 +321,44 @@ def povezi_z_wsm(
         kw_df = extract_keywords(links_dir, kw_path)
 
     df_items = df_items.copy()
-    df_items["naziv_ckey"]     = df_items["naziv"].map(_clean)
+    df_items["naziv_ckey"] = df_items["naziv"].map(_clean)
     manual_links["naziv_ckey"] = manual_links["naziv"].map(_clean)
 
     df = df_items.merge(
         manual_links[["sifra_dobavitelja", "naziv_ckey", "wsm_sifra"]],
-        on=["sifra_dobavitelja", "naziv_ckey"], how="left"
+        on=["sifra_dobavitelja", "naziv_ckey"],
+        how="left",
     )
-    df["status"] = df["wsm_sifra"].notna().map({True: "POVEZANO", False: pd.NA})
+    df["status"] = (
+        df["wsm_sifra"].notna().map({True: "POVEZANO", False: pd.NA})
+    )
 
     new_links: List[Dict] = []
     mask = df["status"].isna()
     if not kw_df.empty:
         for idx, row in df[mask].iterrows():
             text = row["naziv"].lower()
-            hit  = kw_df[
-                kw_df["keyword"].str.lower().apply(
-                    lambda k: bool(re.search(r"\b%s\b" % re.escape(k.lower()), text))
+            hit = kw_df[
+                kw_df["keyword"]
+                .str.lower()
+                .apply(
+                    lambda k: bool(
+                        re.search(r"\b%s\b" % re.escape(k.lower()), text)
+                    )
                 )
             ]
             if not hit.empty:
                 wsm_code = hit.iloc[0]["wsm_sifra"]
                 df.at[idx, "wsm_sifra"] = wsm_code
-                df.at[idx, "status"]    = "KLJUCNA_BES"
-                new_links.append({
-                    "sifra_dobavitelja": row["sifra_dobavitelja"],
-                    "naziv":            row["naziv"],
-                    "naziv_ckey":       row["naziv_ckey"],
-                    "wsm_sifra":        wsm_code,
-                })
+                df.at[idx, "status"] = "KLJUCNA_BES"
+                new_links.append(
+                    {
+                        "sifra_dobavitelja": row["sifra_dobavitelja"],
+                        "naziv": row["naziv"],
+                        "naziv_ckey": row["naziv_ckey"],
+                        "wsm_sifra": wsm_code,
+                    }
+                )
 
     # če so novosti → posodobi datoteko povezav
     if new_links:
@@ -319,26 +370,36 @@ def povezi_z_wsm(
             if isinstance(supplier_info, dict)
             else supplier_code
         )
-        vat_id = supplier_info.get("vat") if isinstance(supplier_info, dict) else None
+        vat_id = (
+            supplier_info.get("vat")
+            if isinstance(supplier_info, dict)
+            else None
+        )
         safe_id = sanitize_folder_name(vat_id or supplier_name)
 
         dst = links_dir / safe_id
         dst.mkdir(parents=True, exist_ok=True)
         links_path = dst / f"{supplier_code}_{safe_id}_povezane.xlsx"
 
-        manual_links = pd.concat([manual_links, pd.DataFrame(new_links)], ignore_index=True)
+        manual_links = pd.concat(
+            [manual_links, pd.DataFrame(new_links)], ignore_index=True
+        )
         manual_links.drop_duplicates(
-            subset=["sifra_dobavitelja", "naziv_ckey"], keep="first", inplace=True
+            subset=["sifra_dobavitelja", "naziv_ckey"],
+            keep="first",
+            inplace=True,
         )
         manual_links.to_excel(links_path, index=False)
         extract_keywords(links_dir, kw_path)
 
     return df
 
+
 # ────────────────────────── export & log ────────────────────────────
 def export_to_excel(df: pd.DataFrame, filename: str) -> None:
     Path(filename).parent.mkdir(parents=True, exist_ok=True)
     df.to_excel(filename, index=False)
+
 
 def log_price_history(
     df: pd.DataFrame,
@@ -360,7 +421,11 @@ def log_price_history(
         When ``True`` all rows with the same ``invoice_id`` are removed
         before appending new data.
     """
-    suppliers_path = Path(suppliers_dir) if suppliers_dir is not None else Path(history_file).parent
+    suppliers_path = (
+        Path(suppliers_dir)
+        if suppliers_dir is not None
+        else Path(history_file).parent
+    )
     sup_map = _load_supplier_map(suppliers_path)
 
     df["supplier_name"] = df["sifra_dobavitelja"].apply(
@@ -397,7 +462,11 @@ def log_price_history(
             "enota_norm",
         ]
     ].copy()
-    df_hist["key"] = df_hist["sifra_dobavitelja"].astype(str) + "_" + df_hist["naziv"].str.replace(r"[^\w\s]", "_", regex=True)
+    df_hist["key"] = (
+        df_hist["sifra_dobavitelja"].astype(str)
+        + "_"
+        + df_hist["naziv"].str.replace(r"[^\w\s]", "_", regex=True)
+    )
     df_hist.rename(
         columns={
             "sifra_dobavitelja": "code",
@@ -438,7 +507,9 @@ def log_price_history(
 
     # Preveri, ali so podatki pravilni
     if df_hist["key"].isna().any() or df_hist["key"].str.strip().eq("").any():
-        log.warning("Nekateri ključi v zgodovini cen so prazni ali neveljavni!")
+        log.warning(
+            "Nekateri ključi v zgodovini cen so prazni ali neveljavni!"
+        )
     log.debug(f"Zgodovina cen: {df_hist.head().to_dict()}")
 
     if history_path.exists():
@@ -458,7 +529,9 @@ def log_price_history(
         if "invoice_id" not in old.columns:
             old["invoice_id"] = pd.NA
         if invoice_id is not None:
-            mask = (old["invoice_id"] == invoice_id) & (old["key"].isin(df_hist["key"]))
+            mask = (old["invoice_id"] == invoice_id) & (
+                old["key"].isin(df_hist["key"])
+            )
             old = old[~mask]
         if not old.empty:
             df_hist = pd.concat([old, df_hist], ignore_index=True)
@@ -485,7 +558,8 @@ def log_price_history(
 
 
 def history_contains(invoice_id: str, history_path: Union[str, Path]) -> bool:
-    """Return ``True`` if ``price_history.xlsx`` already contains ``invoice_id``."""
+    """Return ``True`` if ``price_history.xlsx`` already contains
+    ``invoice_id``."""
 
     if not invoice_id:
         return False
@@ -601,7 +675,9 @@ def load_last_price(label: str, suppliers_dir: Path) -> Decimal | None:
     return latest_price
 
 
-def average_cost(df: pd.DataFrame, *, skip_zero: bool | None = None) -> Decimal:
+def average_cost(
+    df: pd.DataFrame, *, skip_zero: bool | None = None
+) -> Decimal:
     """Return weighted average unit cost from invoice lines.
 
     Parameters
@@ -616,7 +692,11 @@ def average_cost(df: pd.DataFrame, *, skip_zero: bool | None = None) -> Decimal:
         env = os.getenv("AVG_COST_SKIP_ZERO", "0")
         skip_zero = env.lower() not in {"0", "false", "no"}
 
-    if df.empty or "cena_netto" not in df.columns or "kolicina" not in df.columns:
+    if (
+        df.empty
+        or "cena_netto" not in df.columns
+        or "kolicina" not in df.columns
+    ):
         return Decimal("0")
 
     total_val = Decimal("0")

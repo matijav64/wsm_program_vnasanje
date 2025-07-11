@@ -11,3 +11,6 @@ pytest
 pytest-cov
 mplcursors
 lxml>=5.2
+flake8
+black
+pre-commit
