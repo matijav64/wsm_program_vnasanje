@@ -167,6 +167,17 @@ pytest
 
 Brez teh paketov se testi ne bodo pravilno zagnali. Namesto ročnega izvajanja lahko uporabite skripto `./scripts/setup_env.sh`.
 
+### Linting in formatiranje
+
+Projekt uporablja `black` in `flake8` za poenotenje kode. Nameščena sta v `requirements-dev.txt`.
+
+```bash
+pip install -r requirements-dev.txt
+pre-commit install  # opcijsko
+```
+
+Če je nastavljen `pre-commit`, se oba orodja zaženeta ob vsakem commitu.
+
 ## Možne izboljšave
 
 - **Izboljšano samodejno povezovanje**: poleg iskanja po ključnih besedah bi lahko uporabili knjižnice za "bližnje ujemanje" (npr. `rapidfuzz`), ali pa vektorsko iskanje, kot nakazuje mapa `wsm_vector_embedding`. Tako bi sistem lažje našel ustrezno WSM šifro tudi pri rahlo različnih nazivih artiklov.
