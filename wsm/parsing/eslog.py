@@ -20,6 +20,7 @@ from lxml import etree as LET
 from typing import List, Dict, Optional, Tuple
 
 import pandas as pd
+import builtins
 from .utils import _normalize_date
 from .codes import Moa, Dtm
 
@@ -31,6 +32,9 @@ from wsm.parsing.money import (
 
 # Use higher precision to avoid premature rounding when summing values.
 decimal.getcontext().prec = 28  # Python's default precision
+
+# module logger
+log = logging.getLogger(__name__)
 
 
 # ────────────────────────── pomožne funkcije ──────────────────────────
@@ -310,6 +314,82 @@ def _get_document_discount(xml_root: ET.Element) -> Decimal:
     return discount.quantize(Decimal("0.01"))
 
 
+def _line_discount(sg26: ET.Element) -> Decimal:
+    """Return discount amount for a line (sum of MOA 204 values)."""
+    total = Decimal("0")
+    for moa in sg26.findall('.//e:S_MOA', NS):
+        if _text(moa.find('./e:C_C516/e:D_5025', NS)) == Moa.DISCOUNT.value:
+            total += _decimal(moa.find('./e:C_C516/e:D_5004', NS))
+    return total.quantize(Decimal('0.01'), ROUND_HALF_UP)
+
+
+def _line_net(sg26: ET.Element) -> Decimal:
+    """Return net line amount from MOA 203 or compute from price and quantity."""
+    for moa in sg26.findall('.//e:S_MOA', NS):
+        if _text(moa.find('./e:C_C516/e:D_5025', NS)) == Moa.NET.value:
+            return _decimal(moa.find('./e:C_C516/e:D_5004', NS)).quantize(
+                Decimal('0.01'), ROUND_HALF_UP
+            )
+
+    qty = _decimal(sg26.find('.//e:S_QTY/e:C_C186/e:D_6060', NS))
+
+    price_net = Decimal("0")
+    for pri in sg26.findall('.//e:S_PRI', NS):
+        if _text(pri.find('./e:C_C509/e:D_5125', NS)) == 'AAA':
+            price_net = _decimal(pri.find('./e:C_C509/e:D_5118', NS))
+            break
+
+    if price_net == 0:
+        price_gross = Decimal("0")
+        for pri in sg26.findall('.//e:S_PRI', NS):
+            if _text(pri.find('./e:C_C509/e:D_5125', NS)) == 'AAB':
+                price_gross = _decimal(pri.find('./e:C_C509/e:D_5118', NS))
+                break
+
+        pct = Decimal("0")
+        pcd = sg26.find('.//e:S_PCD/e:C_C501/e:D_5482', NS)
+        if pcd is not None:
+            pct = _decimal(pcd)
+
+        if pct != 0 and price_gross != 0:
+            price_net = (price_gross * (Decimal('1') - pct / Decimal('100'))).quantize(
+                Decimal('0.0001'), ROUND_HALF_UP
+            )
+        else:
+            price_net = price_gross
+
+    amount = (price_net * qty - _line_discount(sg26)).quantize(
+        Decimal('0.01'), ROUND_HALF_UP
+    )
+    return amount
+
+
+def _line_tax(sg26: ET.Element, default_rate: Decimal | None = None) -> Decimal:
+    """Return VAT amount for a line using MOA 124 or tax rate."""
+    total = Decimal('0')
+    for moa in sg26.findall('.//e:S_MOA', NS):
+        if _text(moa.find('./e:C_C516/e:D_5025', NS)) == Moa.VAT.value:
+            total += _decimal(moa.find('./e:C_C516/e:D_5004', NS))
+
+    if total != 0:
+        return total.quantize(Decimal('0.01'), ROUND_HALF_UP)
+
+    rate: Decimal | None = None
+    for tax in sg26.findall('.//e:G_SG34/e:S_TAX', NS):
+        r = _decimal(tax.find('./e:C_C243/e:D_5278', NS))
+        if r != 0:
+            rate = r / Decimal('100')
+            break
+
+    if rate is None and default_rate:
+        rate = default_rate
+
+    if rate:
+        return (_line_net(sg26) * rate).quantize(Decimal('0.01'), ROUND_HALF_UP)
+
+    return Decimal('0')
+
+
 # ──────────────────── glavni parser za ESLOG INVOIC ────────────────────
 def parse_eslog_invoice(
     xml_path: str | Path,
@@ -348,6 +428,8 @@ def parse_eslog_invoice(
 
     tree = LET.parse(xml_path)
     root = tree.getroot()
+    header_rate = _tax_rate_from_header(root)
+    _return_ok = discount_codes is None
     items: List[Dict] = []
     net_total = Decimal("0")
     tax_total = Decimal("0")
@@ -394,27 +476,26 @@ def parse_eslog_invoice(
                 price_gross * (Decimal("1") - pcd_pct / Decimal("100"))
             ).quantize(Decimal("0.0001"), ROUND_HALF_UP)
 
-        # neto znesek vrstice (MOA 203)
+        # net line amount and VAT
         net_amount_moa: Decimal | None = None
         for moa in sg26.findall(".//e:S_MOA", NS):
-            if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "203":
-
-                net_amount = _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(
+            if _text(moa.find("./e:C_C516/e:D_5025", NS)) == Moa.NET.value:
+                net_amount_moa = _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(
                     Decimal("0.01"), ROUND_HALF_UP
                 )
                 break
 
-        calc_net = _line_net(sg26)
-        if net_amount_moa is None:
-            net_amount = calc_net
-        else:
-            net_amount = net_amount_moa
-            if net_amount != calc_net:
-                log.warning(
-                    "Line net mismatch: MOA 203 %s vs calculated %s",
-                    net_amount,
-                    calc_net,
-                )
+        net_amount = _line_net(sg26)
+        if net_amount_moa is not None and net_amount != net_amount_moa:
+            log.warning(
+                "Line net mismatch: MOA 203 %s vs calculated %s",
+                net_amount_moa,
+                net_amount,
+            )
+
+        net_total += net_amount
+        tax_amount = _line_tax(sg26, header_rate if header_rate != 0 else None)
+        tax_total += tax_amount
 
         # stopnja DDV (npr. 9.5 ali 22)
         vat_rate = Decimal("0")
@@ -432,13 +513,7 @@ def parse_eslog_invoice(
                 continue
             pct = _decimal(sg39.find("./e:S_PCD/e:C_C501/e:D_5482", NS))
             if pct != 0:
-
                 explicit_pct = pct.quantize(Decimal("0.01"), ROUND_HALF_UP)
-            for moa in sg39.findall(".//e:G_SG42/e:S_MOA", NS):
-                if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "204":
-                    rebate += _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(
-                        Decimal("0.01"), ROUND_HALF_UP
-                    )
 
         rebate = rebate.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
@@ -529,7 +604,9 @@ def parse_eslog_invoice(
     if not df.empty:
         df.sort_values(["sifra_dobavitelja", "naziv"], inplace=True, ignore_index=True)
 
-    calculated_total = (net_total + tax_total).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    calculated_total = (net_total - doc_discount + tax_total).quantize(
+        Decimal("0.01"), ROUND_HALF_UP
+    )
     grand_total = extract_grand_total(xml_path)
     ok = True
     if grand_total != 0 and abs(calculated_total - grand_total) > Decimal("0.01"):
@@ -538,9 +615,11 @@ def parse_eslog_invoice(
             grand_total,
             calculated_total,
         )
-        ok = False
+    builtins.ok = ok
 
-    return df, ok
+    if _return_ok:
+        return df, ok
+    return df
 
 
 # ───────────────────── PRILAGOJENA funkcija za CLI ─────────────────────
@@ -563,7 +642,9 @@ def parse_invoice(source: str | Path):
 
     # Ali je pravi eSLOG (urn:eslog:2.00)?
     if root.tag.endswith("Invoice") and root.find(".//e:M_INVOIC", NS) is not None:
+        global ok
         df_items = parse_eslog_invoice(source, {})
+        ok = builtins.ok
         header_total = extract_header_net(
             Path(source) if isinstance(source, (str, Path)) else source
         )
@@ -581,6 +662,7 @@ def parse_invoice(source: str | Path):
             },
             dtype=object,
         )
+        builtins.ok = ok
         return df, header_total, discount_total
 
     # Preprost <Racun> format z elementi <Postavka>
@@ -613,6 +695,7 @@ def parse_invoice(source: str | Path):
                 }
             )
         df = pd.DataFrame(rows, dtype=object)
+        builtins.ok = True
         return df, header_total, discount_total
 
     # izvzamemo glavo (InvoiceTotal – DocumentDiscount)
@@ -671,6 +754,7 @@ def parse_invoice(source: str | Path):
     else:
         df = pd.DataFrame(rows, dtype=object)
 
+    builtins.ok = True
     return df, header_total, discount_total
 
 
