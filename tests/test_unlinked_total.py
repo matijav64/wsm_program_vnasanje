@@ -5,7 +5,7 @@ from wsm.parsing.eslog import parse_eslog_invoice
 
 
 def _calc_unlinked_total(xml_path: Path) -> Decimal:
-    df = parse_eslog_invoice(xml_path, {})
+    df, ok = parse_eslog_invoice(xml_path, {})
     df = df[df["sifra_dobavitelja"] != "_DOC_"].copy()
     df["total_net"] = df["vrednost"]
 

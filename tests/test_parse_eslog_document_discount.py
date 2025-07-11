@@ -128,7 +128,7 @@ def test_parse_eslog_invoice_handles_moa_176():
     xml_path = Path("tests/PR5690-Slika1.XML")
     expected_discount = _compute_doc_discount(xml_path)
 
-    df = parse_eslog_invoice(xml_path, {})
+    df, _ = parse_eslog_invoice(xml_path, {})
     doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
 
     assert doc_row["vrednost"] == -expected_discount
@@ -155,7 +155,7 @@ def test_parse_eslog_invoice_handles_moa_500(tmp_path):
     xml_path = tmp_path / "disc500.xml"
     xml_path.write_text(xml)
 
-    df = parse_eslog_invoice(xml_path, {})
+    df, _ = parse_eslog_invoice(xml_path, {})
     doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
 
     assert doc_row["vrednost"] == Decimal("-0.05")
@@ -186,7 +186,7 @@ def test_parse_eslog_invoice_sums_duplicate_values(tmp_path):
     xml_path = tmp_path / "disc_dupes.xml"
     xml_path.write_text(xml)
 
-    df = parse_eslog_invoice(xml_path, {})
+    df, _ = parse_eslog_invoice(xml_path, {})
     doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
 
     assert doc_row["vrednost"] == Decimal("-2.00")

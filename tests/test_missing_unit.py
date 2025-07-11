@@ -15,4 +15,3 @@ def test_missing_unit_defaults_to_kos(tmp_path):
 
     df, _, _ = parse_invoice(xml)
     assert df.loc[0, "enota"] == "kos"
-    assert ok
