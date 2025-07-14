@@ -65,55 +65,96 @@ NS = {"e": "urn:eslog:2.00"}
 DEFAULT_DOC_DISCOUNT_CODES = ["204", "260", "131", "128", "176", "500"]
 
 
+# helper functions -------------------------------------------------------------
+def _find_gln(nad: ET.Element) -> str:
+    """Return GLN from NAD segment if qualifier 0088 is present."""
+    for c082 in nad.findall(".//e:C_C082", NS):
+        if _text(c082.find("./e:D_1131", NS)) == "0088":
+            val = _text(c082.find("./e:D_3039", NS))
+            if val:
+                return val
+    for c082 in nad.findall(".//C_C082"):
+        q = c082.find("./D_1131")
+        if q is not None and (q.text or "").strip() == "0088":
+            code_el = c082.find("./D_3039")
+            if code_el is not None and code_el.text:
+                return code_el.text.strip()
+    return ""
+
+
+def _find_any_code(nad: ET.Element) -> str:
+    """Return first ``D_3039`` value from NAD segment."""
+    code_el = nad.find(".//e:C_C082/e:D_3039", NS) or nad.find(".//C_C082/D_3039")
+    if code_el is None:
+        for el in nad.iter():
+            if el.tag.split("}")[-1] == "D_3039":
+                code_el = el
+                break
+    return _text(code_el)
+
+
+def _find_vat(grp: ET.Element) -> str:
+    """Return VAT number from related ``S_RFF`` segments."""
+    for rff in grp.findall(".//e:S_RFF", NS):
+        rff_code = _text(rff.find("./e:C_C506/e:D_1153", NS))
+        if rff_code in {"VA", "0199"}:
+            vat_val = _text(rff.find("./e:C_C506/e:D_1154", NS))
+            if vat_val:
+                return vat_val
+    for rff in grp.findall(".//S_RFF"):
+        code_el = rff.find("./C_C506/D_1153")
+        val_el = rff.find("./C_C506/D_1154")
+        if code_el is not None and val_el is not None:
+            if (code_el.text or "") in {"VA", "0199"} and val_el.text:
+                return val_el.text.strip()
+    return ""
+
+
 # ────────────────────── dobavitelj: koda + ime ──────────────────────
 def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
-    """
-    Vrne (sifra, ime) dobavitelja:
-    • najprej <S_NAD> z D_3035 = "SU"
-    • če ni "SU", išče "SE"
-    Če ni najdeno, vrne ("", "").
-    """
+    """Return supplier code and name."""
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
         seller_code = seller_name = ""
-        nodes = root.findall(".//e:S_NAD", NS)
-        if not nodes:
-            # fallback: poiščemo vse elemente <S_NAD> po local-name
-            nodes = [
-                el for el in root.iter() if el.tag.split("}")[-1] == "S_NAD"
-            ]
 
-        for nad in nodes:
+        groups: List[ET.Element] = [
+            sg2
+            for sg2 in root.findall(".//e:G_SG2", NS)
+            if _text(sg2.find("./e:S_NAD/e:D_3035", NS)) in {"SU", "SE"}
+        ]
+        if not groups:
+            groups = [root]
+
+        for grp in groups:
+            nad = grp.find("./e:S_NAD", NS)
+            if nad is None:
+                nad = next((c for c in grp.iter() if c.tag.split("}")[-1] == "S_NAD"), None)
+            if nad is None:
+                continue
+
             typ_el = nad.find("./e:D_3035", NS) or next(
-                (el for el in nad if el.tag.split("}")[-1] == "D_3035"), None
+                (el for el in nad.iter() if el.tag.split("}")[-1] == "D_3035"), None
             )
             typ = _text(typ_el)
-            if typ == "SU":
-                code_el = nad.find(".//e:C_C082/e:D_3039", NS) or next(
-                    (
-                        el
-                        for el in nad.iter()
-                        if el.tag.split("}")[-1] == "D_3039"
-                    ),
-                    None,
-                )
-                name_els = nad.findall(".//e:C_C080/e:D_3036", NS)
-                name = " ".join(_text(el) for el in name_els if _text(el))
-                return _text(code_el), name
+            if typ not in {"SU", "SE"}:
+                continue
 
+            name_els = nad.findall(".//e:C_C080/e:D_3036", NS)
+            if not name_els:
+                name_els = [el for el in nad.iter() if el.tag.split("}")[-1] == "D_3036"]
+            name = " ".join(_text(el) for el in name_els if _text(el))
+
+            code = _find_gln(nad)
+            if not code:
+                code = _find_vat(grp)
+            if not code:
+                code = _find_any_code(nad)
+
+            if typ == "SU":
+                return code, name
             if typ == "SE" and not seller_name:
-                code_el = nad.find(".//e:C_C082/e:D_3039", NS) or next(
-                    (
-                        el
-                        for el in nad.iter()
-                        if el.tag.split("}")[-1] == "D_3039"
-                    ),
-                    None,
-                )
-                name_els = nad.findall(".//e:C_C080/e:D_3036", NS)
-                name = " ".join(_text(el) for el in name_els if _text(el))
-                seller_code = _text(code_el)
+                seller_code = code
                 seller_name = name
 
         return seller_code, seller_name
