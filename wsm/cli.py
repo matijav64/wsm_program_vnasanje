@@ -55,7 +55,7 @@ def _validate_file(file_path: Path):
         return
 
     try:
-        ok = validate_invoice(df, header_total) and total_ok
+        ok = validate_invoice(df, header_total)
     except Exception as e:
         click.echo(f"[NAPAKA VALIDACIJE] {filename}: {e}")
         return
