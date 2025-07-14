@@ -2,15 +2,10 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
-import math
-import os
 import re
 from decimal import Decimal
 from pathlib import Path
-import shutil
 
 import pandas as pd
 import tkinter as tk
