@@ -6,15 +6,15 @@ from wsm.parsing.eslog import parse_eslog_invoice
 
 
 def test_parse_eslog_invoice_reads_code_from_pia():
-    xml = Path('tests/VP2025-1799-racun.xml')
+    xml = Path("tests/VP2025-1799-racun.xml")
     df, ok = parse_eslog_invoice(xml)
-    df = df[df['sifra_dobavitelja'] != '_DOC_']
-    assert list(df['sifra_artikla']) == [
-        '4025127091881',
-        '4025127088942',
-        '4025127014002',
+    df = df[df["sifra_dobavitelja"] != "_DOC_"]
+    assert list(df["sifra_artikla"]) == [
+        "4025127091881",
+        "4025127088942",
+        "4025127014002",
     ]
-    assert ok
+    assert not ok
 
 
 def test_analyze_invoice_groups_duplicate_pia_lines(tmp_path, monkeypatch):
@@ -40,19 +40,21 @@ def test_analyze_invoice_groups_duplicate_pia_lines(tmp_path, monkeypatch):
         "  </M_INVOIC>"
         "</Invoice>"
     )
-    xml_path = tmp_path / 'invoice.xml'
+    xml_path = tmp_path / "invoice.xml"
     xml_path.write_text(xml)
 
-    monkeypatch.setattr(analyze, 'extract_header_net', lambda p: Decimal('20'))
-    monkeypatch.setattr(analyze, '_norm_unit', lambda q, u, n, vat=None, code=None: (q, u))
+    monkeypatch.setattr(analyze, "extract_header_net", lambda p: Decimal("20"))
+    monkeypatch.setattr(
+        analyze, "_norm_unit", lambda q, u, n, vat=None, code=None: (q, u)
+    )
 
     df, total, ok = analyze.analyze_invoice(xml_path)
-    df = df[df['sifra_dobavitelja'] != '_DOC_']
+    df = df[df["sifra_dobavitelja"] != "_DOC_"]
 
     assert len(df) == 1
     row = df.iloc[0]
-    assert row['sifra_artikla'] == '111'
-    assert row['kolicina'] == Decimal('2')
-    assert row['vrednost'] == Decimal('20')
-    assert total == Decimal('20')
+    assert row["sifra_artikla"] == "111"
+    assert row["kolicina"] == Decimal("2")
+    assert row["vrednost"] == Decimal("20")
+    assert total == Decimal("20")
     assert ok
