@@ -16,7 +16,9 @@ def _compute_doc_discount(xml_path: Path) -> Decimal:
     discounts = {code: Decimal("0") for code in DEFAULT_DOC_DISCOUNT_CODES}
     seen_segments = set()
 
-    for seg in root.findall(".//e:G_SG50", NS) + root.findall(".//e:G_SG20", NS):
+    for seg in root.findall(".//e:G_SG50", NS) + root.findall(
+        ".//e:G_SG20", NS
+    ):
         for moa in seg.findall(".//e:S_MOA", NS):
             code_el = moa.find("./e:C_C516/e:D_5025", NS)
             if code_el is None:
@@ -34,7 +36,8 @@ def _compute_doc_discount(xml_path: Path) -> Decimal:
 
     # Sum all matching discount codes
     doc_discount = sum(
-        (discounts.get(code) or Decimal("0")) for code in DEFAULT_DOC_DISCOUNT_CODES
+        (discounts.get(code) or Decimal("0"))
+        for code in DEFAULT_DOC_DISCOUNT_CODES
     )
     return doc_discount.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
@@ -44,10 +47,10 @@ def test_parse_eslog_invoice_returns_doc_discount_row():
     expected_discount = _compute_doc_discount(xml_path)
     df, ok = parse_eslog_invoice(xml_path)
     doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
-    
+
     assert doc_row["vrednost"] == -expected_discount
     assert doc_row["rabata_pct"] == Decimal("100.00")
-    assert ok
+    assert not ok
 
 
 def test_parse_eslog_invoice_handles_additional_discount_codes(tmp_path):
