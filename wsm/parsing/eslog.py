@@ -5,7 +5,8 @@ ESLOG 2.0 (INVOIC) parser
 =========================
 • get_supplier_info()      → (sifra, ime) dobavitelja
 • parse_eslog_invoice()    → DataFrame vseh postavk (vključno z _DOC_ vrstico)
-• parse_invoice()          → (DataFrame vrstic, header_total, discount_total) za CLI
+• parse_invoice()          → (DataFrame vrstic, header_total,
+                              discount_total) za CLI
 • validate_invoice()       → preveri vsoto vrstic proti header_total
 """
 
@@ -65,7 +66,7 @@ NS = {"e": "urn:eslog:2.00"}
 DEFAULT_DOC_DISCOUNT_CODES = ["204", "260", "131", "128", "176", "500"]
 
 
-# helper functions -------------------------------------------------------------
+# helper functions -----------------------------------------------------
 def _find_gln(nad: ET.Element) -> str:
     """Return GLN from NAD segment if qualifier 0088 is present."""
     for c082 in nad.findall(".//e:C_C082", NS):
@@ -84,7 +85,9 @@ def _find_gln(nad: ET.Element) -> str:
 
 def _find_any_code(nad: ET.Element) -> str:
     """Return first ``D_3039`` value from NAD segment."""
-    code_el = nad.find(".//e:C_C082/e:D_3039", NS) or nad.find(".//C_C082/D_3039")
+    code_el = nad.find(".//e:C_C082/e:D_3039", NS) or nad.find(
+        ".//C_C082/D_3039"
+    )
     if code_el is None:
         for el in nad.iter():
             if el.tag.split("}")[-1] == "D_3039":
@@ -129,12 +132,16 @@ def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
         for grp in groups:
             nad = grp.find("./e:S_NAD", NS)
             if nad is None:
-                nad = next((c for c in grp.iter() if c.tag.split("}")[-1] == "S_NAD"), None)
+                nad = next(
+                    (c for c in grp.iter() if c.tag.split("}")[-1] == "S_NAD"),
+                    None,
+                )
             if nad is None:
                 continue
 
             typ_el = nad.find("./e:D_3035", NS) or next(
-                (el for el in nad.iter() if el.tag.split("}")[-1] == "D_3035"), None
+                (el for el in nad.iter() if el.tag.split("}")[-1] == "D_3035"),
+                None,
             )
             typ = _text(typ_el)
             if typ not in {"SU", "SE"}:
@@ -142,7 +149,11 @@ def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
 
             name_els = nad.findall(".//e:C_C080/e:D_3036", NS)
             if not name_els:
-                name_els = [el for el in nad.iter() if el.tag.split("}")[-1] == "D_3036"]
+                name_els = [
+                    el
+                    for el in nad.iter()
+                    if el.tag.split("}")[-1] == "D_3036"
+                ]
             name = " ".join(_text(el) for el in name_els if _text(el))
 
             code = _find_gln(nad)
@@ -377,14 +388,25 @@ def _get_document_discount(xml_root: ET.Element) -> Decimal:
 def _line_discount(sg26: ET.Element) -> Decimal:
     """Return discount amount for a line (sum of MOA 204 values)."""
     total = Decimal("0")
+    seen_ids: set[int] = set()
+    seen_amounts: set[Decimal] = set()
     for moa in sg26.findall(".//e:S_MOA", NS):
         if _text(moa.find("./e:C_C516/e:D_5025", NS)) == Moa.DISCOUNT.value:
-            total += _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+            amount = _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(
+                Decimal("0.01"), ROUND_HALF_UP
+            )
+            if id(moa) in seen_ids or amount in seen_amounts:
+                continue
+            seen_ids.add(id(moa))
+            seen_amounts.add(amount)
+            total += amount
+
     return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 
 def _line_net(sg26: ET.Element) -> Decimal:
-    """Return net line amount from MOA 203 or compute from price and quantity."""
+    """Return net line amount from MOA 203 or compute from price and
+    quantity."""
     for moa in sg26.findall(".//e:S_MOA", NS):
         code = _text(moa.find("./e:C_C516/e:D_5025", NS))
         if code in {Moa.NET.value, "125"}:
@@ -700,8 +722,8 @@ def parse_invoice(source: str | Path):
     """
     Parsira e-račun (ESLOG INVOIC) iz XML ali PDF (če je implementirano).
     Vrne:
-      • df: DataFrame s stolpci ['cena_netto','kolicina','rabata_pct','izracunana_vrednost']
-        (vrednosti so Decimal v object stolpcih)
+      • df: DataFrame s stolpci ['cena_netto', 'kolicina', 'rabata_pct',
+        'izracunana_vrednost'] (vrednosti so Decimal v object stolpcih)
       • header_total: Decimal (InvoiceTotal – DocumentDiscount)
       • discount_total: Decimal (znesek dokumentarnega popusta)
     Uporablja se v CLI (wsm/cli.py).
