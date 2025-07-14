@@ -345,7 +345,8 @@ def _line_discount(sg26: ET.Element) -> Decimal:
 def _line_net(sg26: ET.Element) -> Decimal:
     """Return net line amount from MOA 203 or compute from price and quantity."""
     for moa in sg26.findall(".//e:S_MOA", NS):
-        if _text(moa.find("./e:C_C516/e:D_5025", NS)) == Moa.NET.value:
+        code = _text(moa.find("./e:C_C516/e:D_5025", NS))
+        if code in {Moa.NET.value, "125"}:
             return _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(
                 Decimal("0.01"), ROUND_HALF_UP
             )
