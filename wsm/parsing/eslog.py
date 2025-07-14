@@ -110,19 +110,28 @@ def _find_any_code(nad: ET.Element) -> str:
 
 def _find_vat(grp: ET.Element) -> str:
     """Return VAT number from related ``S_RFF`` segments."""
+    vat_ahp = ""
     for rff in grp.findall(".//e:S_RFF", NS):
         rff_code = _text(rff.find("./e:C_C506/e:D_1153", NS))
         if rff_code in {"VA", "0199"}:
             vat_val = _text(rff.find("./e:C_C506/e:D_1154", NS))
             if vat_val:
                 return vat_val
+        if not vat_ahp and rff_code == "AHP":
+            vat_ahp = _text(rff.find("./e:C_C506/e:D_1154", NS))
+
     for rff in grp.findall(".//S_RFF"):
         code_el = rff.find("./C_C506/D_1153")
         val_el = rff.find("./C_C506/D_1154")
         if code_el is not None and val_el is not None:
-            if (code_el.text or "") in {"VA", "0199"} and val_el.text:
-                return val_el.text.strip()
-    return ""
+            code = (code_el.text or "").strip()
+            val = (val_el.text or "").strip()
+            if code in {"VA", "0199"} and val:
+                return val
+            if not vat_ahp and code == "AHP" and val:
+                vat_ahp = val
+
+    return vat_ahp
 
 
 # ────────────────────── dobavitelj: koda + ime ──────────────────────
