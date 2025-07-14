@@ -80,6 +80,18 @@ def _find_gln(nad: ET.Element) -> str:
             code_el = c082.find("./D_3039")
             if code_el is not None and code_el.text:
                 return code_el.text.strip()
+
+    gln_el = nad.find(".//e:S_GLN/e:D_7402", NS)
+    if gln_el is not None:
+        val = _text(gln_el)
+        if val:
+            return val
+    gln_el = nad.find(".//S_GLN/D_7402")
+    if gln_el is not None and gln_el.text:
+        val = gln_el.text.strip()
+        if val:
+            return val
+
     return ""
 
 
