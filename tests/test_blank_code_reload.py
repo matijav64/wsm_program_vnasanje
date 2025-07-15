@@ -56,7 +56,7 @@ def test_blank_supplier_code_retains_mapping(tmp_path, monkeypatch):
         {},
         base_dir,
     )
-    new_file = links_file
+    new_file = base_dir / "SUP" / "SUP_povezane.xlsx"
     manual_new = pd.read_excel(new_file, dtype=str)
     manual_new["sifra_dobavitelja"] = (
         manual_new["sifra_dobavitelja"].fillna("").astype(str)
