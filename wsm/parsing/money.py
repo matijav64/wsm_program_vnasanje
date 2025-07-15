@@ -1,6 +1,6 @@
 # File: wsm/parsing/money.py
 from decimal import Decimal, ROUND_HALF_UP
-import xml.etree.ElementTree as ET
+from lxml import etree as LET
 import pandas as pd
 
 def round_to_step(value: Decimal, step: Decimal, rounding=ROUND_HALF_UP) -> Decimal:
@@ -26,7 +26,7 @@ def quantize_like(value: Decimal, reference: Decimal, rounding=ROUND_HALF_UP) ->
     quant = Decimal('1').scaleb(reference.as_tuple().exponent)
     return value.quantize(quant, rounding=rounding)
 
-def extract_total_amount(xml_root: ET.Element) -> Decimal:
+def extract_total_amount(xml_root: LET._Element) -> Decimal:
     """
     Prebere osnovno glavo (<InvoiceTotal>) in, če obstaja, odšteje vrednost iz
     <DocumentDiscount>. Če katerikoli manjka, privzame 0.00.
@@ -67,7 +67,7 @@ def extract_total_amount(xml_root: ET.Element) -> Decimal:
 
     return (base - discount).quantize(Decimal("0.01"))
 
-def extract_line_items(xml_root: ET.Element) -> pd.DataFrame:
+def extract_line_items(xml_root: LET._Element) -> pd.DataFrame:
     """
     Iz <LineItems> vsak <LineItem> prebere 'PriceNet', 'Quantity', 'DiscountPct'
     in izračuna izracunana_vrednost = price_net * quantity * (1 - discount_pct/100).
