@@ -16,8 +16,9 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 import re
 import logging
-import xml.etree.ElementTree as ET
 from lxml import etree as LET
+
+XML_PARSER = LET.XMLParser(resolve_entities=False)
 from typing import List, Dict, Optional, Tuple
 
 import pandas as pd
@@ -38,11 +39,11 @@ log = logging.getLogger(__name__)
 
 
 # ────────────────────────── pomožne funkcije ──────────────────────────
-def _text(el: ET.Element | None) -> str:
+def _text(el: LET._Element | None) -> str:
     return el.text.strip() if el is not None and el.text else ""
 
 
-def _decimal(el: ET.Element | None) -> Decimal:
+def _decimal(el: LET._Element | None) -> Decimal:
     try:
         txt = _text(el)
         if not txt:
@@ -70,7 +71,7 @@ VAT_QUALIFIERS = {"VA", "0199", "AHP"}
 
 
 # helper functions -----------------------------------------------------
-def _find_gln(nad: ET.Element) -> str:
+def _find_gln(nad: LET._Element) -> str:
     """Return GLN from NAD segment if qualifier 0088 is present."""
     for c082 in nad.findall(".//e:C_C082", NS):
         if _text(c082.find("./e:D_1131", NS)) == "0088":
@@ -98,7 +99,7 @@ def _find_gln(nad: ET.Element) -> str:
     return ""
 
 
-def _find_any_code(nad: ET.Element) -> str:
+def _find_any_code(nad: LET._Element) -> str:
     """Return first ``D_3039`` value from NAD segment."""
     code_el = nad.find(".//e:C_C082/e:D_3039", NS) or nad.find(
         ".//C_C082/D_3039"
@@ -111,7 +112,7 @@ def _find_any_code(nad: ET.Element) -> str:
     return _text(code_el)
 
 
-def _find_vat(grp: ET.Element) -> str:
+def _find_vat(grp: LET._Element) -> str:
     """Return VAT number from related ``S_RFF`` segments.
 
     Recognized qualifiers are ``VA``, ``0199`` and ``AHP``.
@@ -141,11 +142,11 @@ def _find_vat(grp: ET.Element) -> str:
 def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
     """Return supplier code and name."""
     try:
-        tree = ET.parse(xml_path)
+        tree = LET.parse(xml_path, parser=XML_PARSER)
         root = tree.getroot()
         seller_code = seller_name = ""
 
-        groups: List[ET.Element] = [
+        groups: List[LET._Element] = [
             sg2
             for sg2 in root.findall(".//e:G_SG2", NS)
             if _text(sg2.find("./e:S_NAD/e:D_3035", NS)) in {"SU", "SE"}
@@ -208,11 +209,11 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
     code, name = get_supplier_info(xml_path)
     vat: str | None = None
     try:
-        tree = ET.parse(xml_path)
+        tree = LET.parse(xml_path, parser=XML_PARSER)
         root = tree.getroot()
 
         # Collect seller-related groups (SU or SE) in document order
-        groups: List[ET.Element] = [
+        groups: List[LET._Element] = [
             sg2
             for sg2 in root.findall(".//e:G_SG2", NS)
             if _text(sg2.find("./e:S_NAD/e:D_3035", NS)) in {"SU", "SE"}
@@ -248,7 +249,7 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
 def extract_header_net(xml_path: Path | str) -> Decimal:
     """Vrne znesek iz MOA 389 (neto brez DDV) oz. po potrebi iz MOA 79."""
     try:
-        tree = ET.parse(xml_path)
+        tree = LET.parse(xml_path, parser=XML_PARSER)
         root = tree.getroot()
         for code in ("389", "79"):
             for moa in root.findall(".//e:G_SG50/e:S_MOA", NS):
@@ -262,7 +263,7 @@ def extract_header_net(xml_path: Path | str) -> Decimal:
 def extract_header_gross(xml_path: Path | str) -> Decimal:
     """Return gross amount from MOA 9 or 388."""
     try:
-        tree = ET.parse(xml_path)
+        tree = LET.parse(xml_path, parser=XML_PARSER)
         root = tree.getroot()
         for code in ("9", "388"):
             for moa in root.findall(".//e:G_SG50/e:S_MOA", NS):
@@ -276,7 +277,7 @@ def extract_header_gross(xml_path: Path | str) -> Decimal:
 def extract_grand_total(xml_path: Path | str) -> Decimal:
     """Return invoice grand total from MOA 9."""
     try:
-        tree = ET.parse(xml_path)
+        tree = LET.parse(xml_path, parser=XML_PARSER)
         root = tree.getroot()
         for moa in root.findall(".//e:G_SG50/e:S_MOA", NS):
             if (
@@ -289,7 +290,7 @@ def extract_grand_total(xml_path: Path | str) -> Decimal:
     return Decimal("0")
 
 
-def _tax_rate_from_header(root: ET.Element) -> Decimal:
+def _tax_rate_from_header(root: LET._Element) -> Decimal:
     """Return default VAT rate from header ``S_TAX`` segment if present."""
     try:
         for tax in root.findall(".//e:G_SG16//e:S_TAX", NS):
@@ -314,7 +315,7 @@ def _tax_rate_from_header(root: ET.Element) -> Decimal:
 def extract_service_date(xml_path: Path | str) -> str | None:
     """Vrne datum opravljene storitve (DTM 35) ali datum računa (DTM 137)."""
     try:
-        tree = ET.parse(xml_path)
+        tree = LET.parse(xml_path, parser=XML_PARSER)
         root = tree.getroot()
         for dtm in root.findall(".//e:S_DTM", NS):
             if _text(dtm.find("./e:C_C507/e:D_2005", NS)) == "35":
@@ -335,7 +336,7 @@ def extract_service_date(xml_path: Path | str) -> str | None:
 def extract_invoice_number(xml_path: Path | str) -> str | None:
     """Vrne številko računa iz segmenta BGM (D_1004)."""
     try:
-        tree = ET.parse(xml_path)
+        tree = LET.parse(xml_path, parser=XML_PARSER)
         root = tree.getroot()
         bgm = root.find(".//e:S_BGM", NS)
         if bgm is None:
@@ -366,7 +367,7 @@ def extract_invoice_number(xml_path: Path | str) -> str | None:
 def extract_total_tax(xml_path: Path | str) -> Decimal:
     """Sum MOA values with qualifier 124 inside all ``G_SG52`` groups."""
     try:
-        tree = ET.parse(xml_path)
+        tree = LET.parse(xml_path, parser=XML_PARSER)
         root = tree.getroot()
         total = Decimal("0")
         for sg52 in root.findall(".//e:G_SG52", NS):
@@ -378,7 +379,7 @@ def extract_total_tax(xml_path: Path | str) -> Decimal:
         return Decimal("0")
 
 
-def _get_document_discount(xml_root: ET.Element) -> Decimal:
+def _get_document_discount(xml_root: LET._Element) -> Decimal:
     """Return document level discount from <DocumentDiscount> or MOA codes."""
     discount_el = xml_root.find("DocumentDiscount")
     discount_str = discount_el.text if discount_el is not None else None
@@ -409,7 +410,7 @@ def _get_document_discount(xml_root: ET.Element) -> Decimal:
     return discount.quantize(Decimal("0.01"))
 
 
-def _line_discount(sg26: ET.Element) -> Decimal:
+def _line_discount(sg26: LET._Element) -> Decimal:
     """Return discount amount for a line (sum of MOA 204 values)."""
     total = Decimal("0")
     seen_ids: set[int] = set()
@@ -428,7 +429,7 @@ def _line_discount(sg26: ET.Element) -> Decimal:
     return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 
-def _line_net(sg26: ET.Element) -> Decimal:
+def _line_net(sg26: LET._Element) -> Decimal:
     """Return net line amount from MOA 203 or compute from price and
     quantity."""
     for moa in sg26.findall(".//e:S_MOA", NS):
@@ -472,7 +473,7 @@ def _line_net(sg26: ET.Element) -> Decimal:
 
 
 def _line_tax(
-    sg26: ET.Element, default_rate: Decimal | None = None
+    sg26: LET._Element, default_rate: Decimal | None = None
 ) -> Decimal:
     """Return VAT amount for a line using MOA 124 or tax rate."""
     total = Decimal("0")
@@ -537,7 +538,7 @@ def parse_eslog_invoice(
     """
     supplier_code, _ = get_supplier_info(xml_path)
 
-    tree = LET.parse(xml_path)
+    tree = LET.parse(xml_path, parser=XML_PARSER)
     root = tree.getroot()
     header_rate = _tax_rate_from_header(root)
     items: List[Dict] = []
@@ -756,10 +757,10 @@ def parse_invoice(source: str | Path):
     """
     # naložimo XML
     if isinstance(source, (str, Path)) and Path(source).exists():
-        tree = ET.parse(source)
+        tree = LET.parse(source, parser=XML_PARSER)
         root = tree.getroot()
     else:
-        root = ET.fromstring(source)
+        root = LET.fromstring(source, parser=XML_PARSER)
 
     # Ali je pravi eSLOG (urn:eslog:2.00)?
     if (
