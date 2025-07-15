@@ -112,7 +112,10 @@ def _find_any_code(nad: ET.Element) -> str:
 
 
 def _find_vat(grp: ET.Element) -> str:
-    """Return VAT number from related ``S_RFF`` segments."""
+    """Return VAT number from related ``S_RFF`` segments.
+
+    Recognized qualifiers are ``VA``, ``0199`` and ``AHP``.
+    """
     vat_ahp = ""
     rffs = grp.findall(".//e:S_RFF", NS) + grp.findall(".//S_RFF")
     for rff in rffs:
