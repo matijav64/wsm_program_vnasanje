@@ -101,9 +101,9 @@ def _find_gln(nad: LET._Element) -> str:
 
 def _find_any_code(nad: LET._Element) -> str:
     """Return first ``D_3039`` value from NAD segment."""
-    code_el = nad.find(".//e:C_C082/e:D_3039", NS) or nad.find(
-        ".//C_C082/D_3039"
-    )
+    code_el = nad.find(".//e:C_C082/e:D_3039", NS)
+    if code_el is None:
+        code_el = nad.find(".//C_C082/D_3039")
     if code_el is None:
         for el in nad.iter():
             if el.tag.split("}")[-1] == "D_3039":
@@ -164,10 +164,12 @@ def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
             if nad is None:
                 continue
 
-            typ_el = nad.find("./e:D_3035", NS) or next(
-                (el for el in nad.iter() if el.tag.split("}")[-1] == "D_3035"),
-                None,
-            )
+            typ_el = nad.find("./e:D_3035", NS)
+            if typ_el is None:
+                typ_el = next(
+                    (el for el in nad.iter() if el.tag.split("}")[-1] == "D_3035"),
+                    None,
+                )
             typ = _text(typ_el)
             if typ not in {"SU", "SE"}:
                 continue
