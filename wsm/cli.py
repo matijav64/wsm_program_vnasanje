@@ -89,7 +89,7 @@ def _validate_file(file_path: Path):
 )
 def analyze(invoice, suppliers):
     """Prikaži združene postavke in preveri seštevek."""
-    suppliers_path = suppliers or os.getenv("WSM_SUPPLIERS", "links")
+    suppliers_path = suppliers or os.getenv("WSM_LINKS_DIR", "links")
     df, total, ok = analyze_invoice(invoice, suppliers_path)
     click.echo(df.to_string(index=False))
     status = "OK" if ok else "NESKLADJE"
@@ -142,16 +142,16 @@ def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct, use_pyqt):
         return
 
     invoice_path = Path(invoice)
-    suppliers_path = suppliers or os.getenv("WSM_SUPPLIERS", "links")
+    suppliers_path = suppliers or os.getenv("WSM_LINKS_DIR", "links")
     sifre_path = (
         Path(wsm_codes)
         if wsm_codes
-        else Path(os.getenv("WSM_CODES", "sifre_wsm.xlsx"))
+        else Path(os.getenv("WSM_CODES_FILE", "sifre_wsm.xlsx"))
     )
     keywords_path = (
         Path(keywords)
         if keywords
-        else Path(os.getenv("WSM_KEYWORDS", "kljucne_besede_wsm_kode.xlsx"))
+        else Path(os.getenv("WSM_KEYWORDS_FILE", "kljucne_besede_wsm_kode.xlsx"))
     )
     try:
         if invoice_path.suffix.lower() == ".xml":

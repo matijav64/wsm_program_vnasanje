@@ -241,7 +241,7 @@ def load_wsm_data(
 
     if keywords_path is None:
         keywords_path = os.getenv(
-            "WSM_KEYWORDS", "kljucne_besede_wsm_kode.xlsx"
+            "WSM_KEYWORDS_FILE", "kljucne_besede_wsm_kode.xlsx"
         )
 
     kw_all = pd.read_excel(keywords_path, dtype=str)
@@ -300,12 +300,12 @@ def povezi_z_wsm(
     Nove zadetke po ključnih besedah doda v datoteko povezav.
 
     ``keywords_path`` je neobvezen. Če ni podan, funkcija prebere
-    okoljsko spremenljivko ``WSM_KEYWORDS`` in privzeto uporabi
+    okoljsko spremenljivko ``WSM_KEYWORDS_FILE`` in privzeto uporabi
     ``kljucne_besede_wsm_kode.xlsx``.
     """
     if keywords_path is None:
         keywords_path = os.getenv(
-            "WSM_KEYWORDS", "kljucne_besede_wsm_kode.xlsx"
+            "WSM_KEYWORDS_FILE", "kljucne_besede_wsm_kode.xlsx"
         )
     if links_dir is None or supplier_code is None:
         raise TypeError("links_dir and supplier_code must be provided")

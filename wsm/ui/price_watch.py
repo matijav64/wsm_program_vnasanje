@@ -95,7 +95,7 @@ class PriceWatch(tk.Toplevel):
         self.title("Spremljanje cen")
         self.geometry("600x400")
 
-        self.suppliers_dir = Path(suppliers or os.getenv("WSM_SUPPLIERS", "links"))
+        self.suppliers_dir = Path(suppliers or os.getenv("WSM_LINKS_DIR", "links"))
         if not self.suppliers_dir.exists():
             self.withdraw()
             messagebox.showerror(
