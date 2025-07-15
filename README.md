@@ -61,19 +61,29 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    ```bash
    python -m wsm.cli
    ```
+4. Nastavite privzete poti z okoljskimi spremenljivkami:
+   ```bash
+   export WSM_LINKS_DIR=links
+   export WSM_CODES_FILE=sifre_wsm.xlsx
+   export WSM_KEYWORDS_FILE=kljucne_besede_wsm_kode.xlsx
+   ```
+   S tem lahko ukaze zaganjate brez dodatnih parametrov.
 
-4. Za osnovno validacijo računov lahko zaženete:
+
+5. Za osnovno validacijo računov lahko zaženete:
    ```bash
    python -m wsm.cli validate <mapa_z_racuni>
    ```
    kjer `<mapa_z_racuni>` vsebuje XML ali PDF datoteke z e‑računi.
 
-5. Za ročno povezovanje WSM šifer podajte pot do računa:
+6. Za ročno povezovanje WSM šifer podajte pot do računa:
    ```bash
+   WSM_LINKS_DIR=links \
+   WSM_CODES_FILE=sifre_wsm.xlsx \
+   WSM_KEYWORDS_FILE=kljucne_besede_wsm_kode.xlsx \
    python -m wsm.cli review <invoice.xml>
    ```
-  (po želji dodajte `--wsm-codes pot/do/sifre_wsm.xlsx`,
-  `--price-warn-pct <odstotek>` ali `--use-pyqt` za Qt različico)
+  (po želji dodajte `--price-warn-pct <odstotek>` ali `--use-pyqt` za Qt različico)
    Program odpre grafični vmesnik, kjer povezave shranjujete v podmapo
   `links/<davcna_stevilka>/` (oziroma `links/<ime_dobavitelja>`,
   če davčna številka ni znana). Posodobljene tabele najdete v datotekah
@@ -125,7 +135,7 @@ Za artikle, kjer masa na kos ni razvidna iz naziva, preverite slovar
 `WEIGHTS_PER_PIECE` v `wsm/constants.py`. Če naletite na novo kodo s
 stalno maso pakiranja, jo dodajte v ta slovar.
 
-6. Za spremljanje cen že povezanih artiklov odprite vmesnik **Price Watch**.
+7. Za spremljanje cen že povezanih artiklov odprite vmesnik **Price Watch**.
    V glavnem meniju (`python -m wsm.run`) je na voljo gumb "Spremljaj cene",
    vmesnik pa lahko po potrebi zaženete tudi neposredno s funkcijo
    `launch_price_watch`.
@@ -146,9 +156,9 @@ stalno maso pakiranja, jo dodajte v ta slovar.
    in je prikazana v stolpcu "€/kg|€/L". Graf pri dvokliku uporabi to
    vrednost, če je na voljo.
 
-7. Analizo in združevanje postavk lahko izvedete z:
+8. Analizo in združevanje postavk lahko izvedete z:
    ```bash
-   python -m wsm.cli analyze <invoice.xml> --suppliers links
+   WSM_LINKS_DIR=links python -m wsm.cli analyze <invoice.xml>
    ```
    Ukaz izpiše povzetek po WSM šifrah in preveri, ali se vsota ujema z
    vrednostjo na računu.
