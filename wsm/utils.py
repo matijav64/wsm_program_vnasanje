@@ -655,7 +655,11 @@ def load_last_price(label: str, suppliers_dir: Path) -> Decimal | None:
         if "time" not in df.columns:
             continue
 
-        df["price"] = df["unit_price"].fillna(df["line_netto"])
+        df["price"] = (
+            df["unit_price"]
+            .where(df["unit_price"].notna(), df["line_netto"])
+            .infer_objects(copy=False)
+        )
         if df["price"].isna().all():
             continue
 
