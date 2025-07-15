@@ -65,6 +65,9 @@ NS = {"e": "urn:eslog:2.00"}
 # identifiers.
 DEFAULT_DOC_DISCOUNT_CODES = ["204", "260", "131", "128", "176", "500"]
 
+# Qualifiers used for seller VAT identification in ``S_RFF`` segments.
+VAT_QUALIFIERS = {"VA", "0199", "AHP"}
+
 
 # helper functions -----------------------------------------------------
 def _find_gln(nad: ET.Element) -> str:
@@ -111,25 +114,22 @@ def _find_any_code(nad: ET.Element) -> str:
 def _find_vat(grp: ET.Element) -> str:
     """Return VAT number from related ``S_RFF`` segments."""
     vat_ahp = ""
-    for rff in grp.findall(".//e:S_RFF", NS):
-        rff_code = _text(rff.find("./e:C_C506/e:D_1153", NS))
-        if rff_code in {"VA", "0199"}:
-            vat_val = _text(rff.find("./e:C_C506/e:D_1154", NS))
-            if vat_val:
-                return vat_val
-        if not vat_ahp and rff_code == "AHP":
-            vat_ahp = _text(rff.find("./e:C_C506/e:D_1154", NS))
-
-    for rff in grp.findall(".//S_RFF"):
-        code_el = rff.find("./C_C506/D_1153")
-        val_el = rff.find("./C_C506/D_1154")
-        if code_el is not None and val_el is not None:
-            code = (code_el.text or "").strip()
-            val = (val_el.text or "").strip()
-            if code in {"VA", "0199"} and val:
+    rffs = grp.findall(".//e:S_RFF", NS) + grp.findall(".//S_RFF")
+    for rff in rffs:
+        code_el = rff.find("./e:C_C506/e:D_1153", NS)
+        if code_el is None:
+            code_el = rff.find("./C_C506/D_1153")
+        val_el = rff.find("./e:C_C506/e:D_1154", NS)
+        if val_el is None:
+            val_el = rff.find("./C_C506/D_1154")
+        code = _text(code_el)
+        val = _text(val_el)
+        if code in VAT_QUALIFIERS and val:
+            if code == "AHP":
+                if not vat_ahp:
+                    vat_ahp = val
+            else:
                 return val
-            if not vat_ahp and code == "AHP" and val:
-                vat_ahp = val
 
     return vat_ahp
 
@@ -220,7 +220,7 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
         for grp in groups:
             for rff in grp.findall(".//e:S_RFF", NS):
                 rff_code = _text(rff.find("./e:C_C506/e:D_1153", NS))
-                if rff_code in {"VA", "AHP", "0199"}:
+                if rff_code in VAT_QUALIFIERS:
                     vat_val = _text(rff.find("./e:C_C506/e:D_1154", NS))
                     if vat_val:
                         vat = vat_val
