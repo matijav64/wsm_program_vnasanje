@@ -27,16 +27,18 @@ def _norm_vat(s: str) -> str:
 
 
 def choose_supplier_key(vat: str | None, code: str | None = None) -> str:
-    """Return the normalized VAT number or ``""`` when unavailable.
+    """Return the normalized VAT number or a sanitized supplier code.
 
-    The ``code`` parameter is ignored.  The VAT number is normalized with
-    :func:`_norm_vat` and returned if non-empty.  Otherwise an empty string is
-    returned.
+    The VAT number is normalized with :func:`_norm_vat` and returned if
+    non-empty.  When no VAT is available, ``sanitize_folder_name(code)`` is
+    returned if ``code`` is provided.  Otherwise an empty string is returned.
     """
 
     vat_norm = _norm_vat(vat or "")
     if vat_norm:
         return vat_norm
+    if code:
+        return sanitize_folder_name(str(code))
     return ""
 
 

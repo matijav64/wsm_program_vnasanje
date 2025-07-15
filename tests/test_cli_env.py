@@ -143,11 +143,13 @@ def test_open_invoice_gui_uses_env_vars(monkeypatch, tmp_path):
 
     open_invoice_gui(invoice_path=invoice)
 
-    expected = suppliers_dir / "SUP_links_env_povezane.xlsx"
+    expected_dir = suppliers_dir / "SUP"
+    expected = expected_dir / "SUP_SUP_povezane.xlsx"
     assert captured["sup"] == suppliers_dir
     assert captured["codes"] == codes_file
     assert captured["links"] == expected
     assert captured["kw"] == keywords_file
+    assert expected_dir.exists()
 
 
 def test_cli_review_uses_vat_when_not_in_map(monkeypatch, tmp_path):
