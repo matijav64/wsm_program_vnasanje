@@ -1,4 +1,5 @@
 from pathlib import Path
+from decimal import Decimal
 from wsm.parsing import eslog
 
 
@@ -47,3 +48,13 @@ def test_parse_eslog_invoice_sets_supplier_when_missing(monkeypatch, tmp_path):
     df, ok = eslog.parse_eslog_invoice(xml_path)
     assert set(df["sifra_dobavitelja"]) == {"SUP"}
     assert ok
+
+def test_line_discount_is_applied():
+    xml = Path("tests/discount_line.xml")
+    df, ok = eslog.parse_eslog_invoice(xml)
+    assert ok
+    line = df.iloc[0]
+    assert line["rabata"] == Decimal("2.00")
+    assert line["vrednost"] == Decimal("18.00")
+    assert line["cena_bruto"] == Decimal("10")
+    assert line["cena_netto"] == Decimal("9.0000")
