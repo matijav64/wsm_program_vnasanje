@@ -13,7 +13,7 @@ def test_cli_analyze_reads_env_suppliers(monkeypatch, tmp_path):
     invoice.write_text("<xml/>")
 
     suppliers_dir = tmp_path / "links_env"
-    monkeypatch.setenv("WSM_SUPPLIERS", str(suppliers_dir))
+    monkeypatch.setenv("WSM_LINKS_DIR", str(suppliers_dir))
 
     captured = {}
 
@@ -40,9 +40,9 @@ def test_cli_review_uses_env_vars(monkeypatch, tmp_path):
     keywords_file = tmp_path / "kw.xlsx"
     keywords_file.write_text("dummy")
 
-    monkeypatch.setenv("WSM_SUPPLIERS", str(suppliers_dir))
-    monkeypatch.setenv("WSM_CODES", str(codes_file))
-    monkeypatch.setenv("WSM_KEYWORDS", str(keywords_file))
+    monkeypatch.setenv("WSM_LINKS_DIR", str(suppliers_dir))
+    monkeypatch.setenv("WSM_CODES_FILE", str(codes_file))
+    monkeypatch.setenv("WSM_KEYWORDS_FILE", str(keywords_file))
 
     captured = {}
 
@@ -101,9 +101,9 @@ def test_open_invoice_gui_uses_env_vars(monkeypatch, tmp_path):
     keywords_file = tmp_path / "kw.xlsx"
     keywords_file.write_text("dummy")
 
-    monkeypatch.setenv("WSM_SUPPLIERS", str(suppliers_dir))
-    monkeypatch.setenv("WSM_CODES", str(codes_file))
-    monkeypatch.setenv("WSM_KEYWORDS", str(keywords_file))
+    monkeypatch.setenv("WSM_LINKS_DIR", str(suppliers_dir))
+    monkeypatch.setenv("WSM_CODES_FILE", str(codes_file))
+    monkeypatch.setenv("WSM_KEYWORDS_FILE", str(keywords_file))
 
     captured = {}
 
@@ -163,9 +163,9 @@ def test_cli_review_uses_vat_when_not_in_map(monkeypatch, tmp_path):
     keywords_file = tmp_path / "kw.xlsx"
     keywords_file.write_text("dummy")
 
-    monkeypatch.setenv("WSM_SUPPLIERS", str(suppliers_dir))
-    monkeypatch.setenv("WSM_CODES", str(codes_file))
-    monkeypatch.setenv("WSM_KEYWORDS", str(keywords_file))
+    monkeypatch.setenv("WSM_LINKS_DIR", str(suppliers_dir))
+    monkeypatch.setenv("WSM_CODES_FILE", str(codes_file))
+    monkeypatch.setenv("WSM_KEYWORDS_FILE", str(keywords_file))
 
     captured = {}
 
@@ -220,9 +220,9 @@ def test_cli_review_prefers_vat_from_map(monkeypatch, tmp_path):
     keywords_file = tmp_path / "kw.xlsx"
     keywords_file.write_text("dummy")
 
-    monkeypatch.setenv("WSM_SUPPLIERS", str(suppliers_dir))
-    monkeypatch.setenv("WSM_CODES", str(codes_file))
-    monkeypatch.setenv("WSM_KEYWORDS", str(keywords_file))
+    monkeypatch.setenv("WSM_LINKS_DIR", str(suppliers_dir))
+    monkeypatch.setenv("WSM_CODES_FILE", str(codes_file))
+    monkeypatch.setenv("WSM_KEYWORDS_FILE", str(keywords_file))
 
     captured = {}
 

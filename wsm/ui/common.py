@@ -40,17 +40,17 @@ def open_invoice_gui(
     """Parse invoice and launch the review GUI.
 
     If ``suppliers`` or ``wsm_codes`` is not provided, the function reads the
-    paths from environment variables ``WSM_SUPPLIERS`` and ``WSM_CODES``.
+    paths from environment variables ``WSM_LINKS_DIR`` and ``WSM_CODES_FILE``.
     When neither is set, it falls back to ``links`` and ``sifre_wsm.xlsx`` in
     the current working directory.
     """
 
     if suppliers is None:
-        suppliers = Path(os.getenv("WSM_SUPPLIERS", "links"))
+        suppliers = Path(os.getenv("WSM_LINKS_DIR", "links"))
     if wsm_codes is None:
-        wsm_codes = Path(os.getenv("WSM_CODES", "sifre_wsm.xlsx"))
+        wsm_codes = Path(os.getenv("WSM_CODES_FILE", "sifre_wsm.xlsx"))
     if keywords is None:
-        keywords = Path(os.getenv("WSM_KEYWORDS", "kljucne_besede_wsm_kode.xlsx"))
+        keywords = Path(os.getenv("WSM_KEYWORDS_FILE", "kljucne_besede_wsm_kode.xlsx"))
     try:
         if invoice_path.suffix.lower() == ".xml":
             df, total, _ = analyze_invoice(str(invoice_path), str(suppliers))

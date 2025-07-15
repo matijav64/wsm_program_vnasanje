@@ -61,7 +61,7 @@ def test_povezi_z_wsm_reads_env(monkeypatch, tmp_path):
     pd.DataFrame({"wsm_sifra": ["100"], "wsm_naziv": ["Coca Cola"]}).to_excel(sifre_path, index=False)
 
     env_path = tmp_path / "env_keywords.xlsx"
-    monkeypatch.setenv("WSM_KEYWORDS", str(env_path))
+    monkeypatch.setenv("WSM_KEYWORDS_FILE", str(env_path))
 
     df_items = pd.DataFrame({
         "sifra_dobavitelja": ["SUP"],
