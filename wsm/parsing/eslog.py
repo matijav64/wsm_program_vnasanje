@@ -112,6 +112,16 @@ def _find_any_code(nad: LET._Element) -> str:
     return _text(code_el)
 
 
+def _find_rff(root: LET._Element, qualifier: str) -> str:
+    """Return ``D_1154`` value for the given RFF qualifier."""
+
+    path_ns = f'.//e:S_RFF/e:C_C506[e:D_1153="{qualifier}"]/e:D_1154'
+    path_no = f'.//S_RFF/C_C506[D_1153="{qualifier}"]/D_1154'
+
+    el = root.find(path_ns, NS) or root.find(path_no)
+    return _text(el)
+
+
 def _find_vat(grp: LET._Element) -> str:
     """Return VAT number from related ``S_RFF`` segments.
 
@@ -224,19 +234,14 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
             groups = [root]
 
         for grp in groups:
-            for rff in grp.findall(".//e:S_RFF", NS):
-                rff_code = _text(rff.find("./e:C_C506/e:D_1153", NS))
-                if rff_code in VAT_QUALIFIERS:
-                    vat_val = _text(rff.find("./e:C_C506/e:D_1154", NS))
-                    if vat_val:
-                        vat = vat_val
-                        break
-            if vat:
+            vat_val = _find_vat(grp)
+            if vat_val:
+                vat = vat_val
                 break
-            for com in grp.findall(".//e:S_COM", NS):
-                com_code = _text(com.find("./e:C_C076/e:D_3155", NS))
+            for com in grp.findall(".//e:S_COM", NS) + grp.findall(".//S_COM"):
+                com_code = _text(com.find("./e:C_C076/e:D_3155", NS)) or _text(com.find("./C_C076/D_3155"))
                 if com_code == "9949":
-                    vat_val = _text(com.find("./e:C_C076/e:D_3148", NS))
+                    vat_val = _text(com.find("./e:C_C076/e:D_3148", NS)) or _text(com.find("./C_C076/D_3148"))
                     if vat_val:
                         vat = vat_val
                         break

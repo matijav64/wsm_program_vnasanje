@@ -24,3 +24,8 @@ def test_get_supplier_info_uses_vat_when_no_gln():
     xml = Path("tests/vat_ahp_before_va.xml")
     code, _ = get_supplier_info(xml)
     assert code == "si 22222222"
+
+def test_get_supplier_info_vat_handles_plain_rff():
+    xml = Path("tests/Racun_st._25-24412.xml")
+    _, _, vat = get_supplier_info_vat(xml)
+    assert vat == "SI47083026"
