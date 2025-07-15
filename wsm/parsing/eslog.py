@@ -381,6 +381,44 @@ def extract_total_tax(xml_path: Path | str) -> Decimal:
         return Decimal("0")
 
 
+def sum_moa(root: LET._Element, codes: List[str]) -> Decimal:
+    """Return the sum of MOA amounts for the given codes.
+
+    The search includes ``G_SG50`` and ``G_SG20`` groups as well as
+    ``G_SG16`` segments.  Both namespaced and plain variants are
+    supported.  Duplicate MOA elements are ignored.
+    """
+
+    wanted = set(codes)
+    total = Decimal("0")
+    for seg in root.findall(".//e:G_SG50", NS):
+        for moa in seg.findall(".//e:S_MOA", NS):
+            code_el = moa.find("./e:C_C516/e:D_5025", NS)
+            if code_el is not None and _text(code_el) in wanted:
+                val = _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                total += val
+
+    for seg in root.findall(".//e:G_SG20", NS):
+        for moa in seg.findall(".//e:S_MOA", NS):
+            code_el = moa.find("./e:C_C516/e:D_5025", NS)
+            if code_el is not None and _text(code_el) in wanted:
+                val = _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                total += val
+
+    for sg16 in root.findall(".//e:G_SG16", NS) + root.findall(".//G_SG16"):
+        for moa in sg16.findall("./e:S_MOA", NS) + sg16.findall("./S_MOA"):
+            code_el = moa.find("./e:C_C516/e:D_5025", NS)
+            if code_el is None:
+                code_el = moa.find("./C_C516/D_5025")
+            if code_el is not None and _text(code_el) in wanted:
+                val_el = moa.find("./e:C_C516/e:D_5004", NS)
+                if val_el is None:
+                    val_el = moa.find("./C_C516/D_5004")
+                total += _decimal(val_el)
+
+    return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+
 def _get_document_discount(xml_root: LET._Element) -> Decimal:
     """Return document level discount from <DocumentDiscount> or MOA codes."""
     discount_el = xml_root.find("DocumentDiscount")
@@ -727,45 +765,7 @@ def parse_eslog_invoice(
         if extra not in discount_codes:
             discount_codes.append(extra)
 
-    discounts = {code: Decimal("0") for code in discount_codes}
-    seen_segments: set[tuple[str, Decimal, int]] = set()
-
-    for seg in root.findall(".//e:G_SG50", NS) + root.findall(
-        ".//e:G_SG20", NS
-    ):
-        for moa in seg.findall(".//e:S_MOA", NS):
-            code = _text(moa.find("./e:C_C516/e:D_5025", NS))
-            if code in discounts:
-                amt = _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(
-                    Decimal("0.01"), ROUND_HALF_UP
-                )
-                key = (code, amt, id(moa))
-                if key in seen_segments:
-                    continue
-                seen_segments.add(key)
-                discounts[code] += amt
-
-    for sg16 in root.findall(".//e:G_SG16", NS) + root.findall(".//G_SG16"):
-        for moa in sg16.findall("./e:S_MOA", NS) + sg16.findall("./S_MOA"):
-            code_el = moa.find("./e:C_C516/e:D_5025", NS)
-            if code_el is None:
-                code_el = moa.find("./C_C516/D_5025")
-            code = _text(code_el)
-            if code in discounts:
-                val_el = moa.find("./e:C_C516/e:D_5004", NS)
-                if val_el is None:
-                    val_el = moa.find("./C_C516/D_5004")
-                amt = _decimal(val_el).quantize(Decimal("0.01"), ROUND_HALF_UP)
-                key = (code, amt, id(moa))
-                if key in seen_segments:
-                    continue
-                seen_segments.add(key)
-                discounts[code] += amt
-
-    # Sum all discount code amounts instead of only the first
-    doc_discount = sum(
-        (discounts.get(code) or Decimal("0")) for code in discount_codes
-    ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    doc_discount = sum_moa(root, discount_codes)
 
     if doc_discount != 0:
         items.append(
