@@ -58,3 +58,36 @@ def test_line_discount_is_applied():
     assert line["vrednost"] == Decimal("18.00")
     assert line["cena_bruto"] == Decimal("10")
     assert line["cena_netto"] == Decimal("9.0000")
+
+
+def test_line_discount_factor():
+    xml = Path("tests/discount_line_factor.xml")
+    df, ok = eslog.parse_eslog_invoice(xml)
+    assert ok
+    line = df.iloc[0]
+    assert line["rabata"] == Decimal("2.00")
+    assert line["vrednost"] == Decimal("18.00")
+    assert line["cena_bruto"] == Decimal("10")
+    assert line["cena_netto"] == Decimal("9.0000")
+
+
+def test_line_discount_amount():
+    xml = Path("tests/discount_line_amount.xml")
+    df, ok = eslog.parse_eslog_invoice(xml)
+    assert ok
+    line = df.iloc[0]
+    assert line["rabata"] == Decimal("2.00")
+    assert line["vrednost"] == Decimal("18.00")
+    assert line["cena_bruto"] == Decimal("10")
+    assert line["cena_netto"] == Decimal("9.0000")
+
+
+def test_line_discount_moa_and_pcd_are_summed():
+    xml = Path("tests/discount_line_both.xml")
+    df, ok = eslog.parse_eslog_invoice(xml)
+    assert ok
+    line = df.iloc[0]
+    assert line["rabata"] == Decimal("3.00")
+    assert line["vrednost"] == Decimal("17.00")
+    assert line["cena_bruto"] == Decimal("10")
+    assert line["cena_netto"] == Decimal("8.5000")

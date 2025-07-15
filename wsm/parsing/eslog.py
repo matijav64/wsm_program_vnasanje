@@ -449,12 +449,22 @@ def _line_pct_discount(sg26: LET._Element) -> Decimal:
     for sg39 in sg26.findall(".//e:G_SG39", NS):
         if _text(sg39.find("./e:S_ALC/e:C_C552/e:D_5189", NS)) != "95":
             continue
-        if _text(sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5249", NS)) != "1":
+        qualifier = _text(
+            sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5249", NS)
+        )
+        if qualifier not in {"1", "2", "3"}:
             continue
-        pct = _decimal(sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5482", NS))
-        if pct == 0 or qty == 0:
+        val = _decimal(
+            sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5482", NS)
+        )
+        if val == 0 or qty == 0:
             continue
-        total += price_gross * qty * pct / Decimal("100")
+        if qualifier == "1":
+            total += price_gross * qty * val / Decimal("100")
+        elif qualifier == "2":
+            total += price_gross * qty * (Decimal("1") - val)
+        else:  # qualifier == "3"
+            total += val
 
     return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
@@ -652,7 +662,7 @@ def parse_eslog_invoice(
 
         # rabat na ravni vrstice
         rebate_moa = _line_discount(sg26)
-        pct_rebate = Decimal("0") if rebate_moa != 0 else _line_pct_discount(sg26)
+        pct_rebate = _line_pct_discount(sg26)
         rebate = rebate_moa + pct_rebate
         explicit_pct: Decimal | None = None
         for sg39 in sg26.findall(".//e:G_SG39", NS):
