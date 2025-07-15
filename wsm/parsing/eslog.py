@@ -429,6 +429,34 @@ def _line_discount(sg26: LET._Element) -> Decimal:
     return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 
+def _line_pct_discount(sg26: LET._Element) -> Decimal:
+    """Return discount amount calculated from ``G_SG39`` percentage values."""
+    total = Decimal("0")
+    qty = _decimal(sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
+    price_gross = Decimal("0")
+    for pri in sg26.findall(".//e:S_PRI", NS):
+        if _text(pri.find("./e:C_C509/e:D_5125", NS)) == "AAB":
+            price_gross = _decimal(pri.find("./e:C_C509/e:D_5118", NS))
+            break
+    if price_gross == 0:
+        for pri in sg26.findall(".//e:S_PRI", NS):
+            if _text(pri.find("./e:C_C509/e:D_5125", NS)) == "AAA":
+                price_gross = _decimal(pri.find("./e:C_C509/e:D_5118", NS))
+                break
+
+    for sg39 in sg26.findall(".//e:G_SG39", NS):
+        if _text(sg39.find("./e:S_ALC/e:C_C552/e:D_5189", NS)) != "95":
+            continue
+        if _text(sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5249", NS)) != "1":
+            continue
+        pct = _decimal(sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5482", NS))
+        if pct == 0 or qty == 0:
+            continue
+        total += price_gross * qty * pct / Decimal("100")
+
+    return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+
 def _line_net(sg26: LET._Element) -> Decimal:
     """Return net line amount from MOA 203 or compute from price and
     quantity."""
@@ -621,7 +649,9 @@ def parse_eslog_invoice(
                 break
 
         # rabat na ravni vrstice
-        rebate = _line_discount(sg26)
+        rebate_moa = _line_discount(sg26)
+        pct_rebate = Decimal("0") if rebate_moa != 0 else _line_pct_discount(sg26)
+        rebate = rebate_moa + pct_rebate
         explicit_pct: Decimal | None = None
         for sg39 in sg26.findall(".//e:G_SG39", NS):
             if _text(sg39.find("./e:S_ALC/e:D_5463", NS)) != "A":
