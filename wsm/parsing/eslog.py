@@ -716,6 +716,8 @@ def parse_eslog_invoice(
         )
 
     df = pd.DataFrame(items)
+    if "sifra_dobavitelja" in df.columns and not df["sifra_dobavitelja"].any():
+        df["sifra_dobavitelja"] = supplier_code
     if not df.empty:
         df.sort_values(
             ["sifra_dobavitelja", "naziv"], inplace=True, ignore_index=True
