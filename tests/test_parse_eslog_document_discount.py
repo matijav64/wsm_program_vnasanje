@@ -13,7 +13,12 @@ def _compute_doc_discount(xml_path: Path) -> Decimal:
     """Compute document discount sum the same way as parse_eslog_invoice."""
     NS = {"e": "urn:eslog:2.00"}
     root = ET.parse(xml_path).getroot()
-    discounts = {code: Decimal("0") for code in DEFAULT_DOC_DISCOUNT_CODES}
+    codes = list(DEFAULT_DOC_DISCOUNT_CODES)
+    for extra in ("204", "25"):
+        if extra not in codes:
+            codes.append(extra)
+
+    discounts = {code: Decimal("0") for code in codes}
     seen_segments = set()
 
     for seg in root.findall(".//e:G_SG50", NS) + root.findall(
@@ -34,11 +39,28 @@ def _compute_doc_discount(xml_path: Path) -> Decimal:
                 seen_segments.add(key)
                 discounts[code] += amt
 
+    for sg16 in root.findall(".//e:G_SG16", NS) + root.findall(".//G_SG16"):
+        for moa in sg16.findall("./e:S_MOA", NS) + sg16.findall("./S_MOA"):
+            code_el = moa.find("./e:C_C516/e:D_5025", NS)
+            if code_el is None:
+                code_el = moa.find("./C_C516/D_5025")
+            if code_el is None:
+                continue
+            code = code_el.text or ""
+            if code in discounts:
+                val_el = moa.find("./e:C_C516/e:D_5004", NS)
+                if val_el is None:
+                    val_el = moa.find("./C_C516/D_5004")
+                amt = Decimal((val_el.text or "0").replace(",", "."))
+                amt = amt.quantize(Decimal("0.01"), ROUND_HALF_UP)
+                key = (code, amt, id(moa))
+                if key in seen_segments:
+                    continue
+                seen_segments.add(key)
+                discounts[code] += amt
+
     # Sum all matching discount codes
-    doc_discount = sum(
-        (discounts.get(code) or Decimal("0"))
-        for code in DEFAULT_DOC_DISCOUNT_CODES
-    )
+    doc_discount = sum((discounts.get(code) or Decimal("0")) for code in codes)
     return doc_discount.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 
@@ -193,4 +215,14 @@ def test_parse_eslog_invoice_sums_duplicate_values(tmp_path):
     doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
 
     assert doc_row["vrednost"] == Decimal("-2.00")
+    assert doc_row["rabata_pct"] == Decimal("100.00")
+
+
+def test_parse_eslog_invoice_handles_sg16_level_discount(tmp_path):
+    xml_path = Path("tests/sg16_doc_discount.xml")
+    expected = _compute_doc_discount(xml_path)
+    df, _ = parse_eslog_invoice(xml_path)
+    doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
+
+    assert doc_row["vrednost"] == -expected
     assert doc_row["rabata_pct"] == Decimal("100.00")

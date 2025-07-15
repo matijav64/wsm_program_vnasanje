@@ -711,8 +711,13 @@ def parse_eslog_invoice(
 
     # ───────── DOCUMENT DISCOUNT (če obstaja) ─────────
     discount_codes = list(discount_codes or DEFAULT_DOC_DISCOUNT_CODES)
+    for extra in ("204", "25"):
+        if extra not in discount_codes:
+            discount_codes.append(extra)
+
     discounts = {code: Decimal("0") for code in discount_codes}
     seen_segments: set[tuple[str, Decimal, int]] = set()
+
     for seg in root.findall(".//e:G_SG50", NS) + root.findall(
         ".//e:G_SG20", NS
     ):
@@ -722,6 +727,23 @@ def parse_eslog_invoice(
                 amt = _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(
                     Decimal("0.01"), ROUND_HALF_UP
                 )
+                key = (code, amt, id(moa))
+                if key in seen_segments:
+                    continue
+                seen_segments.add(key)
+                discounts[code] += amt
+
+    for sg16 in root.findall(".//e:G_SG16", NS) + root.findall(".//G_SG16"):
+        for moa in sg16.findall("./e:S_MOA", NS) + sg16.findall("./S_MOA"):
+            code_el = moa.find("./e:C_C516/e:D_5025", NS)
+            if code_el is None:
+                code_el = moa.find("./C_C516/D_5025")
+            code = _text(code_el)
+            if code in discounts:
+                val_el = moa.find("./e:C_C516/e:D_5004", NS)
+                if val_el is None:
+                    val_el = moa.find("./C_C516/D_5004")
+                amt = _decimal(val_el).quantize(Decimal("0.01"), ROUND_HALF_UP)
                 key = (code, amt, id(moa))
                 if key in seen_segments:
                     continue
