@@ -455,7 +455,7 @@ def _line_discount(sg26: LET._Element) -> Decimal:
     total = Decimal("0")
     seen_ids: set[int] = set()
     seen_amounts: set[Decimal] = set()
-    for moa in sg26.findall(".//e:S_MOA", NS):
+    for moa in sg26.findall(".//e:S_MOA", NS) + sg26.findall(".//S_MOA"):
         if _text(moa.find("./e:C_C516/e:D_5025", NS)) == Moa.DISCOUNT.value:
             amount = _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(
                 Decimal("0.01"), ROUND_HALF_UP
