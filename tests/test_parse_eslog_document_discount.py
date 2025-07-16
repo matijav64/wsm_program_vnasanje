@@ -194,3 +194,11 @@ def test_parse_eslog_invoice_handles_sg20_level_discount(tmp_path):
     assert doc_row["vrednost"] == -expected
     assert doc_row["rabata_pct"] == Decimal("100.00")
 
+
+def test_header_net_matches_lines_with_moa204():
+    xml_path = Path("tests/header_net_204.xml")
+    df, ok = parse_eslog_invoice(xml_path)
+    assert ok
+    line_total = df[df["sifra_dobavitelja"] != "_DOC_"]["vrednost"].sum()
+    header_total = extract_header_net(xml_path)
+    assert line_total.quantize(Decimal("0.01")) == header_total
