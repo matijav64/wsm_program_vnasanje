@@ -349,9 +349,9 @@ def _invoice_total(
     if header_net != 0:
         net = header_net
     else:
-        net = line_net_total + doc_discount
+        net = line_net_total - doc_discount
 
-    return (net + doc_charge + tax_total).quantize(DEC2, ROUND_HALF_UP)
+    return (net + doc_charge + tax_total).quantize(DEC2, rounding=ROUND_HALF_UP)
 
 
 # ───────────────────── datum opravljene storitve ─────────────────────
