@@ -5,7 +5,6 @@ from click.testing import CliRunner
 
 import wsm.cli as cli
 from wsm.ui.common import open_invoice_gui
-from wsm.utils import sanitize_folder_name
 
 
 def test_cli_analyze_reads_env_suppliers(monkeypatch, tmp_path):
@@ -48,14 +47,16 @@ def test_cli_review_uses_env_vars(monkeypatch, tmp_path):
 
     def fake_analyze(inv, suppliers_file):
         captured["sup"] = suppliers_file
-        df = pd.DataFrame({
-            "sifra_dobavitelja": ["SUP"],
-            "naziv": ["Item"],
-            "kolicina": [Decimal("1")],
-            "enota": ["kos"],
-            "vrednost": [Decimal("1")],
-            "rabata": [Decimal("0")],
-        })
+        df = pd.DataFrame(
+            {
+                "sifra_dobavitelja": ["SUP"],
+                "naziv": ["Item"],
+                "kolicina": [Decimal("1")],
+                "enota": ["kos"],
+                "vrednost": [Decimal("1")],
+                "rabata": [Decimal("0")],
+            }
+        )
         return df, Decimal("1"), True
 
     def fake_read_excel(path, dtype=None):
@@ -68,7 +69,9 @@ def test_cli_review_uses_env_vars(monkeypatch, tmp_path):
         captured["links"] = links_file
         captured["pct"] = price_warn_pct
 
-    def fake_povezi(df, sifre, keywords_path=None, links_dir=None, supplier_code=None):
+    def fake_povezi(
+        df, sifre, keywords_path=None, links_dir=None, supplier_code=None
+    ):
         captured["kw"] = Path(keywords_path)
         return df
 
@@ -109,14 +112,16 @@ def test_open_invoice_gui_uses_env_vars(monkeypatch, tmp_path):
 
     def fake_analyze(inv, suppliers_file):
         captured["sup"] = Path(suppliers_file)
-        df = pd.DataFrame({
-            "sifra_dobavitelja": ["SUP"],
-            "naziv": ["Item"],
-            "kolicina": [Decimal("1")],
-            "enota": ["kos"],
-            "vrednost": [Decimal("1")],
-            "rabata": [Decimal("0")],
-        })
+        df = pd.DataFrame(
+            {
+                "sifra_dobavitelja": ["SUP"],
+                "naziv": ["Item"],
+                "kolicina": [Decimal("1")],
+                "enota": ["kos"],
+                "vrednost": [Decimal("1")],
+                "rabata": [Decimal("0")],
+            }
+        )
         return df, Decimal("1"), True
 
     def fake_read_excel(path, dtype=None):
@@ -129,7 +134,9 @@ def test_open_invoice_gui_uses_env_vars(monkeypatch, tmp_path):
         captured["links"] = links_file
         captured["pct"] = price_warn_pct
 
-    def fake_povezi(df, sifre, keywords_path=None, links_dir=None, supplier_code=None):
+    def fake_povezi(
+        df, sifre, keywords_path=None, links_dir=None, supplier_code=None
+    ):
         captured["kw"] = Path(keywords_path)
         return df
 
@@ -137,7 +144,9 @@ def test_open_invoice_gui_uses_env_vars(monkeypatch, tmp_path):
     monkeypatch.setattr("wsm.ui.common.pd.read_excel", fake_read_excel)
     monkeypatch.setattr("wsm.ui.common.review_links", fake_review_links)
     monkeypatch.setattr("wsm.utils.povezi_z_wsm", fake_povezi)
-    monkeypatch.setattr("wsm.ui.common.get_supplier_name", lambda p: "Test Supplier")
+    monkeypatch.setattr(
+        "wsm.ui.common.get_supplier_name", lambda p: "Test Supplier"
+    )
     monkeypatch.setattr("wsm.ui.common._load_supplier_map", lambda p: {})
     monkeypatch.setattr("tkinter.messagebox.showwarning", lambda *a, **k: None)
 
@@ -171,25 +180,31 @@ def test_cli_review_uses_vat_when_not_in_map(monkeypatch, tmp_path):
 
     def fake_analyze(inv, suppliers_file):
         captured["sup"] = suppliers_file
-        df = pd.DataFrame({
-            "sifra_dobavitelja": ["SUP"],
-            "naziv": ["Item"],
-            "kolicina": [Decimal("1")],
-            "enota": ["kos"],
-            "vrednost": [Decimal("1")],
-            "rabata": [Decimal("0")],
-        })
+        df = pd.DataFrame(
+            {
+                "sifra_dobavitelja": ["SUP"],
+                "naziv": ["Item"],
+                "kolicina": [Decimal("1")],
+                "enota": ["kos"],
+                "vrednost": [Decimal("1")],
+                "rabata": [Decimal("0")],
+            }
+        )
         return df, Decimal("1"), True
 
     def fake_read_excel(path, dtype=None):
         captured["codes"] = Path(path)
         return pd.DataFrame()
 
-    def fake_review_links(df, wsm_df, links_file, total, invoice_path, price_warn_pct=None):
+    def fake_review_links(
+        df, wsm_df, links_file, total, invoice_path, price_warn_pct=None
+    ):
         captured["links"] = links_file
         captured["pct"] = price_warn_pct
 
-    def fake_povezi(df, sifre, keywords_path=None, links_dir=None, supplier_code=None):
+    def fake_povezi(
+        df, sifre, keywords_path=None, links_dir=None, supplier_code=None
+    ):
         captured["kw"] = Path(keywords_path)
         return df
 
@@ -198,7 +213,9 @@ def test_cli_review_uses_vat_when_not_in_map(monkeypatch, tmp_path):
     monkeypatch.setattr("wsm.ui.review.gui.review_links", fake_review_links)
     monkeypatch.setattr("wsm.utils.povezi_z_wsm", fake_povezi)
     monkeypatch.setattr(cli, "get_supplier_name", lambda p: "Test Supplier")
-    monkeypatch.setattr("wsm.parsing.eslog.get_supplier_info_vat", lambda p: ("", "", "SI123"))
+    monkeypatch.setattr(
+        "wsm.parsing.eslog.get_supplier_info_vat", lambda p: ("", "", "SI123")
+    )
     monkeypatch.setattr(cli, "_load_supplier_map", lambda p: {})
 
     runner = CliRunner()
@@ -228,14 +245,16 @@ def test_cli_review_prefers_vat_from_map(monkeypatch, tmp_path):
 
     def fake_analyze(inv, suppliers_file):
         captured["sup"] = suppliers_file
-        df = pd.DataFrame({
-            "sifra_dobavitelja": ["SUP"],
-            "naziv": ["Item"],
-            "kolicina": [Decimal("1")],
-            "enota": ["kos"],
-            "vrednost": [Decimal("1")],
-            "rabata": [Decimal("0")],
-        })
+        df = pd.DataFrame(
+            {
+                "sifra_dobavitelja": ["SUP"],
+                "naziv": ["Item"],
+                "kolicina": [Decimal("1")],
+                "enota": ["kos"],
+                "vrednost": [Decimal("1")],
+                "rabata": [Decimal("0")],
+            }
+        )
         return df, Decimal("1"), True
 
     def fake_read_excel(path, dtype=None):
@@ -248,7 +267,9 @@ def test_cli_review_prefers_vat_from_map(monkeypatch, tmp_path):
         captured["links"] = links_file
         captured["pct"] = price_warn_pct
 
-    def fake_povezi(df, sifre, keywords_path=None, links_dir=None, supplier_code=None):
+    def fake_povezi(
+        df, sifre, keywords_path=None, links_dir=None, supplier_code=None
+    ):
         captured["kw"] = Path(keywords_path)
         return df
 
@@ -257,7 +278,11 @@ def test_cli_review_prefers_vat_from_map(monkeypatch, tmp_path):
     monkeypatch.setattr("wsm.ui.review.gui.review_links", fake_review_links)
     monkeypatch.setattr("wsm.utils.povezi_z_wsm", fake_povezi)
     monkeypatch.setattr(cli, "get_supplier_name", lambda p: "Test Supplier")
-    monkeypatch.setattr(cli, "_load_supplier_map", lambda p: {"SUP": {"ime": "Test Supplier", "vat": "SI777"}})
+    monkeypatch.setattr(
+        cli,
+        "_load_supplier_map",
+        lambda p: {"SUP": {"ime": "Test Supplier", "vat": "SI777"}},
+    )
 
     runner = CliRunner()
     result = runner.invoke(cli.main, ["review", str(invoice)])
@@ -277,14 +302,16 @@ def test_cli_review_passes_price_warn_pct(monkeypatch, tmp_path):
     captured = {}
 
     def fake_analyze(inv, suppliers_file):
-        df = pd.DataFrame({
-            "sifra_dobavitelja": ["SUP"],
-            "naziv": ["Item"],
-            "kolicina": [Decimal("1")],
-            "enota": ["kos"],
-            "vrednost": [Decimal("1")],
-            "rabata": [Decimal("0")],
-        })
+        df = pd.DataFrame(
+            {
+                "sifra_dobavitelja": ["SUP"],
+                "naziv": ["Item"],
+                "kolicina": [Decimal("1")],
+                "enota": ["kos"],
+                "vrednost": [Decimal("1")],
+                "rabata": [Decimal("0")],
+            }
+        )
         return df, Decimal("1"), True
 
     def fake_read_excel(path, dtype=None):
@@ -305,7 +332,14 @@ def test_cli_review_passes_price_warn_pct(monkeypatch, tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         cli.main,
-        ["review", str(invoice), "--wsm-codes", str(codes_file), "--price-warn-pct", "7.5"],
+        [
+            "review",
+            str(invoice),
+            "--wsm-codes",
+            str(codes_file),
+            "--price-warn-pct",
+            "7.5",
+        ],
     )
     assert result.exit_code == 0
     assert captured["pct"] == 7.5
