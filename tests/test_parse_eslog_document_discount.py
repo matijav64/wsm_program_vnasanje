@@ -29,7 +29,7 @@ def test_parse_eslog_invoice_returns_doc_discount_row():
 
     assert doc_row["vrednost"] == -expected_discount
     assert doc_row["rabata_pct"] == Decimal("100.00")
-    assert not ok
+    assert ok
 
 
 def test_parse_eslog_invoice_handles_additional_discount_codes(tmp_path):

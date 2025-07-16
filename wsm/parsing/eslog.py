@@ -13,6 +13,8 @@ ESLOG 2.0 (INVOIC) parser
 from __future__ import annotations
 import decimal
 from decimal import Decimal, ROUND_HALF_UP
+
+DEC2 = Decimal("0.01")
 from pathlib import Path
 import io
 import re
@@ -335,6 +337,23 @@ def _tax_rate_from_header(root: LET._Element) -> Decimal:
     return Decimal("0")
 
 
+def _invoice_total(
+    header_net: Decimal,
+    line_net_total: Decimal,
+    doc_discount: Decimal,
+    doc_charge: Decimal,
+    tax_total: Decimal,
+) -> Decimal:
+    """Return invoice gross total."""
+
+    if header_net != 0:
+        net = header_net
+    else:
+        net = line_net_total + doc_discount
+
+    return (net + doc_charge + tax_total).quantize(DEC2, ROUND_HALF_UP)
+
+
 # ───────────────────── datum opravljene storitve ─────────────────────
 def extract_service_date(xml_path: Path | str) -> str | None:
     """Vrne datum opravljene storitve (DTM 35) ali datum računa (DTM 137)."""
@@ -528,80 +547,74 @@ def _line_pct_discount(sg26: LET._Element) -> Decimal:
 
 
 def _line_net(sg26: LET._Element) -> Decimal:
-    """Return net line amount from MOA 203 or compute from price and
-    quantity."""
-    for moa in sg26.findall(".//e:S_MOA", NS):
-        code = _text(moa.find("./e:C_C516/e:D_5025", NS))
-        if code in {Moa.NET.value, "125"}:
-            return _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(
-                Decimal("0.01"), ROUND_HALF_UP
-            )
+    """Return net line amount without VAT or discounts."""
 
-    qty = _decimal(sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
+    for moa in sg26.findall('.//e:S_MOA', NS) + sg26.findall('.//S_MOA'):
+        code = _text(moa.find('./e:C_C516/e:D_5025', NS)) or _text(
+            moa.find('./C_C516/D_5025')
+        )
+        if code in {"203", "125"}:
+            val_el = moa.find('./e:C_C516/e:D_5004', NS)
+            if val_el is None:
+                val_el = moa.find('./C_C516/D_5004')
+            val = _decimal(val_el)
+            if val:
+                return val.quantize(DEC2, ROUND_HALF_UP)
 
-    price_net = Decimal("0")
-    for pri in sg26.findall(".//e:S_PRI", NS):
-        if _text(pri.find("./e:C_C509/e:D_5125", NS)) == "AAA":
-            price_net = _decimal(pri.find("./e:C_C509/e:D_5118", NS))
+    qty = _decimal(sg26.find('.//e:S_QTY/e:C_C186/e:D_6060', NS))
+    price = Decimal("0")
+    for pri in sg26.findall('.//e:S_PRI', NS) + sg26.findall('.//S_PRI'):
+        code = _text(pri.find('./e:C_C509/e:D_5125', NS)) or _text(
+            pri.find('./C_C509/D_5125')
+        )
+        if code == "AAA":
+            val_el = pri.find('./e:C_C509/e:D_5118', NS)
+            if val_el is None:
+                val_el = pri.find('./C_C509/D_5118')
+            price = _decimal(val_el)
             break
-
-    if price_net == 0:
-        price_gross = Decimal("0")
-        for pri in sg26.findall(".//e:S_PRI", NS):
-            if _text(pri.find("./e:C_C509/e:D_5125", NS)) == "AAB":
-                price_gross = _decimal(pri.find("./e:C_C509/e:D_5118", NS))
-                break
-
-        pct = Decimal("0")
-        pcd = sg26.find(".//e:S_PCD/e:C_C501/e:D_5482", NS)
-        if pcd is not None:
-            pct = _decimal(pcd)
-
-        if pct != 0 and price_gross != 0:
-            price_net = (
-                price_gross * (Decimal("1") - pct / Decimal("100"))
-            ).quantize(Decimal("0.0001"), ROUND_HALF_UP)
-        else:
-            price_net = price_gross
-
-    amount = (price_net * qty - _line_discount(sg26)).quantize(
-        Decimal("0.01"), ROUND_HALF_UP
-    )
+        if code == "AAB" and price == 0:
+            val_el = pri.find('./e:C_C509/e:D_5118', NS)
+            if val_el is None:
+                val_el = pri.find('./C_C509/D_5118')
+            price = _decimal(val_el)
+    amount = (price * qty - _line_discount(sg26)).quantize(DEC2, ROUND_HALF_UP)
     return amount
 
 
 def _line_tax(
     sg26: LET._Element, default_rate: Decimal | None = None
 ) -> Decimal:
-    """Return VAT amount for a line using MOA 124 or tax rate."""
-    total = Decimal("0")
-    for moa in sg26.findall(".//e:S_MOA", NS):
-        if _text(moa.find("./e:C_C516/e:D_5025", NS)) == Moa.VAT.value:
-            total += _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+    """Return VAT amount for a line."""
+    abs_tax = Decimal("0")
+    for moa in sg26.findall('.//e:G_SG34/e:S_MOA', NS) + sg26.findall('.//S_MOA'):
+        code = _text(moa.find('./e:C_C516/e:D_5025', NS)) or _text(
+            moa.find('./C_C516/D_5025')
+        )
+        if code == "124":
+            val_el = moa.find('./e:C_C516/e:D_5004', NS)
+            if val_el is None:
+                val_el = moa.find('./C_C516/D_5004')
+            abs_tax = _decimal(val_el)
+            if abs_tax:
+                return abs_tax.quantize(DEC2, ROUND_HALF_UP)
 
-    if total != 0:
-        return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
-
-    rate: Decimal | None = None
-    search_paths = [".//e:G_SG34/e:S_TAX", ".//e:G_SG52/e:S_TAX"]
-    for path in search_paths:
+    rate = None
+    for path in (".//e:G_SG34/e:S_TAX", ".//e:G_SG52/e:S_TAX"):
         for tax in sg26.findall(path, NS):
             r = _decimal(tax.find("./e:C_C243/e:D_5278", NS))
-            if r != 0:
+            if r:
                 rate = r / Decimal("100")
                 break
         if rate is not None:
             break
-
     if rate is None and default_rate:
         rate = default_rate
 
     if rate:
-        return (_line_net(sg26) * rate).quantize(
-            Decimal("0.01"), ROUND_HALF_UP
-        )
+        return (_line_net(sg26) * rate).quantize(DEC2, ROUND_HALF_UP)
 
-    return Decimal("0")
+    return Decimal("0.00")
 
 
 # ──────────────────── glavni parser za ESLOG INVOIC ────────────────────
@@ -893,14 +906,9 @@ def parse_eslog_invoice(
             ["sifra_dobavitelja", "naziv"], inplace=True, ignore_index=True
         )
 
-    if header_net != 0 and abs(net_total - header_net) <= Decimal("0.01"):
-        calculated_total = (net_total + doc_charge + tax_total).quantize(
-            Decimal("0.01"), ROUND_HALF_UP
-        )
-    else:
-        calculated_total = (
-            net_total - doc_discount + doc_charge + tax_total
-        ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    calculated_total = _invoice_total(
+        header_net, net_total, doc_discount, doc_charge, tax_total
+    )
     grand_total = extract_grand_total(xml_path)
     ok = True
     if grand_total != 0:
