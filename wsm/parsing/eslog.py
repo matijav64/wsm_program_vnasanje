@@ -639,6 +639,7 @@ def parse_eslog_invoice(
     tree = LET.parse(xml_path, parser=XML_PARSER)
     root = tree.getroot()
     header_rate = _tax_rate_from_header(root)
+    header_net = extract_header_net(root)
     items: List[Dict] = []
     net_total = Decimal("0")
     tax_total = Decimal("0")
@@ -888,9 +889,14 @@ def parse_eslog_invoice(
             ["sifra_dobavitelja", "naziv"], inplace=True, ignore_index=True
         )
 
-    calculated_total = (
-        net_total - doc_discount + doc_charge + tax_total
-    ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    if header_net != 0 and abs(net_total - header_net) <= Decimal("0.01"):
+        calculated_total = (
+            net_total + doc_charge + tax_total
+        ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    else:
+        calculated_total = (
+            net_total - doc_discount + doc_charge + tax_total
+        ).quantize(Decimal("0.01"), ROUND_HALF_UP)
     grand_total = extract_grand_total(xml_path)
     ok = True
     if grand_total != 0:

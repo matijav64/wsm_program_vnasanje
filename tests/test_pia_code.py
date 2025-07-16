@@ -14,7 +14,7 @@ def test_parse_eslog_invoice_reads_code_from_pia():
         "4025127088942",
         "4025127014002",
     ]
-    assert not ok
+    assert ok
 
 
 def test_analyze_invoice_groups_duplicate_pia_lines(tmp_path, monkeypatch):
