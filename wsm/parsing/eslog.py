@@ -874,14 +874,18 @@ def parse_invoice(source: str | Path):
         and root.find(".//e:M_INVOIC", NS) is not None
     ):
         df_items, ok = parse_eslog_invoice(xml_source)
-        header_total = extract_header_net(root if parsed_from_string else xml_source)
+        header_total = extract_header_net(
+            root if parsed_from_string else xml_source
+        )
+        # ───────────────────────── dokumentarni popusti ─────────────────────────
+        # V vrstici "_DOC_" se lahko pojavijo negativne vrednosti (allowance)
+        # in pozitivne (charge).  Popust naj vključuje le negativne zneske.
         doc_rows = df_items[df_items["sifra_dobavitelja"] == "_DOC_"]
-        if doc_rows.empty:
-            discount_total = Decimal("0")
-        else:
-            discount_total = (-doc_rows["vrednost"].sum()).quantize(
-                Decimal("0.01")
-            )
+        allow_total = doc_rows.loc[doc_rows["vrednost"] < 0, "vrednost"].sum()
+        discount_total = (-allow_total).quantize(Decimal("0.01"))
+
+        # Če želimo posebej slediti tudi pribitkom:
+        # charge_total = doc_rows.loc[doc_rows["vrednost"] > 0, "vrednost"].sum()
         df = pd.DataFrame(
             {
                 "cena_netto": df_items["cena_netto"],
