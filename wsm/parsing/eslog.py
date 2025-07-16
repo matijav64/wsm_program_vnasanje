@@ -66,6 +66,10 @@ NS = {"e": "urn:eslog:2.00"}
 # identifiers.
 DEFAULT_DOC_DISCOUNT_CODES = ["204", "260", "131", "128", "176", "500"]
 
+# Common document charge codes.  These represent additional amounts
+# that increase the invoice total.
+DEFAULT_DOC_CHARGE_CODES = ["504"]
+
 # Qualifiers used for seller VAT identification in ``S_RFF`` segments.
 VAT_QUALIFIERS = {"VA", "0199", "AHP"}
 
@@ -177,7 +181,11 @@ def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
             typ_el = nad.find("./e:D_3035", NS)
             if typ_el is None:
                 typ_el = next(
-                    (el for el in nad.iter() if el.tag.split("}")[-1] == "D_3035"),
+                    (
+                        el
+                        for el in nad.iter()
+                        if el.tag.split("}")[-1] == "D_3035"
+                    ),
                     None,
                 )
             typ = _text(typ_el)
@@ -239,9 +247,13 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
                 vat = vat_val
                 break
             for com in grp.findall(".//e:S_COM", NS) + grp.findall(".//S_COM"):
-                com_code = _text(com.find("./e:C_C076/e:D_3155", NS)) or _text(com.find("./C_C076/D_3155"))
+                com_code = _text(com.find("./e:C_C076/e:D_3155", NS)) or _text(
+                    com.find("./C_C076/D_3155")
+                )
                 if com_code == "9949":
-                    vat_val = _text(com.find("./e:C_C076/e:D_3148", NS)) or _text(com.find("./C_C076/D_3148"))
+                    vat_val = _text(
+                        com.find("./e:C_C076/e:D_3148", NS)
+                    ) or _text(com.find("./C_C076/D_3148"))
                     if vat_val:
                         vat = vat_val
                         break
@@ -497,9 +509,7 @@ def _line_pct_discount(sg26: LET._Element) -> Decimal:
         )
         if qualifier not in {"1", "2", "3"}:
             continue
-        val = _decimal(
-            sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5482", NS)
-        )
+        val = _decimal(sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5482", NS))
         if val == 0 or qty == 0:
             continue
         if qualifier == "1":
@@ -772,6 +782,8 @@ def parse_eslog_invoice(
 
     doc_discount = sum_moa(root, discount_codes)
 
+    doc_charge = sum_moa(root, DEFAULT_DOC_CHARGE_CODES)
+
     if doc_discount != 0:
         items.append(
             {
@@ -788,6 +800,22 @@ def parse_eslog_invoice(
             }
         )
 
+    if doc_charge != 0:
+        items.append(
+            {
+                "sifra_dobavitelja": "_DOC_CHARGE_",
+                "naziv": "Strošek na ravni računa",
+                "kolicina": Decimal("1"),
+                "enota": "",
+                "cena_bruto": doc_charge,
+                "cena_netto": doc_charge,
+                "rabata": Decimal("0"),
+                "rabata_pct": Decimal("0.00"),
+                "vrednost": doc_charge,
+                "is_gratis": False,
+            }
+        )
+
     df = pd.DataFrame(items)
     if "sifra_dobavitelja" in df.columns and not df["sifra_dobavitelja"].any():
         df["sifra_dobavitelja"] = supplier_code
@@ -796,9 +824,9 @@ def parse_eslog_invoice(
             ["sifra_dobavitelja", "naziv"], inplace=True, ignore_index=True
         )
 
-    calculated_total = (net_total - doc_discount + tax_total).quantize(
-        Decimal("0.01"), ROUND_HALF_UP
-    )
+    calculated_total = (
+        net_total - doc_discount + doc_charge + tax_total
+    ).quantize(Decimal("0.01"), ROUND_HALF_UP)
     grand_total = extract_grand_total(xml_path)
     ok = True
     if grand_total != 0:
@@ -820,7 +848,7 @@ def parse_invoice(source: str | Path):
     Vrne:
       • df: DataFrame s stolpci ['cena_netto', 'kolicina', 'rabata_pct',
         'izracunana_vrednost'] (vrednosti so Decimal v object stolpcih)
-      • header_total: Decimal (InvoiceTotal – DocumentDiscount)
+      • header_total: Decimal (InvoiceTotal – DocumentDiscount + DocumentCharge)
       • discount_total: Decimal (znesek dokumentarnega popusta)
     Uporablja se v CLI (wsm/cli.py).
     """
@@ -892,7 +920,7 @@ def parse_invoice(source: str | Path):
         df = pd.DataFrame(rows, dtype=object)
         return df, header_total, discount_total
 
-    # izvzamemo glavo (InvoiceTotal – DocumentDiscount)
+    # izvzamemo glavo (InvoiceTotal – DocumentDiscount + DocumentCharge)
     header_total = extract_total_amount(root)
     discount_total = _get_document_discount(root)
 
