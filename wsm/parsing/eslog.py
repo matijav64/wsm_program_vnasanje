@@ -14,6 +14,7 @@ from __future__ import annotations
 import decimal
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
+import io
 import re
 import logging
 from lxml import etree as LET
@@ -265,11 +266,15 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
 
 
 # ─────────────────────── vsota iz glave ───────────────────────
-def extract_header_net(xml_path: Path | str) -> Decimal:
+def extract_header_net(source: Path | str | LET._Element) -> Decimal:
     """Vrne znesek iz MOA 389 (neto brez DDV) oz. po potrebi iz MOA 79."""
     try:
-        tree = LET.parse(xml_path, parser=XML_PARSER)
-        root = tree.getroot()
+        if isinstance(source, LET._Element):
+            root = source
+        else:
+            tree = LET.parse(source, parser=XML_PARSER)
+            root = tree.getroot()
+
         for code in ("389", "79"):
             for moa in root.findall(".//e:G_SG50/e:S_MOA", NS):
                 if _text(moa.find("./e:C_C516/e:D_5025", NS)) == code:
@@ -853,21 +858,23 @@ def parse_invoice(source: str | Path):
     Uporablja se v CLI (wsm/cli.py).
     """
     # naložimo XML
+    xml_source = source
+    parsed_from_string = False
     if isinstance(source, (str, Path)) and Path(source).exists():
         tree = LET.parse(source, parser=XML_PARSER)
         root = tree.getroot()
     else:
+        parsed_from_string = True
         root = LET.fromstring(source, parser=XML_PARSER)
+        xml_source = io.BytesIO(source.encode())
 
     # Ali je pravi eSLOG (urn:eslog:2.00)?
     if (
         root.tag.endswith("Invoice")
         and root.find(".//e:M_INVOIC", NS) is not None
     ):
-        df_items, ok = parse_eslog_invoice(source)
-        header_total = extract_header_net(
-            Path(source) if isinstance(source, (str, Path)) else source
-        )
+        df_items, ok = parse_eslog_invoice(xml_source)
+        header_total = extract_header_net(root if parsed_from_string else xml_source)
         doc_rows = df_items[df_items["sifra_dobavitelja"] == "_DOC_"]
         if doc_rows.empty:
             discount_total = Decimal("0")
