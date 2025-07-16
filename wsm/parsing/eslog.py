@@ -772,6 +772,65 @@ def parse_eslog_invoice(
             }
         )
 
+        for ac in sg26.findall(".//e:AllowanceCharge", NS) + sg26.findall(
+            ".//AllowanceCharge"
+        ):
+            ind_el = ac.find("./e:ChargeIndicator", NS)
+            if ind_el is None:
+                ind_el = ac.find("./ChargeIndicator")
+            indicator = _text(ind_el).lower()
+
+            amt_el = ac.find("./e:Amount", NS)
+            if amt_el is None:
+                amt_el = ac.find("./Amount")
+            amount = _decimal(amt_el)
+            if indicator in {"true", "1"} and amount > 0:
+                desc_el = ac.find("./e:AllowanceChargeReason", NS)
+                if desc_el is None:
+                    desc_el = ac.find("./AllowanceChargeReason")
+                desc_ac = _text(desc_el)
+
+                code_el = ac.find("./e:AllowanceChargeReasonCode", NS)
+                if code_el is None:
+                    code_el = ac.find("./AllowanceChargeReasonCode")
+                code_ac = _text(code_el) or "_CHARGE_"
+
+                rate_el = ac.find(".//e:TaxCategory/e:Percent", NS)
+                if rate_el is None:
+                    rate_el = ac.find(".//TaxCategory/Percent")
+                vat_rate = _decimal(rate_el)
+
+                tax_el = ac.find(".//e:TaxTotal/e:TaxAmount", NS)
+                if tax_el is None:
+                    tax_el = ac.find(".//TaxTotal/TaxAmount")
+                vat_amount = _decimal(tax_el)
+                if vat_amount == 0 and vat_rate != 0:
+                    vat_amount = (
+                        amount * vat_rate / Decimal("100")
+                    ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+                net_total = (net_total + amount).quantize(
+                    Decimal("0.01"), ROUND_HALF_UP
+                )
+                tax_total = (tax_total + vat_amount).quantize(
+                    Decimal("0.01"), ROUND_HALF_UP
+                )
+                items.append(
+                    {
+                        "sifra_dobavitelja": code_ac,
+                        "naziv": desc_ac,
+                        "kolicina": Decimal("1"),
+                        "enota": "",
+                        "cena_bruto": amount,
+                        "cena_netto": amount,
+                        "rabata": Decimal("0"),
+                        "rabata_pct": Decimal("0.00"),
+                        "vrednost": amount,
+                        "ddv_stopnja": vat_rate,
+                        "is_gratis": False,
+                    }
+                )
+
     if tax_total == 0:
         default_rate = _tax_rate_from_header(root)
         if default_rate != 0:
