@@ -11,13 +11,20 @@ def test_analyze_invoice_merges_duplicates():
     df, total, ok = analyze.analyze_invoice(path)
     expected_discount = -_compute_doc_discount(path)
 
-    # Item 54490086 appears three times with the same discount; should be merged
-    row = df[(df["sifra_artikla"] == "54490086") & (df["rabata_pct"] == Decimal("4.99"))].iloc[0]
+    # Item 54490086 appears three times with the same discount;
+    # should be merged
+    row = df[
+        (df["sifra_artikla"] == "54490086")
+        & (df["rabata_pct"] == Decimal("4.99"))
+    ].iloc[0]
     assert row["kolicina"] == Decimal("72.00")
     assert row["vrednost"] == Decimal("50.25")
 
     # Another repeated item with weight normalization
-    row2 = df[(df["sifra_artikla"] == "5998710960798") & (df["rabata_pct"] == Decimal("5.04"))].iloc[0]
+    row2 = df[
+        (df["sifra_artikla"] == "5998710960798")
+        & (df["rabata_pct"] == Decimal("5.04"))
+    ].iloc[0]
     assert row2["kolicina"] == Decimal("3.200")
     assert row2["vrednost"] == Decimal("23.76")
 

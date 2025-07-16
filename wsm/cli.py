@@ -151,7 +151,9 @@ def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct, use_pyqt):
     keywords_path = (
         Path(keywords)
         if keywords
-        else Path(os.getenv("WSM_KEYWORDS_FILE", "kljucne_besede_wsm_kode.xlsx"))
+        else Path(
+            os.getenv("WSM_KEYWORDS_FILE", "kljucne_besede_wsm_kode.xlsx")
+        )
     )
     try:
         if invoice_path.suffix.lower() == ".xml":
