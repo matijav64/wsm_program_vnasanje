@@ -583,10 +583,14 @@ def _line_tax(
         return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
     rate: Decimal | None = None
-    for tax in sg26.findall(".//e:G_SG34/e:S_TAX", NS):
-        r = _decimal(tax.find("./e:C_C243/e:D_5278", NS))
-        if r != 0:
-            rate = r / Decimal("100")
+    search_paths = [".//e:G_SG34/e:S_TAX", ".//e:G_SG52/e:S_TAX"]
+    for path in search_paths:
+        for tax in sg26.findall(path, NS):
+            r = _decimal(tax.find("./e:C_C243/e:D_5278", NS))
+            if r != 0:
+                rate = r / Decimal("100")
+                break
+        if rate is not None:
             break
 
     if rate is None and default_rate:
@@ -806,9 +810,9 @@ def parse_eslog_invoice(
                     tax_el = ac.find(".//TaxTotal/TaxAmount")
                 vat_amount = _decimal(tax_el)
                 if vat_amount == 0 and vat_rate != 0:
-                    vat_amount = (
-                        amount * vat_rate / Decimal("100")
-                    ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+                    vat_amount = (amount * vat_rate / Decimal("100")).quantize(
+                        Decimal("0.01"), ROUND_HALF_UP
+                    )
 
                 net_total = (net_total + amount).quantize(
                     Decimal("0.01"), ROUND_HALF_UP
@@ -890,9 +894,9 @@ def parse_eslog_invoice(
         )
 
     if header_net != 0 and abs(net_total - header_net) <= Decimal("0.01"):
-        calculated_total = (
-            net_total + doc_charge + tax_total
-        ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+        calculated_total = (net_total + doc_charge + tax_total).quantize(
+            Decimal("0.01"), ROUND_HALF_UP
+        )
     else:
         calculated_total = (
             net_total - doc_discount + doc_charge + tax_total
