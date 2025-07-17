@@ -285,10 +285,9 @@ def _split_totals(
         ``(linked_total, unlinked_total, total_sum)``.
     """
 
-    if "is_gratis" in df.columns:
-        valid = df[~df["is_gratis"]]
-    else:
-        valid = df
+    valid = df.copy()
+    if "is_gratis" in valid.columns:
+        valid = valid[~valid["is_gratis"]]
 
     dd_total = (
         doc_discount_total
@@ -296,9 +295,10 @@ def _split_totals(
         else Decimal(str(doc_discount_total))
     )
 
-    linked_total = valid[valid["wsm_sifra"].notna()]["total_net"].sum()
-    unlinked_total = valid[valid["wsm_sifra"].isna()]["total_net"].sum()
-    if valid["wsm_sifra"].notna().any():
+    linked_mask = valid["wsm_sifra"].notna()
+    linked_total = valid[linked_mask]["total_net"].sum()
+    unlinked_total = valid[~linked_mask]["total_net"].sum()
+    if linked_mask.any():
         linked_total += dd_total
     else:
         unlinked_total += dd_total
