@@ -12,13 +12,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 from wsm.parsing.money import detect_round_step
-from wsm.utils import short_supplier_name, _clean
+from wsm.utils import short_supplier_name, _clean, _build_header_totals
 from wsm.constants import PRICE_DIFF_THRESHOLD
-from wsm.parsing.eslog import (
-    extract_header_net,
-    extract_total_tax,
-    extract_header_gross,
-)
 from .helpers import (
     _fmt,
     _norm_unit,
@@ -133,19 +128,8 @@ def review_links(
     log.info(f"Default name retrieved: {default_name}")
     log.debug(f"Supplier info: {supplier_info}")
 
-    header_totals = {
-        "net": invoice_total,
-        "vat": Decimal("0"),
-        "gross": invoice_total,
-    }
-    if invoice_path and invoice_path.suffix.lower() == ".xml":
-        try:
-            header_totals["net"] = extract_header_net(invoice_path)
-            header_totals["vat"] = extract_total_tax(invoice_path)
-            header_totals["gross"] = extract_header_gross(invoice_path)
-            invoice_total = header_totals["net"]
-        except Exception as exc:
-            log.warning(f"Napaka pri branju zneskov glave: {exc}")
+    header_totals = _build_header_totals(invoice_path, invoice_total)
+    invoice_total = header_totals["net"]
 
     try:
         manual_old = pd.read_excel(links_file, dtype=str)

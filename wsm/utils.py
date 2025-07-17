@@ -106,6 +106,43 @@ def short_supplier_name(name: str) -> str:
     return base.strip()
 
 
+def _build_header_totals(
+    invoice_path: Path | None, invoice_total: Decimal
+) -> dict[str, Decimal]:
+    """Return header ``net``, ``vat`` and ``gross`` amounts.
+
+    When ``invoice_path`` points to an XML invoice, the values are read
+    from the file.  If the extracted ``net`` is zero while both ``gross``
+    and ``vat`` are non-zero, ``net`` is replaced with ``gross - vat`` to
+    handle certain malformed invoices.  On any error or when the path is
+    not an XML file, ``invoice_total`` is used as the net and gross
+    amount and VAT defaults to ``0``.
+    """
+
+    totals = {"net": invoice_total, "vat": Decimal("0"), "gross": invoice_total}
+
+    if invoice_path and invoice_path.suffix.lower() == ".xml":
+        try:
+            from wsm.parsing.eslog import (
+                extract_header_net,
+                extract_total_tax,
+                extract_header_gross,
+            )
+
+            net = extract_header_net(invoice_path)
+            vat = extract_total_tax(invoice_path)
+            gross = extract_header_gross(invoice_path)
+
+            if net == 0 and vat != 0 and gross != 0:
+                net = gross - vat
+
+            totals = {"net": net, "vat": vat, "gross": gross}
+        except Exception as exc:  # pragma: no cover - robust against IO
+            log.warning(f"Napaka pri branju zneskov glave: {exc}")
+
+    return totals
+
+
 # Helper to retrieve the first real supplier code from a DataFrame. ``_DOC_``
 # rows appear in some invoices due to document-level discounts and should be
 # ignored when determining the main supplier.

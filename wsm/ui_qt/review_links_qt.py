@@ -30,7 +30,7 @@ from wsm.ui.review.helpers import (
 )
 from wsm.ui.review.io import _save_and_close, _load_supplier_map
 from wsm.parsing.money import detect_round_step
-from wsm.utils import short_supplier_name
+from wsm.utils import short_supplier_name, _build_header_totals
 
 log = logging.getLogger(__name__)
 
@@ -98,25 +98,8 @@ def review_links_qt(
     doc_discount_total = df_doc["vrednost"].sum()
     df = df[df["sifra_dobavitelja"] != "_DOC_"].reset_index(drop=True)
 
-    header_totals = {
-        "net": invoice_total,
-        "vat": Decimal("0"),
-        "gross": invoice_total,
-    }
-    if invoice_path and invoice_path.suffix.lower() == ".xml":
-        try:
-            from wsm.parsing.eslog import (
-                extract_header_net,
-                extract_total_tax,
-                extract_header_gross,
-            )
-
-            header_totals["net"] = extract_header_net(invoice_path)
-            header_totals["vat"] = extract_total_tax(invoice_path)
-            header_totals["gross"] = extract_header_gross(invoice_path)
-            invoice_total = header_totals["net"]
-        except Exception as exc:  # pragma: no cover - robust against IO errors
-            log.warning(f"Napaka pri branju zneskov glave: {exc}")
+    header_totals = _build_header_totals(invoice_path, invoice_total)
+    invoice_total = header_totals["net"]
 
     df["cena_pred_rabatom"] = df.apply(
         lambda r: (
