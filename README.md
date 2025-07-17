@@ -165,7 +165,8 @@ vrednostjo na računu.
 
 ### Namestitev razvojnih odvisnosti
 
-Pred zagonom testov namestite dodatne pakete iz datoteke `requirements-dev.txt`:
+Pred zagonom testov namestite pakete iz `requirements-dev.txt`. Datoteka že
+vključuje vse odvisnosti iz `requirements.txt`:
 
 ```bash
 pip install -r requirements-dev.txt
@@ -173,12 +174,12 @@ pip install -r requirements-dev.txt
 
 ### Poganjanje testov
 
-Pred zagonom `pytest` namestite pakete iz `requirements.txt` in, če obstaja,
-še `requirements-dev.txt`. Slednji vključuje `matplotlib` in `mplcursors`,
-ki sta potrebna za teste **Price Watch**:
+Za poganjanje `pytest` zadostuje, da izvedete zgornji ukaz, saj
+`requirements-dev.txt` samodejno povleče tudi vse pakete iz
+`requirements.txt`. Datoteka vključuje tudi `matplotlib` in `mplcursors`, ki
+sta potrebna za teste **Price Watch**:
 
 ```bash
-pip install -r requirements.txt
 pip install -r requirements-dev.txt
 pytest
 ```
