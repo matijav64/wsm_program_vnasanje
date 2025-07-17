@@ -7,7 +7,7 @@ shranjevanje zgodovine cen, ipd.
 from __future__ import annotations
 
 from pathlib import Path
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import os
 import re
 from typing import Tuple, Union, List, Dict
@@ -127,6 +127,7 @@ def _build_header_totals(
                 extract_header_net,
                 extract_total_tax,
                 extract_header_gross,
+                DEC2,
             )
 
             net = extract_header_net(invoice_path)
@@ -134,7 +135,7 @@ def _build_header_totals(
             gross = extract_header_gross(invoice_path)
 
             if net == 0 and vat != 0 and gross != 0:
-                net = gross - vat
+                net = (gross - vat).quantize(DEC2, ROUND_HALF_UP)
 
             totals = {"net": net, "vat": vat, "gross": gross}
         except Exception as exc:  # pragma: no cover - robust against IO
