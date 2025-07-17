@@ -139,7 +139,9 @@ def review_links_qt(
             )
         ]
     )
-    df["kolicina_norm"] = df["kolicina_norm"].astype(float)
+    # Keep ``kolicina_norm`` as ``Decimal`` to avoid losing precision in
+    # subsequent calculations and when saving the file. Previously the column
+    # was cast to ``float`` which could introduce rounding errors.
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
     win = QtWidgets.QMainWindow()
@@ -282,10 +284,14 @@ def review_links_qt(
         match_symbol = (
             "✓" if abs(total_sum - header_totals["net"]) <= step_total else "✗"
         )
-        total_label.setText(
-            f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = "
-            f"Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(header_totals['net'])} € {match_symbol}"
+        text = (
+            f"Skupaj povezano: {_fmt(linked_total)} € + "
+            f"Skupaj ostalo: {_fmt(unlinked_total)} € = "
+            f"Skupni seštevek: {_fmt(total_sum)} € | "
+            "Skupna vrednost računa: "
+            f"{_fmt(header_totals['net'])} € {match_symbol}"
         )
+        total_label.setText(text)
 
     update_summary()
 
