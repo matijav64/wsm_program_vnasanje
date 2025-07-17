@@ -562,7 +562,8 @@ def _line_net(sg26: LET._Element) -> Decimal:
                 return val.quantize(DEC2, ROUND_HALF_UP)
 
     qty = _decimal(sg26.find('.//e:S_QTY/e:C_C186/e:D_6060', NS))
-    price = Decimal("0")
+    price_net = Decimal("0")
+    price_gross = Decimal("0")
     for pri in sg26.findall('.//e:S_PRI', NS) + sg26.findall('.//S_PRI'):
         code = _text(pri.find('./e:C_C509/e:D_5125', NS)) or _text(
             pri.find('./C_C509/D_5125')
@@ -571,14 +572,39 @@ def _line_net(sg26: LET._Element) -> Decimal:
             val_el = pri.find('./e:C_C509/e:D_5118', NS)
             if val_el is None:
                 val_el = pri.find('./C_C509/D_5118')
-            price = _decimal(val_el)
+            price_net = _decimal(val_el)
             break
-        if code == "AAB" and price == 0:
+        if code == "AAB" and price_gross == 0:
             val_el = pri.find('./e:C_C509/e:D_5118', NS)
             if val_el is None:
                 val_el = pri.find('./C_C509/D_5118')
-            price = _decimal(val_el)
-    amount = (price * qty - _line_discount(sg26)).quantize(DEC2, ROUND_HALF_UP)
+            price_gross = _decimal(val_el)
+
+    if price_net == 0 and price_gross != 0:
+        pct = Decimal("0")
+        for sg39 in sg26.findall('.//e:G_SG39', NS) + sg26.findall('.//G_SG39'):
+            qualifier = _text(
+                sg39.find('./e:G_SG41/e:S_PCD/e:C_C501/e:D_5249', NS)
+            ) or _text(sg39.find('./G_SG41/S_PCD/C_C501/D_5249'))
+            if qualifier != "1":
+                continue
+            pct_el = sg39.find('./e:G_SG41/e:S_PCD/e:C_C501/e:D_5482', NS)
+            if pct_el is None:
+                pct_el = sg39.find('./G_SG41/S_PCD/C_C501/D_5482')
+            pct = _decimal(pct_el)
+            if pct != 0:
+                break
+
+        if pct != 0:
+            price_net = (
+                price_gross * (Decimal("1") - pct / Decimal("100"))
+            ).quantize(Decimal("0.0001"), ROUND_HALF_UP)
+        else:
+            price_net = price_gross
+    elif price_net == 0:
+        price_net = price_gross
+
+    amount = (price_net * qty - _line_discount(sg26)).quantize(DEC2, ROUND_HALF_UP)
     return amount
 
 
