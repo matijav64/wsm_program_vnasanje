@@ -19,50 +19,17 @@ from wsm.parsing.eslog import (
     extract_total_tax,
     extract_header_gross,
 )
-from .helpers import _fmt, _norm_unit, _merge_same_items, _split_totals
+from .helpers import (
+    _fmt,
+    _norm_unit,
+    _merge_same_items,
+    _split_totals,
+    _apply_price_warning,
+)
 from .io import _save_and_close, _load_supplier_map, _write_supplier_map
 
 # Logger setup
 log = logging.getLogger(__name__)
-
-
-def _apply_price_warning(
-    tree: ttk.Treeview,
-    item_id: str,
-    new_price: Decimal | float | int,
-    prev_price: Decimal | None,
-    *,
-    threshold: Decimal = PRICE_DIFF_THRESHOLD,
-) -> str | None:
-    """Highlight items where the unit price changed significantly.
-
-    When the absolute difference between ``new_price`` and ``prev_price`` does
-    not exceed two cents, the tag is removed and an empty string is returned so
-    that any existing tooltip text is cleared. Otherwise the price difference is
-    shown in euros if it exceeds ``threshold`` percent.
-    """
-    if prev_price is None or prev_price == 0:
-        tree.item(item_id, tags=())
-        return None
-
-    new_val = Decimal(str(new_price))
-    diff = (new_val - prev_price).quantize(Decimal("0.01"))
-    if abs(diff) <= Decimal("0.02"):
-        tree.item(item_id, tags=())
-        return ""
-
-    diff_pct = ((new_val - prev_price) / prev_price * Decimal("100")).quantize(
-        Decimal("0.01")
-    )
-
-    if abs(diff_pct) > threshold:
-        tree.item(item_id, tags=("price_warn",))
-        return f"±{diff:.2f} €"
-
-    tree.item(item_id, tags=())
-    return ""
-
-
 
 
 def review_links(
@@ -118,7 +85,10 @@ def review_links(
     invoice_number = None
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
-            from wsm.parsing.eslog import extract_service_date, extract_invoice_number
+            from wsm.parsing.eslog import (
+                extract_service_date,
+                extract_invoice_number,
+            )
 
             service_date = extract_service_date(invoice_path)
             invoice_number = extract_invoice_number(invoice_path)
@@ -126,7 +96,10 @@ def review_links(
             log.warning(f"Napaka pri branju glave računa: {exc}")
     elif invoice_path and invoice_path.suffix.lower() == ".pdf":
         try:
-            from wsm.parsing.pdf import extract_service_date, extract_invoice_number
+            from wsm.parsing.pdf import (
+                extract_service_date,
+                extract_invoice_number,
+            )
 
             service_date = extract_service_date(invoice_path)
             invoice_number = extract_invoice_number(invoice_path)
@@ -136,7 +109,10 @@ def review_links(
     inv_name = None
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
-            from wsm.parsing.eslog import get_supplier_name, get_supplier_info_vat
+            from wsm.parsing.eslog import (
+                get_supplier_name,
+                get_supplier_info_vat,
+            )
 
             inv_name = get_supplier_name(invoice_path)
             if not supplier_vat:
@@ -174,9 +150,15 @@ def review_links(
     try:
         manual_old = pd.read_excel(links_file, dtype=str)
         log.info("Processing complete")
-        log.info(f"Število prebranih povezav iz {links_file}: {len(manual_old)}")
-        log.debug(f"Primer povezav iz {links_file}: {manual_old.head().to_dict()}")
-        manual_old["sifra_dobavitelja"] = manual_old["sifra_dobavitelja"].fillna("").astype(str)
+        log.info(
+            f"Število prebranih povezav iz {links_file}: {len(manual_old)}"
+        )
+        log.debug(
+            f"Primer povezav iz {links_file}: {manual_old.head().to_dict()}"
+        )
+        manual_old["sifra_dobavitelja"] = (
+            manual_old["sifra_dobavitelja"].fillna("").astype(str)
+        )
         empty_sifra_old = manual_old["sifra_dobavitelja"].eq("")
         if empty_sifra_old.any():
             log.warning(
@@ -228,17 +210,23 @@ def review_links(
     ].to_dict()
     old_unit_dict = {}
     if "enota_norm" in manual_old.columns:
-        old_unit_dict = manual_old.set_index(["sifra_dobavitelja", "naziv_ckey"])[
-            "enota_norm"
-        ].to_dict()
+        old_unit_dict = manual_old.set_index(
+            ["sifra_dobavitelja", "naziv_ckey"]
+        )["enota_norm"].to_dict()
 
     df["naziv_ckey"] = df["naziv"].map(_clean)
     df["wsm_sifra"] = df.apply(
-        lambda r: old_map_dict.get((r["sifra_dobavitelja"], r["naziv_ckey"]), pd.NA),
+        lambda r: old_map_dict.get(
+            (r["sifra_dobavitelja"], r["naziv_ckey"]), pd.NA
+        ),
         axis=1,
     )
-    df["wsm_naziv"] = df["wsm_sifra"].map(wsm_df.set_index("wsm_sifra")["wsm_naziv"])
-    df["status"] = df["wsm_sifra"].notna().map({True: "POVEZANO", False: pd.NA})
+    df["wsm_naziv"] = df["wsm_sifra"].map(
+        wsm_df.set_index("wsm_sifra")["wsm_naziv"]
+    )
+    df["status"] = (
+        df["wsm_sifra"].notna().map({True: "POVEZANO", False: pd.NA})
+    )
     log.debug(f"df po inicializaciji: {df.head().to_dict()}")
 
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"]
@@ -260,14 +248,16 @@ def review_links(
         axis=1,
     )
     df["cena_po_rabatu"] = df.apply(
-        lambda r: r["vrednost"] / r["kolicina"] if r["kolicina"] else Decimal("0"),
+        lambda r: (
+            r["vrednost"] / r["kolicina"] if r["kolicina"] else Decimal("0")
+        ),
         axis=1,
     )
     df["rabata_pct"] = df.apply(
         lambda r: (
-            ((r["rabata"] / (r["vrednost"] + r["rabata"])) * Decimal("100")).quantize(
-                Decimal("0.01")
-            )
+            (
+                (r["rabata"] / (r["vrednost"] + r["rabata"])) * Decimal("100")
+            ).quantize(Decimal("0.01"))
             if (r["vrednost"] + r["rabata"])
             else Decimal("0.00")
         ),
@@ -283,7 +273,7 @@ def review_links(
                 df["enota"],
                 df["naziv"],
                 df["ddv_stopnja"],
-                df.get("sifra_artikla")
+                df.get("sifra_artikla"),
             )
         ]
     )
@@ -310,8 +300,6 @@ def review_links(
     # was cast to ``float`` which could introduce rounding errors.
     df["warning"] = pd.NA
     log.debug(f"df po normalizaciji: {df.head().to_dict()}")
-
-
 
     # Combine duplicate invoice lines except for gratis items
     df = _merge_same_items(df)
@@ -428,11 +416,17 @@ def review_links(
     totals_frame = tk.Frame(root)
     totals_frame.pack(anchor="w", padx=8, pady=(0, 12))
     tk.Label(totals_frame, text="Neto:").grid(row=0, column=0, sticky="w")
-    tk.Label(totals_frame, textvariable=var_net).grid(row=0, column=1, sticky="w", padx=(0, 12))
+    tk.Label(totals_frame, textvariable=var_net).grid(
+        row=0, column=1, sticky="w", padx=(0, 12)
+    )
     tk.Label(totals_frame, text="DDV:").grid(row=0, column=2, sticky="w")
-    tk.Label(totals_frame, textvariable=var_vat).grid(row=0, column=3, sticky="w", padx=(0, 12))
+    tk.Label(totals_frame, textvariable=var_vat).grid(
+        row=0, column=3, sticky="w", padx=(0, 12)
+    )
     tk.Label(totals_frame, text="Skupaj:").grid(row=0, column=4, sticky="w")
-    tk.Label(totals_frame, textvariable=var_total).grid(row=0, column=5, sticky="w")
+    tk.Label(totals_frame, textvariable=var_total).grid(
+        row=0, column=5, sticky="w"
+    )
 
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
@@ -463,7 +457,9 @@ def review_links(
         "WSM naziv",
         "Dobavitelj",
     ]
-    tree = ttk.Treeview(frame, columns=cols, show="headings", height=tree_height)
+    tree = ttk.Treeview(
+        frame, columns=cols, show="headings", height=tree_height
+    )
     tree.tag_configure("price_warn", background="orange")
     tree.tag_configure("gratis", background="#ffe6cc")  # oranžna
     tree.tag_configure("linked", background="#ffe6cc")
@@ -501,13 +497,12 @@ def review_links(
             log.warning("Napaka pri branju zadnje cene: %s", exc)
             prev_price = None
 
-        tooltip = _apply_price_warning(
-            tree,
-            str(i),
+        warn, tooltip = _apply_price_warning(
             row["cena_po_rabatu"],
             prev_price,
             threshold=price_warn_threshold,
         )
+        tree.item(str(i), tags=("price_warn",) if warn else ())
         df.at[i, "warning"] = tooltip
         if "is_gratis" in row and row["is_gratis"]:
             current_tags = tree.item(str(i)).get("tags", ())
@@ -525,7 +520,9 @@ def review_links(
     summary_frame = tk.Frame(root)
     summary_frame.pack(fill="both", expand=True, pady=10)
     tk.Label(
-        summary_frame, text="Povzetek po WSM šifrah", font=("Arial", 12, "bold")
+        summary_frame,
+        text="Povzetek po WSM šifrah",
+        font=("Arial", 12, "bold"),
     ).pack()
 
     summary_cols = [
@@ -561,7 +558,13 @@ def review_links(
     def _update_summary():
         for item in summary_tree.get_children():
             summary_tree.delete(item)
-        required = {"wsm_sifra", "vrednost", "rabata", "kolicina_norm", "rabata_pct"}
+        required = {
+            "wsm_sifra",
+            "vrednost",
+            "rabata",
+            "kolicina_norm",
+            "rabata_pct",
+        }
         if required.issubset(df.columns):
             summary_df = (
                 df[df["wsm_sifra"].notna()]
@@ -585,7 +588,9 @@ def review_links(
             summary_df["rabata_pct"] = [
                 (
                     (
-                        row["rabata"] / row["neto_brez_popusta"] * Decimal("100")
+                        row["rabata"]
+                        / row["neto_brez_popusta"]
+                        * Decimal("100")
                     ).quantize(Decimal("0.01"))
                     if row["neto_brez_popusta"]
                     else Decimal("0.00")
@@ -609,8 +614,14 @@ def review_links(
     total_frame = tk.Frame(root)
     total_frame.pack(fill="x", pady=5)
 
-    linked_total, unlinked_total, total_sum = _split_totals(df, doc_discount_total)
-    match_symbol = "✓" if abs(total_sum - header_totals["net"]) <= Decimal("0.02") else "✗"
+    linked_total, unlinked_total, total_sum = _split_totals(
+        df, doc_discount_total
+    )
+    match_symbol = (
+        "✓"
+        if abs(total_sum - header_totals["net"]) <= Decimal("0.02")
+        else "✗"
+    )
 
     tk.Label(
         total_frame,
@@ -637,7 +648,9 @@ def review_links(
             else Decimal(str(header_totals["net"]))
         )
 
-        calc_total = line_total + (dd_total if not df_doc.empty else Decimal("0"))
+        calc_total = line_total + (
+            dd_total if not df_doc.empty else Decimal("0")
+        )
         diff = inv_total - calc_total
         step = detect_round_step(inv_total, calc_total)
         if abs(diff) > step:
@@ -652,7 +665,9 @@ def review_links(
         linked_total, unlinked_total, total_sum = _split_totals(
             df, dd_total if not df_doc.empty else Decimal("0")
         )
-        match_symbol = "✓" if abs(total_sum - inv_total) <= Decimal("0.02") else "✗"
+        match_symbol = (
+            "✓" if abs(total_sum - inv_total) <= Decimal("0.02") else "✗"
+        )
         total_frame.children["total_sum"].config(
             text=(
                 f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = "
@@ -785,12 +800,16 @@ def review_links(
             return
         idx = int(row_id)
 
-        log.debug("Editing row %s current unit=%s", idx, df.at[idx, "enota_norm"])
+        log.debug(
+            "Editing row %s current unit=%s", idx, df.at[idx, "enota_norm"]
+        )
 
         top = tk.Toplevel(root)
         top.title("Spremeni enoto")
         var = tk.StringVar(value=df.at[idx, "enota_norm"])
-        cb = ttk.Combobox(top, values=unit_options, textvariable=var, state="readonly")
+        cb = ttk.Combobox(
+            top, values=unit_options, textvariable=var, state="readonly"
+        )
         cb.pack(padx=10, pady=10)
         log.debug("Edit dialog opened with value %s", var.get())
 
@@ -866,7 +885,9 @@ def review_links(
         if not sel_i:
             return "break"
         choice = (
-            lb.get(lb.curselection()[0]) if lb.curselection() else entry.get().strip()
+            lb.get(lb.curselection()[0])
+            if lb.curselection()
+            else entry.get().strip()
         )
         idx = int(sel_i)
         df.at[idx, "wsm_naziv"] = choice
@@ -887,13 +908,12 @@ def review_links(
             log.warning("Napaka pri branju zadnje cene: %s", exc)
             prev_price = None
 
-        tooltip = _apply_price_warning(
-            tree,
-            sel_i,
+        warn, tooltip = _apply_price_warning(
             df.at[idx, "cena_po_rabatu"],
             prev_price,
             threshold=price_warn_threshold,
         )
+        tree.item(sel_i, tags=("price_warn",) if warn else ())
 
         df.at[idx, "warning"] = tooltip
 
@@ -946,7 +966,9 @@ def review_links(
             for c in cols
         ]
         tree.item(sel_i, values=new_vals)
-        log.debug(f"Povezava odstranjena: idx={idx}, wsm_naziv=NaN, wsm_sifra=NaN")
+        log.debug(
+            f"Povezava odstranjena: idx={idx}, wsm_naziv=NaN, wsm_sifra=NaN"
+        )
         _update_summary()  # Update summary after clearing
         _update_totals()  # Update totals after clearing
         tree.focus_set()
@@ -986,7 +1008,12 @@ def review_links(
     entry.bind("<Return>", _confirm)
     entry.bind(
         "<Escape>",
-        lambda e: (lb.pack_forget(), entry.delete(0, "end"), tree.focus_set(), "break"),
+        lambda e: (
+            lb.pack_forget(),
+            entry.delete(0, "end"),
+            tree.focus_set(),
+            "break",
+        ),
     )
     lb.bind("<Return>", _confirm)
     lb.bind("<Double-Button-1>", _confirm)
