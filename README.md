@@ -160,8 +160,16 @@ stalno maso pakiranja, jo dodajte v ta slovar.
    ```bash
    WSM_LINKS_DIR=links python -m wsm.cli analyze <invoice.xml>
    ```
-   Ukaz izpiše povzetek po WSM šifrah in preveri, ali se vsota ujema z
-   vrednostjo na računu.
+Ukaz izpiše povzetek po WSM šifrah in preveri, ali se vsota ujema z
+vrednostjo na računu.
+
+### Namestitev razvojnih odvisnosti
+
+Pred zagonom testov namestite dodatne pakete iz datoteke `requirements-dev.txt`:
+
+```bash
+pip install -r requirements-dev.txt
+```
 
 ### Poganjanje testov
 
