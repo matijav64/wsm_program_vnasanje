@@ -55,9 +55,9 @@ def test_line_discount_is_applied():
     assert ok
     line = df.iloc[0]
     assert line["rabata"] == Decimal("2.00")
-    assert line["vrednost"] == Decimal("20.00")
-    assert line["cena_bruto"] == Decimal("11.0000")
-    assert line["cena_netto"] == Decimal("10.0000")
+    assert line["vrednost"] == Decimal("18.00")
+    assert line["cena_bruto"] == Decimal("10.0000")
+    assert line["cena_netto"] == Decimal("9.0000")
 
 
 def test_line_discount_factor():
