@@ -128,6 +128,7 @@ def review_links_qt(
         axis=1,
     )
     df["total_net"] = df["vrednost"]
+    df["is_gratis"] = df["rabata_pct"] >= Decimal("99.9")
     df["kolicina_norm"], df["enota_norm"] = zip(
         *[
             _norm_unit(Decimal(str(q)), u, n, vat, code)
