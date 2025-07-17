@@ -22,7 +22,12 @@ except Exception as exc:  # pragma: no cover - optional dependency
     raise ImportError("PyQt5 is required for the Qt GUI") from exc
 
 from wsm.constants import PRICE_DIFF_THRESHOLD
-from wsm.ui.review.helpers import _fmt, _norm_unit, _split_totals
+from wsm.ui.review.helpers import (
+    _fmt,
+    _norm_unit,
+    _split_totals,
+    _apply_price_warning,
+)
 from wsm.ui.review.io import _save_and_close, _load_supplier_map
 from wsm.parsing.money import detect_round_step
 from wsm.utils import short_supplier_name
@@ -33,7 +38,13 @@ log = logging.getLogger(__name__)
 class _WsmDelegate(QtWidgets.QStyledItemDelegate):
     """Delegate with a completer for the WSM name column."""
 
-    def __init__(self, names: list[str], name_to_code: dict[str, str], code_col: int, parent=None):
+    def __init__(
+        self,
+        names: list[str],
+        name_to_code: dict[str, str],
+        code_col: int,
+        parent=None,
+    ):
         super().__init__(parent)
         self._names = names
         self._name_to_code = name_to_code
@@ -57,19 +68,6 @@ class _WsmDelegate(QtWidgets.QStyledItemDelegate):
         model.setData(model.index(index.row(), self._code_col), code)
 
 
-def _apply_price_warning(item: QtWidgets.QTableWidgetItem, new_price: Decimal, prev_price: Decimal | None,
-                         threshold: Decimal = PRICE_DIFF_THRESHOLD) -> None:
-    """Highlight ``item`` if ``new_price`` differs from ``prev_price``."""
-    if prev_price is None or prev_price == 0:
-        item.setBackground(QtGui.QBrush())
-        return
-    diff_pct = ((Decimal(str(new_price)) - prev_price) / prev_price * Decimal("100")).quantize(Decimal("0.01"))
-    if abs(diff_pct) > threshold:
-        item.setBackground(QtGui.QColor("orange"))
-    else:
-        item.setBackground(QtGui.QBrush())
-
-
 def review_links_qt(
     df: pd.DataFrame,
     wsm_df: pd.DataFrame,
@@ -81,13 +79,19 @@ def review_links_qt(
     """Interactively map supplier invoice rows to WSM items using PyQt."""
 
     df = df.copy()
-    price_warn_threshold = Decimal(str(price_warn_pct)) if price_warn_pct is not None else PRICE_DIFF_THRESHOLD
+    price_warn_threshold = (
+        Decimal(str(price_warn_pct))
+        if price_warn_pct is not None
+        else PRICE_DIFF_THRESHOLD
+    )
 
     supplier_code = links_file.stem.split("_")[0]
     suppliers_file = links_file.parent.parent
     sup_map = _load_supplier_map(suppliers_file)
     supplier_info = sup_map.get(supplier_code, {})
-    supplier_name = short_supplier_name(supplier_info.get("ime", supplier_code))
+    supplier_name = short_supplier_name(
+        supplier_info.get("ime", supplier_code)
+    )
     supplier_vat = supplier_info.get("vat")
 
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"]
@@ -115,16 +119,27 @@ def review_links_qt(
             log.warning(f"Napaka pri branju zneskov glave: {exc}")
 
     df["cena_pred_rabatom"] = df.apply(
-        lambda r: (r["vrednost"] + r["rabata"]) / r["kolicina"] if r["kolicina"] else Decimal("0"),
+        lambda r: (
+            (r["vrednost"] + r["rabata"]) / r["kolicina"]
+            if r["kolicina"]
+            else Decimal("0")
+        ),
         axis=1,
     )
     df["cena_po_rabatu"] = df.apply(
-        lambda r: r["vrednost"] / r["kolicina"] if r["kolicina"] else Decimal("0"),
+        lambda r: (
+            r["vrednost"] / r["kolicina"] if r["kolicina"] else Decimal("0")
+        ),
         axis=1,
     )
     df["rabata_pct"] = df.apply(
-        lambda r: ((r["rabata"] / (r["vrednost"] + r["rabata"])) * Decimal("100")).quantize(Decimal("0.01"))
-        if (r["vrednost"] + r["rabata"]) else Decimal("0.00"),
+        lambda r: (
+            (
+                (r["rabata"] / (r["vrednost"] + r["rabata"])) * Decimal("100")
+            ).quantize(Decimal("0.01"))
+            if (r["vrednost"] + r["rabata"])
+            else Decimal("0.00")
+        ),
         axis=1,
     )
     df["total_net"] = df["vrednost"]
@@ -137,13 +152,11 @@ def review_links_qt(
                 df["enota"],
                 df["naziv"],
                 df["ddv_stopnja"],
-                df.get("sifra_artikla")
+                df.get("sifra_artikla"),
             )
         ]
     )
     df["kolicina_norm"] = df["kolicina_norm"].astype(float)
-
-
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
     win = QtWidgets.QMainWindow()
@@ -167,17 +180,19 @@ def review_links_qt(
         "wsm_sifra",
     ]
     table = QtWidgets.QTableWidget(len(df), len(cols))
-    table.setHorizontalHeaderLabels([
-        "Naziv",
-        "Količina",
-        "Enota",
-        "Rabat %",
-        "Net. pred rab.",
-        "Net. po rab.",
-        "Skupna neto",
-        "WSM naziv",
-        "WSM šifra",
-    ])
+    table.setHorizontalHeaderLabels(
+        [
+            "Naziv",
+            "Količina",
+            "Enota",
+            "Rabat %",
+            "Net. pred rab.",
+            "Net. po rab.",
+            "Skupna neto",
+            "WSM naziv",
+            "WSM šifra",
+        ]
+    )
     layout.addWidget(table)
     name_to_code = dict(zip(wsm_df["wsm_naziv"], wsm_df["wsm_sifra"]))
     names = list(name_to_code.keys())
@@ -204,16 +219,18 @@ def review_links_qt(
         # price warning coloring
         try:
             from wsm.utils import load_last_price
+
             label = f"{r['sifra_dobavitelja']} - {r['naziv']}"
             prev_price = load_last_price(label, suppliers_file)
         except Exception:  # pragma: no cover - ignore IO errors
             prev_price = None
-        _apply_price_warning(
-            table.item(row, cols.index("cena_po_rabatu")),
+        warn, _ = _apply_price_warning(
             r["cena_po_rabatu"],
             prev_price,
             threshold=price_warn_threshold,
         )
+        item = table.item(row, cols.index("cena_po_rabatu"))
+        item.setBackground(QtGui.QColor("orange") if warn else QtGui.QBrush())
 
     summary = QtWidgets.QTableWidget()
     layout.addWidget(summary)
@@ -223,25 +240,43 @@ def review_links_qt(
     def update_summary() -> None:
         for i in range(summary.rowCount()):
             summary.removeRow(0)
-        required = {"wsm_sifra", "vrednost", "rabata", "kolicina_norm", "rabata_pct"}
+        required = {
+            "wsm_sifra",
+            "vrednost",
+            "rabata",
+            "kolicina_norm",
+            "rabata_pct",
+        }
         if required.issubset(df.columns):
             summary_df = (
                 df[df["wsm_sifra"].notna()]
                 .groupby(["wsm_sifra", "rabata_pct"], dropna=False)
-                .agg({"vrednost": "sum", "rabata": "sum", "kolicina_norm": "sum"})
+                .agg(
+                    {
+                        "vrednost": "sum",
+                        "rabata": "sum",
+                        "kolicina_norm": "sum",
+                    }
+                )
                 .reset_index()
             )
-            summary_df["neto_brez_popusta"] = summary_df["vrednost"] + summary_df["rabata"]
-            summary_df["wsm_naziv"] = summary_df["wsm_sifra"].map(wsm_df.set_index("wsm_sifra")["wsm_naziv"])
+            summary_df["neto_brez_popusta"] = (
+                summary_df["vrednost"] + summary_df["rabata"]
+            )
+            summary_df["wsm_naziv"] = summary_df["wsm_sifra"].map(
+                wsm_df.set_index("wsm_sifra")["wsm_naziv"]
+            )
             summary.setColumnCount(6)
-            summary.setHorizontalHeaderLabels([
-                "WSM šifra",
-                "WSM naziv",
-                "Količina",
-                "Znesek",
-                "Rabat %",
-                "Neto po rabatu",
-            ])
+            summary.setHorizontalHeaderLabels(
+                [
+                    "WSM šifra",
+                    "WSM naziv",
+                    "Količina",
+                    "Znesek",
+                    "Rabat %",
+                    "Neto po rabatu",
+                ]
+            )
             summary.setRowCount(len(summary_df))
             for r_i, sr in summary_df.iterrows():
                 vals = [
@@ -253,11 +288,17 @@ def review_links_qt(
                     _fmt(sr["vrednost"]),
                 ]
                 for c_i, v in enumerate(vals):
-                    summary.setItem(r_i, c_i, QtWidgets.QTableWidgetItem(str(v)))
+                    summary.setItem(
+                        r_i, c_i, QtWidgets.QTableWidgetItem(str(v))
+                    )
 
-        linked_total, unlinked_total, total_sum = _split_totals(df, doc_discount_total)
+        linked_total, unlinked_total, total_sum = _split_totals(
+            df, doc_discount_total
+        )
         step_total = detect_round_step(header_totals["net"], total_sum)
-        match_symbol = "✓" if abs(total_sum - header_totals["net"]) <= step_total else "✗"
+        match_symbol = (
+            "✓" if abs(total_sum - header_totals["net"]) <= step_total else "✗"
+        )
         total_label.setText(
             f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = "
             f"Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(header_totals['net'])} € {match_symbol}"
@@ -274,7 +315,10 @@ def review_links_qt(
 
     def gather_df() -> pd.DataFrame:
         for row in range(table.rowCount()):
-            df.at[row, "wsm_naziv"] = table.item(row, cols.index("wsm_naziv")).text().strip() or pd.NA
+            df.at[row, "wsm_naziv"] = (
+                table.item(row, cols.index("wsm_naziv")).text().strip()
+                or pd.NA
+            )
             code = table.item(row, cols.index("wsm_sifra")).text().strip()
             df.at[row, "wsm_sifra"] = code or pd.NA
             df.at[row, "dobavitelj"] = supplier_name

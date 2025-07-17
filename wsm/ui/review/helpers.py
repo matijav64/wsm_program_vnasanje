@@ -7,7 +7,10 @@ import re
 from decimal import Decimal
 from typing import Tuple
 
-from wsm.constants import WEIGHTS_PER_PIECE, PRICE_DIFF_THRESHOLD as DEFAULT_PRICE_DIFF_THRESHOLD
+from wsm.constants import (
+    WEIGHTS_PER_PIECE,
+    PRICE_DIFF_THRESHOLD as DEFAULT_PRICE_DIFF_THRESHOLD,
+)
 
 import pandas as pd
 
@@ -16,7 +19,9 @@ log = logging.getLogger(__name__)
 # Threshold for price change warnings in percent used by GUI
 _env_threshold = os.getenv("WSM_PRICE_WARN_PCT")
 PRICE_DIFF_THRESHOLD = (
-    Decimal(_env_threshold) if _env_threshold is not None else DEFAULT_PRICE_DIFF_THRESHOLD
+    Decimal(_env_threshold)
+    if _env_threshold is not None
+    else DEFAULT_PRICE_DIFF_THRESHOLD
 )
 
 
@@ -177,9 +182,7 @@ def _norm_unit(
         m_frac = _rx_fraction.search(name)
         if m_frac:
             val = _dec(m_frac.group(1))
-            log.debug(
-                f"Fractional volume detected: {val}/1 -> using {val} L"
-            )
+            log.debug(f"Fractional volume detected: {val}/1 -> using {val} L")
             return q_norm * val, "L"
         log.debug("VAT rate 9.5% detected -> using 'kg' as fallback unit")
         base_unit = "kg"
@@ -209,7 +212,9 @@ def _norm_unit(
             )
             return q_norm * conv, "L"
 
-        log.debug("Fractional piece quantity detected -> using 'kg' as fallback unit")
+        log.debug(
+            "Fractional piece quantity detected -> using 'kg' as fallback unit"
+        )
         return q_norm, "kg"
 
     log.debug(f"Končna normalizacija: q_norm={q_norm}, base_unit={base_unit}")
@@ -260,7 +265,9 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     return pd.concat([merged, gratis], ignore_index=True)
 
 
-def _split_totals(df: pd.DataFrame, doc_discount_total: Decimal) -> tuple[Decimal, Decimal, Decimal]:
+def _split_totals(
+    df: pd.DataFrame, doc_discount_total: Decimal
+) -> tuple[Decimal, Decimal, Decimal]:
     """Return linked, unlinked and combined totals for review tables.
 
     Parameters
@@ -298,3 +305,46 @@ def _split_totals(df: pd.DataFrame, doc_discount_total: Decimal) -> tuple[Decima
 
     total_sum = linked_total + unlinked_total
     return linked_total, unlinked_total, total_sum
+
+
+def _apply_price_warning(
+    new_price: Decimal | float | int,
+    prev_price: Decimal | None,
+    *,
+    threshold: Decimal = PRICE_DIFF_THRESHOLD,
+) -> tuple[bool, str | None]:
+    """Return price warning info for ``new_price`` compared to ``prev_price``.
+
+    Parameters
+    ----------
+    new_price : Decimal | float | int
+        Latest unit price.
+    prev_price : Decimal | None
+        Previous unit price or ``None`` when unavailable.
+    threshold : Decimal, optional
+        Warning threshold as percent difference.
+
+    Returns
+    -------
+    tuple[bool, str | None]
+        ``(warn, tooltip)`` where ``warn`` indicates whether the price change
+        exceeds ``threshold`` and ``tooltip`` is the text for GUI display. When
+        ``prev_price`` is ``None`` the tooltip is ``None`` and ``warn`` is
+        ``False``.
+    """
+    if prev_price is None or prev_price == 0:
+        return False, None
+
+    new_val = Decimal(str(new_price))
+    diff = (new_val - prev_price).quantize(Decimal("0.01"))
+    if abs(diff) <= Decimal("0.02"):
+        return False, ""
+
+    diff_pct = ((new_val - prev_price) / prev_price * Decimal("100")).quantize(
+        Decimal("0.01")
+    )
+
+    if abs(diff_pct) > threshold:
+        return True, f"±{diff:.2f} €"
+
+    return False, ""
