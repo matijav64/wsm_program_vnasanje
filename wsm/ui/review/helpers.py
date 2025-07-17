@@ -258,3 +258,43 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     return pd.concat([merged, gratis], ignore_index=True)
+
+
+def _split_totals(df: pd.DataFrame, doc_discount_total: Decimal) -> tuple[Decimal, Decimal, Decimal]:
+    """Return linked, unlinked and combined totals for review tables.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Invoice lines excluding document discount rows.
+        Must contain ``total_net`` and ``wsm_sifra`` columns and may include
+        ``is_gratis``.
+    doc_discount_total : Decimal
+        Document level discount amount to apply.
+
+    Returns
+    -------
+    tuple[Decimal, Decimal, Decimal]
+        ``(linked_total, unlinked_total, total_sum)``.
+    """
+
+    if "is_gratis" in df.columns:
+        valid = df[~df["is_gratis"]]
+    else:
+        valid = df
+
+    dd_total = (
+        doc_discount_total
+        if isinstance(doc_discount_total, Decimal)
+        else Decimal(str(doc_discount_total))
+    )
+
+    linked_total = valid[valid["wsm_sifra"].notna()]["total_net"].sum()
+    unlinked_total = valid[valid["wsm_sifra"].isna()]["total_net"].sum()
+    if valid["wsm_sifra"].notna().any():
+        linked_total += dd_total
+    else:
+        unlinked_total += dd_total
+
+    total_sum = linked_total + unlinked_total
+    return linked_total, unlinked_total, total_sum

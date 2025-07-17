@@ -3,6 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 from wsm.parsing.eslog import parse_eslog_invoice
+from wsm.ui.review.helpers import _split_totals
 
 
 def _calc_totals(xml_path: Path):
@@ -15,9 +16,7 @@ def _calc_totals(xml_path: Path):
     df["wsm_sifra"] = pd.NA
     df.loc[df["naziv"] == "Normal", "wsm_sifra"] = "X"
 
-    valid = df[~df["is_gratis"]]
-    linked_total = valid[valid["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
-    unlinked_total = valid[valid["wsm_sifra"].isna()]["total_net"].sum()
+    linked_total, unlinked_total, _ = _split_totals(df, doc_discount_total)
     assert ok
     return linked_total, unlinked_total
 

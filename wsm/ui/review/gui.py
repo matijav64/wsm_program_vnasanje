@@ -19,7 +19,7 @@ from wsm.parsing.eslog import (
     extract_total_tax,
     extract_header_gross,
 )
-from .helpers import _fmt, _norm_unit, _merge_same_items
+from .helpers import _fmt, _norm_unit, _merge_same_items, _split_totals
 from .io import _save_and_close, _load_supplier_map, _write_supplier_map
 
 # Logger setup
@@ -609,26 +609,7 @@ def review_links(
     total_frame = tk.Frame(root)
     total_frame.pack(fill="x", pady=5)
 
-    # Dokumentarni popust obravnavamo kot povezan znesek, saj ne potrebuje
-    # dodatne ročne obdelave. Zato ga prištejemo k "Skupaj povezano" in ga
-    # ne štejemo med "Skupaj ostalo".
-    valid = df[~df["is_gratis"]]
-    if valid["wsm_sifra"].notna().any():
-        # Ko je vsaj ena vrstica povezana, dokumentarni popust štejemo
-        # kot "povezan" znesek, saj ga uporabnik ne obravnava ročno.
-        linked_total = (
-            valid[valid["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
-        )
-        unlinked_total = valid[valid["wsm_sifra"].isna()]["total_net"].sum()
-    else:
-        # Če ni še nobene povezave, popust prištejemo k "ostalim" vrsticam,
-        # da "Skupaj povezano" ostane ničelno.
-        linked_total = valid[valid["wsm_sifra"].notna()]["total_net"].sum()
-        unlinked_total = (
-            valid[valid["wsm_sifra"].isna()]["total_net"].sum() + doc_discount_total
-        )
-    # Skupni seštevek mora biti vsota "povezano" in "ostalo"
-    total_sum = linked_total + unlinked_total
+    linked_total, unlinked_total, total_sum = _split_totals(df, doc_discount_total)
     match_symbol = "✓" if abs(total_sum - header_totals["net"]) <= Decimal("0.02") else "✗"
 
     tk.Label(
@@ -668,35 +649,9 @@ def review_links(
                 ),
             )
 
-        valid = df[~df["is_gratis"]]
-        if valid["wsm_sifra"].notna().any():
-            linked_raw = valid[valid["wsm_sifra"].notna()]["total_net"].sum()
-            linked_total = (
-                linked_raw if isinstance(linked_raw, Decimal) else Decimal(str(linked_raw))
-            )
-            if not df_doc.empty:
-                linked_total += dd_total
-            unlinked_raw = valid[valid["wsm_sifra"].isna()]["total_net"].sum()
-            unlinked_total = (
-                unlinked_raw
-                if isinstance(unlinked_raw, Decimal)
-                else Decimal(str(unlinked_raw))
-            )
-        else:
-            linked_raw = valid[valid["wsm_sifra"].notna()]["total_net"].sum()
-            linked_total = (
-                linked_raw if isinstance(linked_raw, Decimal) else Decimal(str(linked_raw))
-            )
-            unlinked_raw = valid[valid["wsm_sifra"].isna()]["total_net"].sum()
-            unlinked_total = (
-                unlinked_raw
-                if isinstance(unlinked_raw, Decimal)
-                else Decimal(str(unlinked_raw))
-            )
-            if not df_doc.empty:
-                unlinked_total += dd_total
-
-        total_sum = linked_total + unlinked_total
+        linked_total, unlinked_total, total_sum = _split_totals(
+            df, dd_total if not df_doc.empty else Decimal("0")
+        )
         match_symbol = "✓" if abs(total_sum - inv_total) <= Decimal("0.02") else "✗"
         total_frame.children["total_sum"].config(
             text=(

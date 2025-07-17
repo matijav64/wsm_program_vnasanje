@@ -22,7 +22,7 @@ except Exception as exc:  # pragma: no cover - optional dependency
     raise ImportError("PyQt5 is required for the Qt GUI") from exc
 
 from wsm.constants import PRICE_DIFF_THRESHOLD
-from wsm.ui.review.helpers import _fmt, _norm_unit
+from wsm.ui.review.helpers import _fmt, _norm_unit, _split_totals
 from wsm.ui.review.io import _save_and_close, _load_supplier_map
 from wsm.parsing.money import detect_round_step
 from wsm.utils import short_supplier_name
@@ -254,9 +254,7 @@ def review_links_qt(
                 for c_i, v in enumerate(vals):
                     summary.setItem(r_i, c_i, QtWidgets.QTableWidgetItem(str(v)))
 
-        linked_total = df[df["wsm_sifra"].notna()]["total_net"].sum() + doc_discount_total
-        unlinked_total = df[df["wsm_sifra"].isna()]["total_net"].sum()
-        total_sum = linked_total + unlinked_total
+        linked_total, unlinked_total, total_sum = _split_totals(df, doc_discount_total)
         step_total = detect_round_step(header_totals["net"], total_sum)
         match_symbol = "✓" if abs(total_sum - header_totals["net"]) <= step_total else "✗"
         total_label.setText(
