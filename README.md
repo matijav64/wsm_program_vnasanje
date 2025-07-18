@@ -29,7 +29,7 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    source .venv/bin/activate
    pip install -r requirements.txt
    ```
-   Med glavnimi odvisnostmi so `pandas`, `pdfplumber` in `openpyxl`.
+  Med glavnimi odvisnostmi so `pandas`, `pdfplumber`, `openpyxl` in `lxml`.
    Za grafični vmesnik **Price Watch** potrebujete tudi `matplotlib` in `mplcursors`:
    ```bash
    pip install 'wsm[plot]'
@@ -38,7 +38,8 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    ```bash
    pip install 'wsm[pyqt]'
    ```
-   Za razvoj in poganjanje testov namestite tudi dodatne odvisnosti:
+  Za razvoj in poganjanje testov so potrebni tudi `pytest`, `pandas` in
+  `lxml`. Vse naštete pakete namestite z:
    ```bash
    pip install -r requirements-dev.txt
    ```
