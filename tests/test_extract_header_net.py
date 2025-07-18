@@ -17,4 +17,3 @@ def test_extract_header_net_falls_back_to_moa_79(tmp_path):
     xml_path = tmp_path / "moa79.xml"
     xml_path.write_text(xml)
     assert extract_header_net(xml_path) == Decimal("45.67")
-

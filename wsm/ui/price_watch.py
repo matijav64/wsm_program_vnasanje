@@ -33,16 +33,19 @@ def _color_for_diff(pct: float) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
-
 @lru_cache(maxsize=None)
-def _load_price_histories(suppliers_dir: Path | str) -> dict[str, dict[str, pd.DataFrame]]:
+def _load_price_histories(
+    suppliers_dir: Path | str,
+) -> dict[str, dict[str, pd.DataFrame]]:
     """Return price history grouped by supplier and item label."""
 
     suppliers_dir = Path(suppliers_dir).resolve()
     suppliers_map = _load_supplier_map(suppliers_dir)
     items_by_supplier: dict[str, dict[str, pd.DataFrame]] = {}
     for code, info in suppliers_map.items():
-        safe_id = sanitize_folder_name(info.get("vat") or info.get("ime", code))
+        safe_id = sanitize_folder_name(
+            info.get("vat") or info.get("ime", code)
+        )
         hist_path = suppliers_dir / safe_id / "price_history.xlsx"
         log.debug("Checking history file for %s at %s", code, hist_path)
         if not hist_path.exists():
@@ -69,8 +72,12 @@ def _load_price_histories(suppliers_dir: Path | str) -> dict[str, dict[str, pd.D
 
         # Use service_date when available for the timeline
         if "service_date" in df.columns:
-            df["service_date"] = pd.to_datetime(df["service_date"], errors="coerce")
-            df["time"] = df["service_date"].combine_first(pd.to_datetime(df.get("time"), errors="coerce"))
+            df["service_date"] = pd.to_datetime(
+                df["service_date"], errors="coerce"
+            )
+            df["time"] = df["service_date"].combine_first(
+                pd.to_datetime(df.get("time"), errors="coerce")
+            )
         elif "time" in df.columns:
             df["time"] = pd.to_datetime(df["time"], errors="coerce")
         df = df.dropna(subset=["time"])
@@ -90,12 +97,18 @@ def clear_price_cache() -> None:
 class PriceWatch(tk.Toplevel):
     """Window for browsing historic prices."""
 
-    def __init__(self, master: tk.Misc | None = None, suppliers: Path | str | None = None) -> None:
+    def __init__(
+        self,
+        master: tk.Misc | None = None,
+        suppliers: Path | str | None = None,
+    ) -> None:
         super().__init__(master)
         self.title("Spremljanje cen")
         self.geometry("600x400")
 
-        self.suppliers_dir = Path(suppliers or os.getenv("WSM_LINKS_DIR", "links"))
+        self.suppliers_dir = Path(
+            suppliers or os.getenv("WSM_LINKS_DIR", "links")
+        )
         if not self.suppliers_dir.exists():
             self.withdraw()
             messagebox.showerror(
@@ -107,7 +120,8 @@ class PriceWatch(tk.Toplevel):
         self.suppliers_map = _load_supplier_map(self.suppliers_dir)
         self.items_by_supplier = _load_price_histories(self.suppliers_dir)
         self.supplier_codes = {
-            f"{code} - {info['ime']}": code for code, info in self.suppliers_map.items()
+            f"{code} - {info['ime']}": code
+            for code, info in self.suppliers_map.items()
         }
 
         self._sort_col: str | None = None
@@ -141,7 +155,9 @@ class PriceWatch(tk.Toplevel):
         # Interval (weeks) for price change calculation
         ttk.Label(frame, text="Tedni:").pack(side=tk.LEFT, padx=(10, 2))
         self.weeks_var = tk.StringVar(value="30")
-        spin = ttk.Spinbox(frame, from_=1, to=520, textvariable=self.weeks_var, width=5)
+        spin = ttk.Spinbox(
+            frame, from_=1, to=520, textvariable=self.weeks_var, width=5
+        )
         spin.pack(side=tk.LEFT, padx=5)
         spin.configure(command=self._refresh_table)
         spin.bind("<KeyRelease>", lambda e: self._refresh_table())
@@ -155,23 +171,33 @@ class PriceWatch(tk.Toplevel):
             ttk.Label(frame, text="Od:").pack(side=tk.LEFT, padx=(10, 2))
             start_of_year = pd.Timestamp.now().replace(month=1, day=1).date()
             self.start_date_var = tk.StringVar(value=start_of_year.isoformat())
-            date_entry = DateEntry(frame, textvariable=self.start_date_var, width=10)
+            date_entry = DateEntry(
+                frame, textvariable=self.start_date_var, width=10
+            )
             date_entry.pack(side=tk.LEFT, padx=5)
-            date_entry.bind("<<DateEntrySelected>>", lambda e: self._refresh_table())
+            date_entry.bind(
+                "<<DateEntrySelected>>", lambda e: self._refresh_table()
+            )
         else:
             self.start_date_var = None
 
-        ttk.Button(frame, text="Potrdi", command=self._refresh_table).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame, text="Potrdi", command=self._refresh_table).pack(
+            side=tk.LEFT, padx=5
+        )
 
         self.sup_var = tk.StringVar()
-        self.sup_box = ttk.Combobox(frame, textvariable=self.sup_var, state="readonly", width=45)
+        self.sup_box = ttk.Combobox(
+            frame, textvariable=self.sup_var, state="readonly", width=45
+        )
         self.sup_box.pack(side=tk.LEFT, padx=5)
 
         self._supplier_names = list(self.supplier_codes)
         self._update_supplier_list()
 
         entry.bind("<KeyRelease>", lambda e: self._update_supplier_list())
-        self.sup_box.bind("<<ComboboxSelected>>", lambda e: self._refresh_table())
+        self.sup_box.bind(
+            "<<ComboboxSelected>>", lambda e: self._refresh_table()
+        )
 
     def _build_article_table(self) -> None:
         self.search_var = tk.StringVar()
@@ -199,7 +225,9 @@ class PriceWatch(tk.Toplevel):
             "max": "Max",
         }
         for col in columns:
-            self.tree.heading(col, text=headings[col], command=lambda c=col: self._sort_by(c))
+            self.tree.heading(
+                col, text=headings[col], command=lambda c=col: self._sort_by(c)
+            )
             width = 220 if col == "label" else 90
             anchor = tk.W if col == "label" else tk.E
             self.tree.column(col, width=width, anchor=anchor)
@@ -207,7 +235,9 @@ class PriceWatch(tk.Toplevel):
         # Tag for highlighting notable price changes
         self.tree.tag_configure("chg", background="#ffcccc")
 
-        scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
+        scrollbar = ttk.Scrollbar(
+            self, orient="vertical", command=self.tree.yview
+        )
         self.tree.configure(yscroll=scrollbar.set)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -247,8 +277,12 @@ class PriceWatch(tk.Toplevel):
             if query and query not in label.lower():
                 continue
 
-            line_prices_full = pd.to_numeric(df.get("line_netto"), errors="coerce")
-            unit_prices_full = pd.to_numeric(df.get("unit_price"), errors="coerce")
+            line_prices_full = pd.to_numeric(
+                df.get("line_netto"), errors="coerce"
+            )
+            unit_prices_full = pd.to_numeric(
+                df.get("unit_price"), errors="coerce"
+            )
 
             last_line = line_prices_full.dropna()
             last_unit = unit_prices_full.dropna()
@@ -297,7 +331,11 @@ class PriceWatch(tk.Toplevel):
             if len(diff_series_eval) >= 2:
                 first_val = diff_series_eval.iloc[0]
                 last_val = diff_series_eval.iloc[-1]
-                if first_val != 0 and pd.notna(first_val) and pd.notna(last_val):
+                if (
+                    first_val != 0
+                    and pd.notna(first_val)
+                    and pd.notna(last_val)
+                ):
                     diff_pct = float((last_val - first_val) / first_val * 100)
                 else:
                     diff_pct = None
@@ -316,8 +354,16 @@ class PriceWatch(tk.Toplevel):
             rows.append(
                 {
                     "label": label,
-                    "line_netto": float(last_line.iloc[-1]) if not last_line.empty else None,
-                    "unit_price": float(last_unit.iloc[-1]) if not last_unit.empty else None,
+                    "line_netto": (
+                        float(last_line.iloc[-1])
+                        if not last_line.empty
+                        else None
+                    ),
+                    "unit_price": (
+                        float(last_unit.iloc[-1])
+                        if not last_unit.empty
+                        else None
+                    ),
                     "last_dt": pd.to_datetime(df.loc[last_idx, "time"]),
                     "diff_pct": diff_pct,
                     "min": min_val,
@@ -326,7 +372,9 @@ class PriceWatch(tk.Toplevel):
                 }
             )
         if not rows:
-            messagebox.showinfo("Ni podatkov", "Ni zadetkov za izbrane filtre.")
+            messagebox.showinfo(
+                "Ni podatkov", "Ni zadetkov za izbrane filtre."
+            )
             return
         if self._sort_col:
             rows.sort(
@@ -419,18 +467,21 @@ class PriceWatch(tk.Toplevel):
             cutoff = pd.Timestamp.now() - pd.Timedelta(weeks=weeks)
         if cutoff is not None:
             mask &= dates >= cutoff
-        df_plot = pd.DataFrame({"date": dates[mask], "price": price_series[mask]})
+        df_plot = pd.DataFrame(
+            {"date": dates[mask], "price": price_series[mask]}
+        )
         if df_plot.empty:
             mask = price_series.ne(0)
-            df_plot = pd.DataFrame({"date": dates[mask], "price": price_series[mask]})
+            df_plot = pd.DataFrame(
+                {"date": dates[mask], "price": price_series[mask]}
+            )
 
         # ── 1) grobo zaokroževanje, da odpravimo nenamerne drobne odklone ──
         df_plot["_price_round"] = df_plot["price"].round(2)
 
         # ── 2) eno vrstico na dan (če so v istem dnevu še vedno razlike, vzemi srednjo) ──
         grp = (
-            df_plot
-            .groupby(df_plot["date"].dt.date)["_price_round"]
+            df_plot.groupby(df_plot["date"].dt.date)["_price_round"]
             .mean()
             .round(2)
         )
@@ -468,9 +519,13 @@ class PriceWatch(tk.Toplevel):
         if hasattr(ax, "ticklabel_format"):
             try:
                 ax.ticklabel_format(useOffset=False, style="plain")
-            except Exception:  # pragma: no cover - depends on matplotlib version
+            except (
+                Exception
+            ):  # pragma: no cover - depends on matplotlib version
                 pass
-        if hasattr(ax, "get_yaxis") and hasattr(ax.get_yaxis(), "get_major_formatter"):
+        if hasattr(ax, "get_yaxis") and hasattr(
+            ax.get_yaxis(), "get_major_formatter"
+        ):
             formatter = ax.get_yaxis().get_major_formatter()
             if hasattr(formatter, "set_useOffset"):
                 formatter.set_useOffset(False)
@@ -498,8 +553,9 @@ class PriceWatch(tk.Toplevel):
         top.bind("<Escape>", lambda e: top.destroy())
 
 
-def launch_price_watch(master: tk.Misc, suppliers: Path | str | None = None) -> None:
+def launch_price_watch(
+    master: tk.Misc, suppliers: Path | str | None = None
+) -> None:
     """Launch the price watch window."""
 
     PriceWatch(master, suppliers).mainloop()
-

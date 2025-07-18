@@ -7,10 +7,21 @@ where = ["."]
 include = ["wsm*"]
 exclude = ["wsm_vector_embedding*", "tests*"]
 
+# -------------------------------------------------
+# ⚠️  NOVO: vključimo CSV v paket
+[tool.setuptools.package-data]
+wsm = ["data/*.csv"]
+# -------------------------------------------------
+
 [project]
 name = "wsm"
 version = "0.1.0"
-dependencies = ["pandas", "pdfplumber", "openpyxl", "click"]
+dependencies = [
+    "pandas",
+    "pdfplumber",
+    "openpyxl",
+    "click",
+]
 
 [project.optional-dependencies]
 pyqt = ["PyQt5>=5.15"]
@@ -29,4 +40,4 @@ wsm-gui = "wsm.run:main"
 
 [tool.black]
 line-length = 79
-target-version = ['py311']
+target-version = ["py311"]

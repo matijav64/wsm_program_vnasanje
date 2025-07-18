@@ -1,0 +1,7 @@
+pandas
+pdfplumber
+openpyxl
+click
+
+[pyqt]
+PyQt5>=5.15

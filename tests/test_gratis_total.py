@@ -55,5 +55,3 @@ def test_gratis_line_excluded_from_totals(tmp_path):
     linked, unlinked = _calc_totals(xml_path)
     assert linked == Decimal("10")
     assert unlinked == Decimal("0")
-
-

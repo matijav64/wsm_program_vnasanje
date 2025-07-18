@@ -3,19 +3,18 @@ from decimal import Decimal
 from wsm.parsing.money import extract_total_amount
 from wsm.parsing.eslog import parse_invoice
 
+
 @pytest.mark.parametrize(
     "xml_str, expected",
     [
         # Osnovni primer: samo glava brez popusta
         ("<InvoiceTotal>100.00</InvoiceTotal>", Decimal("100.00")),
-
         # Primer z dokumentarnim popustom
         (
             "<InvoiceTotal>100.00</InvoiceTotal>"
             "<DocumentDiscount>10.00</DocumentDiscount>",
             Decimal("90.00"),
         ),
-
         # Primer z delčnimi popusti  (npr. če je glava 250.50, doc discount 50.50 => 200.00)
         (
             "<InvoiceTotal>250.50</InvoiceTotal>"

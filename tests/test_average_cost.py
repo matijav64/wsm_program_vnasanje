@@ -4,10 +4,12 @@ from wsm import utils
 
 
 def _sample_df():
-    return pd.DataFrame({
-        "cena_netto": [Decimal("10"), Decimal("0")],
-        "kolicina": [Decimal("1"), Decimal("1")],
-    })
+    return pd.DataFrame(
+        {
+            "cena_netto": [Decimal("10"), Decimal("0")],
+            "kolicina": [Decimal("1"), Decimal("1")],
+        }
+    )
 
 
 def test_average_cost_skip_zero(monkeypatch):

@@ -1,4 +1,5 @@
 import pytest
+
 pytest.importorskip("openpyxl")
 import pandas as pd
 import json
@@ -13,7 +14,9 @@ def test_load_supplier_map_from_folders(tmp_path: Path):
     # folder without supplier.json, only povezane file
     sup_a = links_dir / "Kvibo"
     sup_a.mkdir()
-    df = pd.DataFrame({"sifra_dobavitelja": ["A"], "naziv": ["x"], "wsm_sifra": ["1"]})
+    df = pd.DataFrame(
+        {"sifra_dobavitelja": ["A"], "naziv": ["x"], "wsm_sifra": ["1"]}
+    )
     df.to_excel(sup_a / "KVIBO_povezane.xlsx", index=False)
 
     # folder with supplier.json and VAT

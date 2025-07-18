@@ -1,30 +1,43 @@
 import pytest
+
 pytest.importorskip("openpyxl")
 import json
 from decimal import Decimal
 import pandas as pd
 from wsm.ui.review.io import _save_and_close
 
+
 class DummyRoot:
     def quit(self):
         pass
 
+
 def test_supplier_edit_saved_to_custom_dir(tmp_path, monkeypatch):
-    df = pd.DataFrame({
-        "sifra_dobavitelja": ["SUP"],
-        "naziv": ["Item"],
-        "kolicina": [Decimal("1")],
-        "enota": ["kg"],
-        "cena_bruto": [Decimal("5")],
-        "cena_netto": [Decimal("5")],
-        "vrednost": [Decimal("5")],
-        "rabata": [Decimal("0")],
-        "wsm_sifra": [pd.NA],
-        "dobavitelj": ["Test"],
-        "kolicina_norm": [1.0],
-        "enota_norm": ["kg"],
-    })
-    manual_old = pd.DataFrame(columns=["sifra_dobavitelja", "naziv", "wsm_sifra", "dobavitelj", "enota_norm"])
+    df = pd.DataFrame(
+        {
+            "sifra_dobavitelja": ["SUP"],
+            "naziv": ["Item"],
+            "kolicina": [Decimal("1")],
+            "enota": ["kg"],
+            "cena_bruto": [Decimal("5")],
+            "cena_netto": [Decimal("5")],
+            "vrednost": [Decimal("5")],
+            "rabata": [Decimal("0")],
+            "wsm_sifra": [pd.NA],
+            "dobavitelj": ["Test"],
+            "kolicina_norm": [1.0],
+            "enota_norm": ["kg"],
+        }
+    )
+    manual_old = pd.DataFrame(
+        columns=[
+            "sifra_dobavitelja",
+            "naziv",
+            "wsm_sifra",
+            "dobavitelj",
+            "enota_norm",
+        ]
+    )
     wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
 
     base_dir = tmp_path / "suppliers"
@@ -56,22 +69,32 @@ def test_supplier_edit_saved_to_custom_dir(tmp_path, monkeypatch):
 
 
 def test_supplier_folder_renamed_on_vat_change(tmp_path, monkeypatch):
-    df = pd.DataFrame({
-        "sifra_dobavitelja": ["SUP"],
-        "naziv": ["Item"],
-        "kolicina": [Decimal("1")],
-        "enota": ["kg"],
-        "cena_bruto": [Decimal("5")],
-        "cena_netto": [Decimal("5")],
-        "vrednost": [Decimal("5")],
-        "rabata": [Decimal("0")],
-        "wsm_sifra": [pd.NA],
-        "dobavitelj": ["Old"],
-        "kolicina_norm": [1.0],
-        "enota_norm": ["kg"],
-    })
+    df = pd.DataFrame(
+        {
+            "sifra_dobavitelja": ["SUP"],
+            "naziv": ["Item"],
+            "kolicina": [Decimal("1")],
+            "enota": ["kg"],
+            "cena_bruto": [Decimal("5")],
+            "cena_netto": [Decimal("5")],
+            "vrednost": [Decimal("5")],
+            "rabata": [Decimal("0")],
+            "wsm_sifra": [pd.NA],
+            "dobavitelj": ["Old"],
+            "kolicina_norm": [1.0],
+            "enota_norm": ["kg"],
+        }
+    )
 
-    manual_old = pd.DataFrame(columns=["sifra_dobavitelja", "naziv", "wsm_sifra", "dobavitelj", "enota_norm"])
+    manual_old = pd.DataFrame(
+        columns=[
+            "sifra_dobavitelja",
+            "naziv",
+            "wsm_sifra",
+            "dobavitelj",
+            "enota_norm",
+        ]
+    )
     wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
 
     base_dir = tmp_path / "suppliers"
@@ -125,7 +148,13 @@ def test_unknown_folder_removed_when_vat_exists(tmp_path, monkeypatch):
     )
 
     manual_old = pd.DataFrame(
-        columns=["sifra_dobavitelja", "naziv", "wsm_sifra", "dobavitelj", "enota_norm"]
+        columns=[
+            "sifra_dobavitelja",
+            "naziv",
+            "wsm_sifra",
+            "dobavitelj",
+            "enota_norm",
+        ]
     )
     wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
 
@@ -184,7 +213,13 @@ def test_unknown_folder_cleaned_after_save(tmp_path, monkeypatch):
     )
 
     manual_old = pd.DataFrame(
-        columns=["sifra_dobavitelja", "naziv", "wsm_sifra", "dobavitelj", "enota_norm"]
+        columns=[
+            "sifra_dobavitelja",
+            "naziv",
+            "wsm_sifra",
+            "dobavitelj",
+            "enota_norm",
+        ]
     )
     wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
 
@@ -213,5 +248,3 @@ def test_unknown_folder_cleaned_after_save(tmp_path, monkeypatch):
     )
 
     assert not unknown_dir.exists()
-
-

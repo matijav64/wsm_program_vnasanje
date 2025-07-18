@@ -56,7 +56,11 @@ def load_suppliers(sup_file: Path | str) -> dict[str, dict]:
     if sup_file.is_file():
         try:
             df_sup = pd.read_excel(sup_file, dtype=str)
-            log.info("\u0160tevilo prebranih dobaviteljev iz %s: %s", sup_file, len(df_sup))
+            log.info(
+                "\u0160tevilo prebranih dobaviteljev iz %s: %s",
+                sup_file,
+                len(df_sup),
+            )
             for _, row in df_sup.iterrows():
                 sifra = str(row["sifra"]).strip()
                 ime = str(row["ime"]).strip()
@@ -94,7 +98,9 @@ def load_suppliers(sup_file: Path | str) -> dict[str, dict]:
                         try:
                             shutil.move(str(folder), str(new_folder))
                         except Exception as move_exc:
-                            log.debug("Fallback to per-file move: %s", move_exc)
+                            log.debug(
+                                "Fallback to per-file move: %s", move_exc
+                            )
                             new_folder.mkdir(parents=True, exist_ok=True)
                             for p in folder.iterdir():
                                 target = new_folder / p.name
@@ -117,7 +123,12 @@ def load_suppliers(sup_file: Path | str) -> dict[str, dict]:
                     folder = new_folder
                     info_path = folder / "supplier.json"
                 except Exception as exc:
-                    log.warning("Napaka pri preimenovanju %s v %s: %s", folder, new_folder, exc)
+                    log.warning(
+                        "Napaka pri preimenovanju %s v %s: %s",
+                        folder,
+                        new_folder,
+                        exc,
+                    )
         if sifra:
             sup_map[sifra] = {"ime": ime, "vat": vat}
             log.debug("Dodan iz JSON: sifra=%s, ime=%s", sifra, ime)
@@ -142,7 +153,11 @@ def load_suppliers(sup_file: Path | str) -> dict[str, dict]:
                     code = str(codes.iloc[0]) if not codes.empty else None
                 elif "key" in df_hist.columns:
                     keys = df_hist["key"].dropna().astype(str)
-                    code = str(keys.iloc[0]).split("_")[0] if not keys.empty else None
+                    code = (
+                        str(keys.iloc[0]).split("_")[0]
+                        if not keys.empty
+                        else None
+                    )
                 else:
                     code = None
             except Exception as exc:
@@ -150,17 +165,31 @@ def load_suppliers(sup_file: Path | str) -> dict[str, dict]:
                 code = None
             if code and code not in sup_map:
                 sup_map[code] = {"ime": folder.name, "vat": ""}
-                log.debug("Dodan iz price_history: sifra=%s, ime=%s", code, folder.name)
-        if folder.name and folder.name not in {info.get("ime") for info in sup_map.values()}:
+                log.debug(
+                    "Dodan iz price_history: sifra=%s, ime=%s",
+                    code,
+                    folder.name,
+                )
+        if folder.name and folder.name not in {
+            info.get("ime") for info in sup_map.values()
+        }:
             folder_vat = _norm_vat(folder.name)
             if folder_vat and folder_vat not in sup_map:
                 sup_map[folder_vat] = {"ime": folder.name, "vat": folder_vat}
-                log.debug("Dodan iz imena mape (VAT): sifra=%s, ime=%s", folder_vat, folder.name)
+                log.debug(
+                    "Dodan iz imena mape (VAT): sifra=%s, ime=%s",
+                    folder_vat,
+                    folder.name,
+                )
             else:
                 code = sanitize_folder_name(folder.name)
                 if code not in sup_map:
                     sup_map[code] = {"ime": folder.name, "vat": ""}
-                    log.debug("Dodan iz imena mape: sifra=%s, ime=%s", code, folder.name)
+                    log.debug(
+                        "Dodan iz imena mape: sifra=%s, ime=%s",
+                        code,
+                        folder.name,
+                    )
     log.info("Najdeni dobavitelji: %s", list(sup_map.keys()))
     return sup_map
 
@@ -171,7 +200,10 @@ def save_supplier(sup_map: dict, sup_file: Path) -> None:
     if sup_file.suffix == ".xlsx" or sup_file.is_file():
         sup_file.parent.mkdir(parents=True, exist_ok=True)
         df = pd.DataFrame(
-            [{"sifra": k, "ime": v["ime"], "vat": v.get("vat", "")} for k, v in sup_map.items()]
+            [
+                {"sifra": k, "ime": v["ime"], "vat": v.get("vat", "")}
+                for k, v in sup_map.items()
+            ]
         )
         df.to_excel(sup_file, index=False)
         log.info("Datoteka uspe\u0161no zapisana: %s", sup_file)
@@ -186,13 +218,24 @@ def save_supplier(sup_map: dict, sup_file: Path) -> None:
         links_dir = sup_file.parent
 
     for code, info in sup_map.items():
-        vat_val = _norm_vat(info.get("vat")) if isinstance(info.get("vat"), str) else ""
+        vat_val = (
+            _norm_vat(info.get("vat"))
+            if isinstance(info.get("vat"), str)
+            else ""
+        )
         folder = links_dir / sanitize_folder_name(vat_val or info["ime"])
         folder.mkdir(parents=True, exist_ok=True)
         info_path = folder / "supplier.json"
         try:
             info_path.write_text(
-                json.dumps({"sifra": code, "ime": info["ime"], "vat": info.get("vat")}, ensure_ascii=False)
+                json.dumps(
+                    {
+                        "sifra": code,
+                        "ime": info["ime"],
+                        "vat": info.get("vat"),
+                    },
+                    ensure_ascii=False,
+                )
             )
             log.debug("Zapisano %s", info_path)
         except Exception as exc:
@@ -202,5 +245,3 @@ def save_supplier(sup_map: dict, sup_file: Path) -> None:
 def clear_supplier_cache() -> None:
     """Clear the cached supplier map."""
     load_suppliers.cache_clear()
-
-

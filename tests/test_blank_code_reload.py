@@ -15,20 +15,22 @@ class DummyRoot:
 
 
 def test_blank_supplier_code_retains_mapping(tmp_path, monkeypatch):
-    df = pd.DataFrame({
-        "sifra_dobavitelja": [pd.NA],
-        "naziv": ["Item"],
-        "kolicina": [Decimal("1")],
-        "enota": ["kg"],
-        "cena_bruto": [Decimal("5")],
-        "cena_netto": [Decimal("5")],
-        "vrednost": [Decimal("5")],
-        "rabata": [Decimal("0")],
-        "wsm_sifra": ["A1"],
-        "dobavitelj": ["Test"],
-        "kolicina_norm": [1.0],
-        "enota_norm": ["kg"],
-    })
+    df = pd.DataFrame(
+        {
+            "sifra_dobavitelja": [pd.NA],
+            "naziv": ["Item"],
+            "kolicina": [Decimal("1")],
+            "enota": ["kg"],
+            "cena_bruto": [Decimal("5")],
+            "cena_netto": [Decimal("5")],
+            "vrednost": [Decimal("5")],
+            "rabata": [Decimal("0")],
+            "wsm_sifra": ["A1"],
+            "dobavitelj": ["Test"],
+            "kolicina_norm": [1.0],
+            "enota_norm": ["kg"],
+        }
+    )
     manual_old = pd.DataFrame(
         columns=[
             "sifra_dobavitelja",
@@ -63,10 +65,9 @@ def test_blank_supplier_code_retains_mapping(tmp_path, monkeypatch):
     )
     assert manual_new["sifra_dobavitelja"].iloc[0] == ""
     manual_new["naziv_ckey"] = manual_new["naziv"].map(_clean)
-    lookup = (
-        manual_new.set_index(["sifra_dobavitelja", "naziv_ckey"])["wsm_sifra"]
-        .to_dict()
-    )
+    lookup = manual_new.set_index(["sifra_dobavitelja", "naziv_ckey"])[
+        "wsm_sifra"
+    ].to_dict()
     df2 = pd.DataFrame({"sifra_dobavitelja": [pd.NA], "naziv": ["Item"]})
     df2["sifra_dobavitelja"] = df2["sifra_dobavitelja"].fillna("").astype(str)
     df2["naziv_ckey"] = df2["naziv"].map(_clean)

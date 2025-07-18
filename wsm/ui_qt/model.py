@@ -32,7 +32,9 @@ class DataFrameModel(QtCore.QAbstractTableModel):
             return False
         column = self._df.columns[index.column()]
         self._df.at[index.row(), column] = value
-        self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+        self.dataChanged.emit(
+            index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]
+        )
         return True
 
     def headerData(self, section: int, orientation: QtCore.Qt.Orientation, role: int = QtCore.Qt.DisplayRole):  # type: ignore[override]

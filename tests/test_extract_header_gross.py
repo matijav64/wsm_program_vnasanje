@@ -16,4 +16,3 @@ def test_extract_header_gross_reads_moa(tmp_path):
     p = tmp_path / "g.xml"
     p.write_text(xml)
     assert extract_header_gross(p) == Decimal("12.20")
-

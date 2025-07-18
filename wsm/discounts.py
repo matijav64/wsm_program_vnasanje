@@ -10,6 +10,7 @@ Each element of ``items`` should be a mapping (e.g. ``dict`` or
 The :func:`calculate_discounts` function returns a tuple of ``Decimal`` values:
 ``(total_value, total_discount)``.
 """
+
 from decimal import Decimal
 
 
@@ -37,9 +38,9 @@ def calculate_discounts(items, doc_discount: Decimal = Decimal("0")):
     doc_discount = Decimal(str(doc_discount))
 
     for item in items:
-        price = Decimal(str(item['cena']))
-        qty = Decimal(str(item['kolicina']))
-        discount = Decimal(str(item.get('rabata', 0)))
+        price = Decimal(str(item["cena"]))
+        qty = Decimal(str(item["kolicina"]))
+        discount = Decimal(str(item.get("rabata", 0)))
 
         total_item_value = (price * qty) - discount
         total += total_item_value
@@ -49,4 +50,3 @@ def calculate_discounts(items, doc_discount: Decimal = Decimal("0")):
     total_discount += doc_discount
 
     return total, total_discount
-

@@ -47,4 +47,3 @@ def launch_main_menu() -> None:
     btn_prices.pack(pady=10)
 
     root.mainloop()
-

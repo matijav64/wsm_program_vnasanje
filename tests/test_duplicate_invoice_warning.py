@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from wsm.ui.review.io import _save_and_close
 
+
 class DummyRoot:
     def quit(self):
         pass
@@ -31,7 +32,13 @@ def _sample_df():
 def test_duplicate_invoice_warning(tmp_path, monkeypatch):
     df = _sample_df()
     manual_old = pd.DataFrame(
-        columns=["sifra_dobavitelja", "naziv", "wsm_sifra", "dobavitelj", "enota_norm"]
+        columns=[
+            "sifra_dobavitelja",
+            "naziv",
+            "wsm_sifra",
+            "dobavitelj",
+            "enota_norm",
+        ]
     )
     wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
 
@@ -63,9 +70,12 @@ def test_duplicate_invoice_warning(tmp_path, monkeypatch):
 
     calls = []
     monkeypatch.setattr(
-        "tkinter.messagebox.askyesno", lambda *a, **k: (calls.append(True) or False)
+        "tkinter.messagebox.askyesno",
+        lambda *a, **k: (calls.append(True) or False),
     )
-    monkeypatch.setattr("wsm.utils.log_price_history", lambda *a, **k: calls.append("log"))
+    monkeypatch.setattr(
+        "wsm.utils.log_price_history", lambda *a, **k: calls.append("log")
+    )
 
     _save_and_close(
         df,

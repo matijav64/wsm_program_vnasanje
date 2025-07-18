@@ -85,7 +85,10 @@ def _save_and_close(
                     shutil.move(str(old_folder), str(new_folder))
                     moved = True
                 else:
-                    target = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
+                    target = (
+                        new_folder
+                        / f"{supplier_code}_{new_safe}_povezane.xlsx"
+                    )
                     if links_file.exists():
                         if target.exists():
                             target = target.with_stem(target.stem + "_old")
@@ -98,7 +101,9 @@ def _save_and_close(
                     shutil.rmtree(old_folder, ignore_errors=True)
                     moved = True
             except Exception as exc:
-                log.warning(f"Napaka pri preimenovanju {old_folder} v {new_folder}: {exc}")
+                log.warning(
+                    f"Napaka pri preimenovanju {old_folder} v {new_folder}: {exc}"
+                )
                 try:
                     new_folder.mkdir(exist_ok=True)
                     for p in old_folder.iterdir():
@@ -116,7 +121,10 @@ def _save_and_close(
                 if supplier_code.casefold() == new_safe.casefold():
                     links_file = new_folder / f"{supplier_code}_povezane.xlsx"
                 else:
-                    links_file = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
+                    links_file = (
+                        new_folder
+                        / f"{supplier_code}_{new_safe}_povezane.xlsx"
+                    )
                 unk_folder = Path(sup_file) / "unknown"
                 if unk_folder.exists():
                     shutil.rmtree(unk_folder, ignore_errors=True)
@@ -125,10 +133,14 @@ def _save_and_close(
             if supplier_code.casefold() == new_safe.casefold():
                 links_file = new_folder / f"{supplier_code}_povezane.xlsx"
             else:
-                links_file = new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
+                links_file = (
+                    new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
+                )
 
     # pospravi stare _VAT_VAT_povezane.xlsx v isti mapi
-    for p in links_file.parent.glob(f"{supplier_code}_{supplier_code}_povezane.xlsx"):
+    for p in links_file.parent.glob(
+        f"{supplier_code}_{supplier_code}_povezane.xlsx"
+    ):
         try:
             if p != links_file:
                 p.unlink()
@@ -153,13 +165,17 @@ def _save_and_close(
     # Nastavi indeks za manual_old
     if not manual_old.empty:
         # Odstrani prazne ali neveljavne vrstice
-        manual_old = manual_old.dropna(subset=["sifra_dobavitelja", "naziv"], how="all")
+        manual_old = manual_old.dropna(
+            subset=["sifra_dobavitelja", "naziv"], how="all"
+        )
         manual_old["naziv_ckey"] = manual_old["naziv"].map(_clean)
         manual_new = manual_old.set_index(["sifra_dobavitelja", "naziv_ckey"])
         if "enota_norm" not in manual_new.columns:
             manual_new["enota_norm"] = pd.NA
         log.info(f"Število prebranih povezav iz manual_old: {len(manual_old)}")
-        log.debug(f"Primer povezav iz manual_old: {manual_old.head().to_dict()}")
+        log.debug(
+            f"Primer povezav iz manual_old: {manual_old.head().to_dict()}"
+        )
     else:
         manual_new = pd.DataFrame(
             columns=[
@@ -249,7 +265,9 @@ def _save_and_close(
         service_date = None
         if invoice_path and invoice_path.exists():
             try:
-                invoice_hash = hashlib.md5(invoice_path.read_bytes()).hexdigest()
+                invoice_hash = hashlib.md5(
+                    invoice_path.read_bytes()
+                ).hexdigest()
             except Exception as exc:
                 log.warning(f"Napaka pri izračunu hash: {exc}")
 

@@ -1,4 +1,5 @@
 import pytest
+
 pytest.importorskip("PyQt5")
 import pandas as pd
 from PyQt5 import QtCore
@@ -6,11 +7,13 @@ from wsm.ui_qt import DataFrameModel
 
 
 def test_wsm_sifra_editable_based_on_status():
-    df = pd.DataFrame({
-        "wsm_sifra": ["111", "", "222"],
-        "status": ["POVEZANO", "BONUS", pd.NA],
-        "other": [1, 2, 3],
-    })
+    df = pd.DataFrame(
+        {
+            "wsm_sifra": ["111", "", "222"],
+            "status": ["POVEZANO", "BONUS", pd.NA],
+            "other": [1, 2, 3],
+        }
+    )
     model = DataFrameModel(df)
     col = df.columns.get_loc("wsm_sifra")
 
@@ -24,4 +27,6 @@ def test_wsm_sifra_editable_based_on_status():
 
     # other column should never be editable
     other_col = df.columns.get_loc("other")
-    assert not (model.flags(model.index(1, other_col)) & QtCore.Qt.ItemIsEditable)
+    assert not (
+        model.flags(model.index(1, other_col)) & QtCore.Qt.ItemIsEditable
+    )

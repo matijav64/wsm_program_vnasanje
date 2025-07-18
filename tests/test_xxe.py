@@ -16,4 +16,3 @@ def test_external_entities_are_ignored(tmp_path):
     assert ok
     root = eslog.LET.parse(xml, parser=eslog.XML_PARSER).getroot()
     assert "LEAK" not in "".join(root.itertext())
-

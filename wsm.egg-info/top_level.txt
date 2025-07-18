@@ -1,0 +1,2 @@
+wsm
+wsm_program_vnasanje

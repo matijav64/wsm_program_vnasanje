@@ -49,6 +49,7 @@ def test_parse_eslog_invoice_sets_supplier_when_missing(monkeypatch, tmp_path):
     assert set(df["sifra_dobavitelja"]) == {"SUP"}
     assert ok
 
+
 def test_line_discount_is_applied():
     xml = Path("tests/discount_line.xml")
     df, ok = eslog.parse_eslog_invoice(xml)

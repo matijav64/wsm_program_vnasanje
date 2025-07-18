@@ -1,4 +1,5 @@
 import pytest
+
 pytest.importorskip("openpyxl")
 from decimal import Decimal
 import pandas as pd
@@ -10,14 +11,16 @@ from wsm.utils import last_price_stats, load_last_price
 
 
 def test_last_price_stats_order_independent():
-    df = pd.DataFrame({
-        "cena": [Decimal("1"), Decimal("2"), Decimal("1.5")],
-        "time": [
-            pd.Timestamp("2023-01-03"),
-            pd.Timestamp("2023-01-01"),
-            pd.Timestamp("2023-01-02"),
-        ],
-    })
+    df = pd.DataFrame(
+        {
+            "cena": [Decimal("1"), Decimal("2"), Decimal("1.5")],
+            "time": [
+                pd.Timestamp("2023-01-03"),
+                pd.Timestamp("2023-01-01"),
+                pd.Timestamp("2023-01-02"),
+            ],
+        }
+    )
     stats = last_price_stats(df)
     assert stats == {
         "last_price": Decimal("1"),
@@ -31,14 +34,16 @@ def test_load_last_price_single_supplier(tmp_path):
     links = tmp_path / "links"
     sup = links / "SUP"
     sup.mkdir(parents=True)
-    df = pd.DataFrame({
-        "key": ["A_Item", "A_Item"],
-        "code": ["A", "A"],
-        "name": ["Item", "Item"],
-        "line_netto": [1, 2],
-        "unit_price": [pd.NA, pd.NA],
-        "time": [pd.Timestamp("2023-01-01"), pd.Timestamp("2023-02-01")],
-    })
+    df = pd.DataFrame(
+        {
+            "key": ["A_Item", "A_Item"],
+            "code": ["A", "A"],
+            "name": ["Item", "Item"],
+            "line_netto": [1, 2],
+            "unit_price": [pd.NA, pd.NA],
+            "time": [pd.Timestamp("2023-01-01"), pd.Timestamp("2023-02-01")],
+        }
+    )
     df.to_excel(sup / "price_history.xlsx", index=False)
     price = load_last_price("A - Item", links)
     assert price == Decimal("2")
@@ -101,7 +106,11 @@ class DummyListbox:
 def _extract_confirm(threshold=Decimal("5")):
     src = inspect.getsource(rl.review_links).splitlines()
     start = next(i for i, l in enumerate(src) if "def _confirm" in l)
-    end = next(i for i, l in enumerate(src[start:], start) if l.strip().startswith("def _clear"))
+    end = next(
+        i
+        for i, l in enumerate(src[start:], start)
+        if l.strip().startswith("def _clear")
+    )
     snippet = textwrap.dedent("\n".join(src[start:end]))
     ns = {
         "pd": pd,
@@ -158,7 +167,9 @@ def test_confirm_applies_price_warning(monkeypatch, tmp_path):
             "_update_totals": lambda: None,
         }
     )
-    monkeypatch.setattr("wsm.utils.load_last_price", lambda *a, **k: Decimal("10"))
+    monkeypatch.setattr(
+        "wsm.utils.load_last_price", lambda *a, **k: Decimal("10")
+    )
     _confirm()
     assert ns["tree"].tags.get("0") == ("price_warn",)
 
@@ -205,7 +216,8 @@ def test_confirm_respects_threshold(monkeypatch, tmp_path):
             "_update_totals": lambda: None,
         }
     )
-    monkeypatch.setattr("wsm.utils.load_last_price", lambda *a, **k: Decimal("10"))
+    monkeypatch.setattr(
+        "wsm.utils.load_last_price", lambda *a, **k: Decimal("10")
+    )
     _confirm()
     assert ns["tree"].tags.get("0") == ()
-

@@ -3,6 +3,7 @@
 from __future__ import annotations
 import re
 
+
 def _normalize_date(date_str: str) -> str:
     """Convert ``DD.MM.YYYY`` or ``YYYYMMDD`` and similar into ``YYYY-MM-DD``."""
     s = date_str.replace(" ", "").replace("\xa0", "")

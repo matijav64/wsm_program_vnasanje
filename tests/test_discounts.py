@@ -13,4 +13,3 @@ def test_calculate_discounts_with_doc_discount():
 
     assert total == Decimal("21")
     assert discount == Decimal("4")
-

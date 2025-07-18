@@ -3,11 +3,14 @@ from decimal import Decimal, ROUND_HALF_UP
 from lxml import etree as LET
 import pandas as pd
 
-def round_to_step(value: Decimal, step: Decimal, rounding=ROUND_HALF_UP) -> Decimal:
+
+def round_to_step(
+    value: Decimal, step: Decimal, rounding=ROUND_HALF_UP
+) -> Decimal:
     """Round ``value`` to the nearest ``step`` (e.g. 0.01 or 0.05)."""
     if step == 0:
         return value
-    quant = (value / step).quantize(Decimal('1'), rounding=rounding)
+    quant = (value / step).quantize(Decimal("1"), rounding=rounding)
     return (quant * step).quantize(step)
 
 
@@ -15,16 +18,19 @@ def detect_round_step(reference: Decimal, candidate: Decimal) -> Decimal:
     """Return the rounding step (0.01 or 0.05) that makes ``candidate`` match
     ``reference`` if possible.  If neither matches exactly, return 0.05 as a
     safe default."""
-    for step in (Decimal('0.01'), Decimal('0.05')):
+    for step in (Decimal("0.01"), Decimal("0.05")):
         if round_to_step(candidate, step) == reference:
             return step
-    return Decimal('0.05')
+    return Decimal("0.05")
 
 
-def quantize_like(value: Decimal, reference: Decimal, rounding=ROUND_HALF_UP) -> Decimal:
+def quantize_like(
+    value: Decimal, reference: Decimal, rounding=ROUND_HALF_UP
+) -> Decimal:
     """Quantize ``value`` with the same precision as ``reference``."""
-    quant = Decimal('1').scaleb(reference.as_tuple().exponent)
+    quant = Decimal("1").scaleb(reference.as_tuple().exponent)
     return value.quantize(quant, rounding=rounding)
+
 
 def extract_total_amount(xml_root: LET._Element) -> Decimal:
     """
@@ -67,6 +73,7 @@ def extract_total_amount(xml_root: LET._Element) -> Decimal:
 
     return (base - discount).quantize(Decimal("0.01"))
 
+
 def extract_line_items(xml_root: LET._Element) -> pd.DataFrame:
     """
     Iz <LineItems> vsak <LineItem> prebere 'PriceNet', 'Quantity', 'DiscountPct'
@@ -91,14 +98,17 @@ def extract_line_items(xml_root: LET._Element) -> pd.DataFrame:
             cena * kolic * (Decimal("1") - rabata_pct / Decimal("100"))
         ).quantize(Decimal("0.01"))
 
-        rows.append({
-            "cena_netto": cena,
-            "kolicina": kolic,
-            "rabata_pct": rabata_pct,
-            "izracunana_vrednost": izracun_val,
-        })
+        rows.append(
+            {
+                "cena_netto": cena,
+                "kolicina": kolic,
+                "rabata_pct": rabata_pct,
+                "izracunana_vrednost": izracun_val,
+            }
+        )
 
     return pd.DataFrame(rows, dtype=object)
+
 
 def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:
     """Validate that the sum of line values matches ``header_total`` using
@@ -107,7 +117,9 @@ def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:
     if "izracunana_vrednost" not in df.columns:
         return False
 
-    df["izracunana_vrednost"] = df["izracunana_vrednost"].apply(lambda x: Decimal(str(x)))
+    df["izracunana_vrednost"] = df["izracunana_vrednost"].apply(
+        lambda x: Decimal(str(x))
+    )
 
     # 2) Vsoto pretvorimo v Decimal, četudi je sum() vrnil int
     total_sum = df["izracunana_vrednost"].sum()

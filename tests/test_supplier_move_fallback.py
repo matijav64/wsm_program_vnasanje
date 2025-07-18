@@ -1,4 +1,5 @@
 import pytest
+
 pytest.importorskip("openpyxl")
 import json
 from decimal import Decimal
@@ -33,7 +34,13 @@ def test_supplier_move_fallback(tmp_path, monkeypatch):
         }
     )
     manual_old = pd.DataFrame(
-        columns=["sifra_dobavitelja", "naziv", "wsm_sifra", "dobavitelj", "enota_norm"]
+        columns=[
+            "sifra_dobavitelja",
+            "naziv",
+            "wsm_sifra",
+            "dobavitelj",
+            "enota_norm",
+        ]
     )
     wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
 
@@ -50,7 +57,9 @@ def test_supplier_move_fallback(tmp_path, monkeypatch):
     sup_map = {"SUP": {"ime": "Old", "vat": ""}}
 
     monkeypatch.setattr("wsm.utils.log_price_history", lambda *a, **k: None)
-    monkeypatch.setattr(Path, "rename", lambda *a, **k: (_ for _ in ()).throw(OSError("boom")))
+    monkeypatch.setattr(
+        Path, "rename", lambda *a, **k: (_ for _ in ()).throw(OSError("boom"))
+    )
 
     _save_and_close(
         df,

@@ -25,7 +25,11 @@ def select_invoice() -> Path | None:
     root.withdraw()
     file_path = filedialog.askopenfilename(
         title="Izberite e-račun",
-        filetypes=[("e-računi", "*.xml *.pdf"), ("XML", "*.xml"), ("PDF", "*.pdf")],
+        filetypes=[
+            ("e-računi", "*.xml *.pdf"),
+            ("XML", "*.xml"),
+            ("PDF", "*.pdf"),
+        ],
     )
     root.destroy()
     return Path(file_path) if file_path else None
@@ -50,7 +54,9 @@ def open_invoice_gui(
     if wsm_codes is None:
         wsm_codes = Path(os.getenv("WSM_CODES_FILE", "sifre_wsm.xlsx"))
     if keywords is None:
-        keywords = Path(os.getenv("WSM_KEYWORDS_FILE", "kljucne_besede_wsm_kode.xlsx"))
+        keywords = Path(
+            os.getenv("WSM_KEYWORDS_FILE", "kljucne_besede_wsm_kode.xlsx")
+        )
     try:
         if invoice_path.suffix.lower() == ".xml":
             df, total, _ = analyze_invoice(str(invoice_path), str(suppliers))
@@ -66,7 +72,9 @@ def open_invoice_gui(
                 df["rabata"] = Decimal("0")
             total = df["vrednost"].sum()
         else:
-            messagebox.showerror("Napaka", f"Nepodprta datoteka: {invoice_path}")
+            messagebox.showerror(
+                "Napaka", f"Nepodprta datoteka: {invoice_path}"
+            )
             return
     except Exception as exc:
         messagebox.showerror("Napaka", str(exc))
@@ -105,11 +113,12 @@ def open_invoice_gui(
         links_dir = base_dir / key_safe
         links_dir.mkdir(parents=True, exist_ok=True)
 
-
     if (links_dir / f"{supplier_code}_povezane.xlsx").exists():
         links_file = links_dir / f"{supplier_code}_povezane.xlsx"
     else:
-        links_file = links_dir / f"{supplier_code}_{links_dir.name}_povezane.xlsx"
+        links_file = (
+            links_dir / f"{supplier_code}_{links_dir.name}_povezane.xlsx"
+        )
 
     sifre_file = wsm_codes
     if sifre_file.exists():
@@ -124,9 +133,10 @@ def open_invoice_gui(
     try:
         from wsm.utils import povezi_z_wsm
 
-        df = povezi_z_wsm(df, str(sifre_file), str(keywords), suppliers, supplier_code)
+        df = povezi_z_wsm(
+            df, str(sifre_file), str(keywords), suppliers, supplier_code
+        )
     except Exception as exc:
         logging.warning(f"Napaka pri samodejnem povezovanju: {exc}")
 
     review_links(df, wsm_df, links_file, total, invoice_path)
-

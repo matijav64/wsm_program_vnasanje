@@ -10,12 +10,12 @@ def test_invoice_25_24412_totals():
     df, ok = parse_eslog_invoice(xml_path)
 
     root = ET.parse(xml_path).getroot()
-    lines = root.findall('.//e:G_SG26', NS)
+    lines = root.findall(".//e:G_SG26", NS)
     taxes = [_line_tax(sg) for sg in lines]
     tax_total = sum(taxes)
 
-    grand_total = df['vrednost'].sum() + tax_total
+    grand_total = df["vrednost"].sum() + tax_total
 
-    assert tax_total == Decimal('188.94')
-    assert grand_total == Decimal('1951.11')
+    assert tax_total == Decimal("188.94")
+    assert grand_total == Decimal("1951.11")
     assert ok

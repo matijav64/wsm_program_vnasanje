@@ -27,6 +27,9 @@ def test_parse_invoice_uses_moa_203_value():
     df, header_total, discount_total = parse_invoice(xml)
     assert header_total == Decimal("130.00")
     assert discount_total == Decimal("0")
-    assert list(df["izracunana_vrednost"]) == [Decimal("50.00"), Decimal("80.00")]
+    assert list(df["izracunana_vrednost"]) == [
+        Decimal("50.00"),
+        Decimal("80.00"),
+    ]
     assert list(df["cena_netto"]) == [Decimal("25.0000"), Decimal("40.00")]
     assert df["rabata_pct"].tolist() == [Decimal("0"), Decimal("0")]

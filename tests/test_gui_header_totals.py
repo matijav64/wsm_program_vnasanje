@@ -18,15 +18,19 @@ from wsm.parsing.money import detect_round_step
 class DummyVar:
     def __init__(self):
         self.val = ""
+
     def set(self, v):
         self.val = v
+
     def get(self):
         return self.val
 
 
 def _extract_refresh_func():
     src = inspect.getsource(rl.review_links).splitlines()
-    start = next(i for i, l in enumerate(src) if "def _refresh_header_totals" in l)
+    start = next(
+        i for i, l in enumerate(src) if "def _refresh_header_totals" in l
+    )
     end = start + 1
     while end < len(src) and src[end].startswith(" "):
         end += 1
@@ -185,4 +189,3 @@ def test_header_totals_display_small_diff(tmp_path):
     assert ns["var_net"].get() == "10"
     assert ns["var_vat"].get() == "2.2"
     assert ns["var_total"].get() == "12.2"
-

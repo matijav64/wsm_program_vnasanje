@@ -1,4 +1,5 @@
 import pytest
+
 pytest.importorskip("openpyxl")
 import json
 import pandas as pd
@@ -17,21 +18,29 @@ def test_load_price_histories(tmp_path):
     s1.mkdir(parents=True)
     s2.mkdir(parents=True)
 
-    (s1 / "supplier.json").write_text(json.dumps({"sifra": "S1", "ime": "Sup1"}))
-    (s2 / "supplier.json").write_text(json.dumps({"sifra": "S2", "ime": "Sup2"}))
+    (s1 / "supplier.json").write_text(
+        json.dumps({"sifra": "S1", "ime": "Sup1"})
+    )
+    (s2 / "supplier.json").write_text(
+        json.dumps({"sifra": "S2", "ime": "Sup2"})
+    )
 
-    df1 = pd.DataFrame({
-        "key": ["S1_ItemA"],
-        "line_netto": [1],
-        "unit_price": [pd.NA],
-        "time": [pd.Timestamp("2023-01-01")],
-    })
-    df2 = pd.DataFrame({
-        "key": ["S2_ItemB"],
-        "line_netto": [2],
-        "unit_price": [pd.NA],
-        "time": [pd.Timestamp("2023-01-02")],
-    })
+    df1 = pd.DataFrame(
+        {
+            "key": ["S1_ItemA"],
+            "line_netto": [1],
+            "unit_price": [pd.NA],
+            "time": [pd.Timestamp("2023-01-01")],
+        }
+    )
+    df2 = pd.DataFrame(
+        {
+            "key": ["S2_ItemB"],
+            "line_netto": [2],
+            "unit_price": [pd.NA],
+            "time": [pd.Timestamp("2023-01-02")],
+        }
+    )
     df1.to_excel(s1 / "price_history.xlsx", index=False)
     df2.to_excel(s2 / "price_history.xlsx", index=False)
 
@@ -40,7 +49,9 @@ def test_load_price_histories(tmp_path):
     assert set(items["S1"].keys()) == {"S1 - ItemA"}
     assert set(items["S2"].keys()) == {"S2 - ItemB"}
     df_loaded = items["S1"]["S1 - ItemA"]
-    assert {"line_netto", "unit_price", "enota_norm"}.issubset(df_loaded.columns)
+    assert {"line_netto", "unit_price", "enota_norm"}.issubset(
+        df_loaded.columns
+    )
 
 
 def test_load_price_histories_non_datetime(tmp_path):
@@ -49,7 +60,9 @@ def test_load_price_histories_non_datetime(tmp_path):
     s1 = links / "Sup1"
     s1.mkdir(parents=True)
 
-    (s1 / "supplier.json").write_text(json.dumps({"sifra": "S1", "ime": "Sup1"}))
+    (s1 / "supplier.json").write_text(
+        json.dumps({"sifra": "S1", "ime": "Sup1"})
+    )
 
     df = pd.DataFrame(
         {
@@ -72,7 +85,9 @@ def test_load_price_histories_missing_file(tmp_path):
     links = tmp_path / "links"
     s1 = links / "Sup1"
     s1.mkdir(parents=True)
-    (s1 / "supplier.json").write_text(json.dumps({"sifra": "S1", "ime": "Sup1"}))
+    (s1 / "supplier.json").write_text(
+        json.dumps({"sifra": "S1", "ime": "Sup1"})
+    )
 
     items = _load_price_histories(links)
     assert items == {}
@@ -198,9 +213,13 @@ def test_show_graph_sets_xticks(monkeypatch):
         date2num=lambda d: d,
         num2date=lambda n: n,
     )
-    fake_ticker = types.SimpleNamespace(FuncFormatter=lambda func: ("FF", func))
+    fake_ticker = types.SimpleNamespace(
+        FuncFormatter=lambda func: ("FF", func)
+    )
     fake_mplcursors = types.SimpleNamespace(
-        cursor=lambda *a, **k: types.SimpleNamespace(connect=lambda *a, **k: None)
+        cursor=lambda *a, **k: types.SimpleNamespace(
+            connect=lambda *a, **k: None
+        )
     )
     fake_matplotlib = types.ModuleType("matplotlib")
     fake_matplotlib.pyplot = fake_plt
@@ -210,7 +229,9 @@ def test_show_graph_sets_xticks(monkeypatch):
     monkeypatch.setitem(sys.modules, "matplotlib", fake_matplotlib)
     monkeypatch.setitem(sys.modules, "matplotlib.pyplot", fake_plt)
     monkeypatch.setitem(sys.modules, "matplotlib.backends", fake_backends)
-    monkeypatch.setitem(sys.modules, "matplotlib.backends.backend_tkagg", fake_backend)
+    monkeypatch.setitem(
+        sys.modules, "matplotlib.backends.backend_tkagg", fake_backend
+    )
     monkeypatch.setitem(sys.modules, "matplotlib.dates", fake_dates)
     monkeypatch.setitem(sys.modules, "matplotlib.ticker", fake_ticker)
     monkeypatch.setitem(sys.modules, "mplcursors", fake_mplcursors)
@@ -234,10 +255,13 @@ def test_show_graph_sets_xticks(monkeypatch):
 
         def pack(self, *a, **k):
             pass
+
     monkeypatch.setattr("wsm.ui.price_watch.tk.Toplevel", FakeTop)
     monkeypatch.setattr("wsm.ui.price_watch.ttk.Button", FakeButton)
     monkeypatch.setattr("wsm.ui.price_watch.tk.BOTH", "both", raising=False)
-    monkeypatch.setattr("wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None
+    )
 
     pw = PriceWatch.__new__(PriceWatch)
     pw._show_graph("Item", df)
@@ -253,7 +277,9 @@ def test_show_graph_sets_xticks(monkeypatch):
 
 
 def test_show_graph_single_value(monkeypatch):
-    df = pd.DataFrame({"time": [pd.Timestamp("2023-01-01")], "unit_price": [5]})
+    df = pd.DataFrame(
+        {"time": [pd.Timestamp("2023-01-01")], "unit_price": [5]}
+    )
 
     import types, sys
 
@@ -337,9 +363,13 @@ def test_show_graph_single_value(monkeypatch):
         date2num=lambda d: d,
         num2date=lambda n: n,
     )
-    fake_ticker = types.SimpleNamespace(FuncFormatter=lambda func: ("FF", func))
+    fake_ticker = types.SimpleNamespace(
+        FuncFormatter=lambda func: ("FF", func)
+    )
     fake_mplcursors = types.SimpleNamespace(
-        cursor=lambda *a, **k: types.SimpleNamespace(connect=lambda *a, **k: None)
+        cursor=lambda *a, **k: types.SimpleNamespace(
+            connect=lambda *a, **k: None
+        )
     )
     fake_matplotlib = types.ModuleType("matplotlib")
     fake_matplotlib.pyplot = fake_plt
@@ -349,7 +379,9 @@ def test_show_graph_single_value(monkeypatch):
     monkeypatch.setitem(sys.modules, "matplotlib", fake_matplotlib)
     monkeypatch.setitem(sys.modules, "matplotlib.pyplot", fake_plt)
     monkeypatch.setitem(sys.modules, "matplotlib.backends", fake_backends)
-    monkeypatch.setitem(sys.modules, "matplotlib.backends.backend_tkagg", fake_backend)
+    monkeypatch.setitem(
+        sys.modules, "matplotlib.backends.backend_tkagg", fake_backend
+    )
     monkeypatch.setitem(sys.modules, "matplotlib.dates", fake_dates)
     monkeypatch.setitem(sys.modules, "matplotlib.ticker", fake_ticker)
     monkeypatch.setitem(sys.modules, "mplcursors", fake_mplcursors)
@@ -373,10 +405,13 @@ def test_show_graph_single_value(monkeypatch):
 
         def pack(self, *a, **k):
             pass
+
     monkeypatch.setattr("wsm.ui.price_watch.tk.Toplevel", FakeTop)
     monkeypatch.setattr("wsm.ui.price_watch.ttk.Button", FakeButton)
     monkeypatch.setattr("wsm.ui.price_watch.tk.BOTH", "both", raising=False)
-    monkeypatch.setattr("wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None
+    )
 
     pw = PriceWatch.__new__(PriceWatch)
     pw._show_graph("Item", df)
@@ -385,7 +420,10 @@ def test_show_graph_single_value(monkeypatch):
     pad = abs(float(df["unit_price"].iloc[0])) * 0.03
     if pad == 0:
         pad = 0.10
-    assert ax.ylim == (float(df["unit_price"].iloc[0]) - pad, float(df["unit_price"].iloc[0]) + pad)
+    assert ax.ylim == (
+        float(df["unit_price"].iloc[0]) - pad,
+        float(df["unit_price"].iloc[0]) + pad,
+    )
 
 
 def test_refresh_table_empty(monkeypatch):
@@ -415,7 +453,9 @@ def test_refresh_table_empty(monkeypatch):
         def insert(self, parent, index, values):
             self.inserted.append(values)
 
-    df = pd.DataFrame({"line_netto": [1], "time": [pd.Timestamp("2023-01-01")]})
+    df = pd.DataFrame(
+        {"line_netto": [1], "time": [pd.Timestamp("2023-01-01")]}
+    )
 
     pw = PriceWatch.__new__(PriceWatch)
     pw.tree = DummyTree()
@@ -437,6 +477,7 @@ def test_refresh_table_with_data(monkeypatch):
         "wsm.ui.price_watch.messagebox.showinfo",
         lambda *a, **k: None,
     )
+
     class DummyVar:
         def __init__(self, value=""):
             self.val = value
@@ -487,6 +528,7 @@ def test_refresh_table_with_non_contiguous_index(monkeypatch):
         "wsm.ui.price_watch.messagebox.showinfo",
         lambda *a, **k: None,
     )
+
     class DummyVar:
         def __init__(self, value=""):
             self.val = value
@@ -560,7 +602,9 @@ def test_refresh_table_weeks_filter(monkeypatch):
             self.inserted.append(values)
 
     now = pd.Timestamp("2023-01-31")
-    monkeypatch.setattr(pd.Timestamp, "now", classmethod(lambda cls, tz=None: now))
+    monkeypatch.setattr(
+        pd.Timestamp, "now", classmethod(lambda cls, tz=None: now)
+    )
 
     df = pd.DataFrame(
         {
@@ -617,7 +661,9 @@ def test_refresh_table_weeks_filter_fallback(monkeypatch):
             self.inserted.append(values)
 
     now = pd.Timestamp("2023-01-31")
-    monkeypatch.setattr(pd.Timestamp, "now", classmethod(lambda cls, tz=None: now))
+    monkeypatch.setattr(
+        pd.Timestamp, "now", classmethod(lambda cls, tz=None: now)
+    )
 
     df = pd.DataFrame(
         {
@@ -678,13 +724,18 @@ def test_refresh_table_weeks_filter_no_entries(monkeypatch):
             self.kwargs.append(kwargs)
 
     now = pd.Timestamp("2023-01-31")
-    monkeypatch.setattr(pd.Timestamp, "now", classmethod(lambda cls, tz=None: now))
+    monkeypatch.setattr(
+        pd.Timestamp, "now", classmethod(lambda cls, tz=None: now)
+    )
 
     df = pd.DataFrame(
         {
             "line_netto": [1, 2],
             "unit_price": [0.5, 0.6],
-            "time": [now - pd.Timedelta(weeks=10), now - pd.Timedelta(weeks=9)],
+            "time": [
+                now - pd.Timedelta(weeks=10),
+                now - pd.Timedelta(weeks=9),
+            ],
         }
     )
 
@@ -734,7 +785,9 @@ def test_refresh_table_min_max_change_with_weeks(monkeypatch):
             self.inserted.append(values)
 
     now = pd.Timestamp("2023-01-31")
-    monkeypatch.setattr(pd.Timestamp, "now", classmethod(lambda cls, tz=None: now))
+    monkeypatch.setattr(
+        pd.Timestamp, "now", classmethod(lambda cls, tz=None: now)
+    )
 
     df = pd.DataFrame(
         {
@@ -778,6 +831,7 @@ def test_show_graph_with_real_matplotlib(monkeypatch):
     import matplotlib
     import matplotlib.dates as mdates
     import types, sys
+
     matplotlib.use("Agg")
 
     df = pd.DataFrame(
@@ -822,6 +876,7 @@ def test_show_graph_with_real_matplotlib(monkeypatch):
 
         def pack(self, *a, **k):
             pass
+
     cursor_info = {}
 
     class FakeCursor:
@@ -840,8 +895,12 @@ def test_show_graph_with_real_matplotlib(monkeypatch):
     monkeypatch.setattr("wsm.ui.price_watch.tk.Toplevel", FakeTop)
     monkeypatch.setattr("wsm.ui.price_watch.ttk.Button", FakeButton)
     monkeypatch.setattr("wsm.ui.price_watch.tk.BOTH", "both", raising=False)
-    monkeypatch.setattr("wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None)
-    monkeypatch.setitem(sys.modules, "mplcursors", types.SimpleNamespace(cursor=fake_cursor))
+    monkeypatch.setattr(
+        "wsm.ui.price_watch.messagebox.showerror", lambda *a, **k: None
+    )
+    monkeypatch.setitem(
+        sys.modules, "mplcursors", types.SimpleNamespace(cursor=fake_cursor)
+    )
 
     pw = PriceWatch.__new__(PriceWatch)
     pw._show_graph("Item", df)
@@ -878,6 +937,7 @@ def test_show_graph_with_real_matplotlib(monkeypatch):
 
 def test_show_graph_skips_zero_prices(monkeypatch):
     import matplotlib
+
     matplotlib.use("Agg")
     import types, sys
 
@@ -950,7 +1010,9 @@ def test_show_graph_skips_zero_prices(monkeypatch):
         "wsm.ui.price_watch.messagebox.showerror",
         lambda *a, **k: None,
     )
-    monkeypatch.setitem(sys.modules, "mplcursors", types.SimpleNamespace(cursor=fake_cursor))
+    monkeypatch.setitem(
+        sys.modules, "mplcursors", types.SimpleNamespace(cursor=fake_cursor)
+    )
 
     pw = PriceWatch.__new__(PriceWatch)
     pw._show_graph("Item", df)
@@ -1024,6 +1086,7 @@ def test_refresh_table_uses_start_date(monkeypatch):
 
 def test_show_graph_filters_start_date(monkeypatch):
     import matplotlib
+
     matplotlib.use("Agg")
     import types, sys
 
@@ -1096,7 +1159,9 @@ def test_show_graph_filters_start_date(monkeypatch):
         "wsm.ui.price_watch.messagebox.showerror",
         lambda *a, **k: None,
     )
-    monkeypatch.setitem(sys.modules, "mplcursors", types.SimpleNamespace(cursor=fake_cursor))
+    monkeypatch.setitem(
+        sys.modules, "mplcursors", types.SimpleNamespace(cursor=fake_cursor)
+    )
 
     class DummyVar:
         def __init__(self, value=""):
@@ -1135,4 +1200,3 @@ def test_close_calls_destroy_and_quit():
     PriceWatch._close(pw)
 
     assert calls == ["destroy", "quit"]
-
