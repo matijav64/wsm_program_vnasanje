@@ -3,5 +3,16 @@ pdfplumber
 openpyxl
 click
 
+[dev]
+pandas
+openpyxl
+pdfplumber
+PyQt5
+matplotlib
+
+[plot]
+matplotlib
+mplcursors
+
 [pyqt]
 PyQt5>=5.15
