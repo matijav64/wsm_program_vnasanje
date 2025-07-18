@@ -151,6 +151,8 @@ def _build_header_totals(
         except Exception as exc:  # pragma: no cover - robust against IO
             log.warning(f"Napaka pri branju zneskov glave: {exc}")
 
+    invoice_total = totals["net"]
+
     log.debug(
         "HEADER  %s  ⇒  net=%s  vat=%s  gross=%s",
         invoice_path,
