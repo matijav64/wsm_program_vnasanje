@@ -119,7 +119,11 @@ def _build_header_totals(
     amount and VAT defaults to ``0``.
     """
 
-    totals = {"net": invoice_total, "vat": Decimal("0"), "gross": invoice_total}
+    totals = {
+        "net": invoice_total,
+        "vat": Decimal("0"),
+        "gross": invoice_total,
+    }
 
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
@@ -136,6 +140,12 @@ def _build_header_totals(
 
             if net == 0 and vat != 0 and gross != 0:
                 net = (gross - vat).quantize(DEC2, ROUND_HALF_UP)
+
+            if gross == 0 and net != 0 and vat != 0:
+                gross = (net + vat).quantize(DEC2, ROUND_HALF_UP)
+
+            if vat == 0 and net != 0 and gross != 0:
+                vat = (gross - net).quantize(DEC2, ROUND_HALF_UP)
 
             totals = {"net": net, "vat": vat, "gross": gross}
         except Exception as exc:  # pragma: no cover - robust against IO
