@@ -1,3 +1,0 @@
-[console_scripts]
-wsm = wsm.cli:main
-wsm-gui = wsm.run:main
