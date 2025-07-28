@@ -101,7 +101,14 @@ def open_invoice_gui(
 
     key = choose_supplier_key(vat_id, supplier_code)
     base_dir = Path(suppliers)
-    base_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        base_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        messagebox.showerror(
+            "Napaka",
+            f"Mapa {base_dir} ni dosegljiva oziroma je ni mogoče ustvariti.",
+        )
+        return
     if not key:
         messagebox.showwarning(
             "Opozorilo",
