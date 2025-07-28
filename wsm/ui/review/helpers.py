@@ -40,7 +40,7 @@ _mass = {"kg", "g", "gram", "grams", "mg", "milligram", "milligrams"}
 _vol = {"l", "ml", "cl", "dl", "dcl"}
 _rx_vol = re.compile(r"([0-9]+[\.,]?[0-9]*)\s*(ml|cl|dl|dcl|l)\b", re.I)
 _rx_mass = re.compile(
-    r"(?:teža|masa|weight)?\s*[:\s]?\s*([0-9]+[\.,]?[0-9]*)\s*((?:kgm?)|kgr|g|gr|gram|grams|mg|milligram|milligrams)\b",
+    r"(?:teža|masa|weight)?\s*[:\s]?\s*([0-9]+[\.,]?[0-9]*)\s*((?:kgm?)|kgr|g|gr|gram|grams|mg|milligram|milligrams)\b",  # noqa: E501
     re.I,
 )
 _rx_fraction = re.compile(r"(\d+(?:[.,]\d+)?)/1\b", re.I)
@@ -73,7 +73,7 @@ def _norm_unit(
         base_unit, factor = unit_map[u]
         q_norm = q * Decimal(str(factor))
         log.debug(
-            f"Enota v unit_map: {u} -> base_unit={base_unit}, factor={factor}, q_norm={q_norm}"
+            f"Enota v unit_map: {u} -> base_unit={base_unit}, factor={factor}, q_norm={q_norm}"  # noqa: E501
         )
     else:
         u_norm = (u or "").strip().lower()
@@ -123,12 +123,12 @@ def _norm_unit(
                     q_norm = q
                     base_unit = "kos"
         log.debug(
-            f"Enota ni v unit_map: u_norm={u_norm}, base_unit={base_unit}, q_norm={q_norm}"
+            f"Enota ni v unit_map: u_norm={u_norm}, base_unit={base_unit}, q_norm={q_norm}"  # noqa: E501
         )
 
     if base_unit == "kos":
         m_weight = re.search(
-            r"(?:teža|masa|weight)?\s*[:\s]?\s*(\d+(?:[.,]\d+)?)\s*(mg|g|dag|kg)\b",
+            r"(?:teža|masa|weight)?\s*[:\s]?\s*(\d+(?:[.,]\d+)?)\s*(mg|g|dag|kg)\b",  # noqa: E501
             name,
             re.I,
         )
@@ -144,7 +144,7 @@ def _norm_unit(
             elif unit == "kg":
                 weight_kg = val
             log.debug(
-                f"Teža najdena v imenu: {val} {unit}, pretvorjeno v kg: {weight_kg}"
+                f"Teža najdena v imenu: {val} {unit}, pretvorjeno v kg: {weight_kg}"  # noqa: E501
             )
             return q_norm * weight_kg, "kg"
 
@@ -157,7 +157,7 @@ def _norm_unit(
             elif unit == "l":
                 volume_l = val
             log.debug(
-                f"Volumen najden v imenu: {val} {unit}, pretvorjeno v L: {volume_l}"
+                f"Volumen najden v imenu: {val} {unit}, pretvorjeno v L: {volume_l}"  # noqa: E501
             )
 
             if volume_l >= 1 or q_norm != q_norm.to_integral_value():
@@ -170,7 +170,7 @@ def _norm_unit(
             weight = WEIGHTS_PER_PIECE.get((str(code), clean_name))
             if weight:
                 log.debug(
-                    f"Teža iz tabele WEIGHTS_PER_PIECE: {code} {clean_name} -> {weight} kg"
+                    f"Teža iz tabele WEIGHTS_PER_PIECE: {code} {clean_name} -> {weight} kg"  # noqa: E501
                 )
                 return q_norm * weight, "kg"
     try:
@@ -193,7 +193,7 @@ def _norm_unit(
         if m_frac:
             val = _dec(m_frac.group(1))
             log.debug(
-                f"Fractional volume detected outside VAT 9.5: {val}/1 -> using {val} L"
+                f"Fractional volume detected outside VAT 9.5: {val}/1 -> using {val} L"  # noqa: E501
             )
             return q_norm * val, "L"
 
@@ -208,7 +208,7 @@ def _norm_unit(
                 "l": val,
             }[typ]
             log.debug(
-                f"Volume detected for fractional pieces: {val} {typ}, converted to L: {conv}"
+                f"Volume detected for fractional pieces: {val} {typ}, converted to L: {conv}"  # noqa: E501
             )
             return q_norm * conv, "L"
 
@@ -266,7 +266,7 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _split_totals(
-    df: pd.DataFrame, doc_discount_total: Decimal
+    df: pd.DataFrame, doc_discount_total: Decimal | float | int = 0
 ) -> tuple[Decimal, Decimal, Decimal]:
     """Return linked, unlinked and combined totals for review tables.
 
@@ -286,22 +286,41 @@ def _split_totals(
     """
 
     valid = df.copy()
+    if "deleted" in valid.columns:
+        valid = valid[~valid["deleted"].fillna(False)]
     if "is_gratis" in valid.columns:
-        valid = valid[~valid["is_gratis"]]
+        valid = valid[~valid["is_gratis"].fillna(False)]
 
-    dd_total = (
-        doc_discount_total
-        if isinstance(doc_discount_total, Decimal)
-        else Decimal(str(doc_discount_total))
-    )
+    try:
+        dd_total = Decimal(str(doc_discount_total or "0"))
+    except Exception:
+        dd_total = Decimal("0")
 
-    linked_mask = valid["wsm_sifra"].notna()
-    linked_total = valid[linked_mask]["total_net"].sum()
-    unlinked_total = valid[~linked_mask]["total_net"].sum()
-    if linked_mask.any():
-        linked_total += dd_total
+    if "total_net" in valid.columns:
+        value_col = "total_net"
+    elif "vrednost_postavke" in valid.columns:
+        value_col = "vrednost_postavke"
+    elif "vrednost" in valid.columns:
+        value_col = "vrednost"
     else:
-        unlinked_total += dd_total
+        value_col = None
+
+    if value_col is None:
+        return Decimal("0"), Decimal("0"), Decimal("0")
+
+    valid[value_col] = valid[value_col].fillna(0)
+
+    linked_mask = valid["wsm_sifra"].notna() & (
+        valid["wsm_sifra"].astype(str).str.strip() != ""
+    )
+    linked_total = valid.loc[linked_mask, value_col].sum()
+    unlinked_total = valid.loc[~linked_mask, value_col].sum()
+
+    if dd_total:
+        if linked_total:
+            linked_total += dd_total
+        else:
+            unlinked_total += dd_total
 
     total_sum = linked_total + unlinked_total
     return linked_total, unlinked_total, total_sum
