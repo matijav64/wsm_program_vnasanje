@@ -285,11 +285,10 @@ def review_links_qt(
             "✓" if abs(total_sum - header_totals["net"]) <= step_total else "✗"
         )
         text = (
-            f"Skupaj povezano: {_fmt(linked_total)} € + "
-            f"Skupaj ostalo: {_fmt(unlinked_total)} € = "
-            f"Skupni seštevek: {_fmt(total_sum)} € | "
-            "Skupna vrednost računa: "
-            f"{_fmt(header_totals['net'])} € {match_symbol}"
+            f"Skupaj povezano: {_fmt(linked_total)} €  |  "
+            f"Skupaj ostalo: {_fmt(unlinked_total)} €  |  "
+            f"Skupni seštevek: {_fmt(total_sum)} €  |  "
+            f"Skupna vrednost računa: {_fmt(header_totals['net'])} € {match_symbol}"  # noqa: E501
         )
         total_label.setText(text)
 
