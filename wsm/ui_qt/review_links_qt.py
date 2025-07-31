@@ -277,17 +277,22 @@ def review_links_qt(
                         r_i, c_i, QtWidgets.QTableWidgetItem(str(v))
                     )
 
-        linked_total, unlinked_total, total_sum = _split_totals(
-            df, doc_discount_total
+        vat_rate = (
+            header_totals["vat"] / header_totals["net"]
+            if header_totals["net"]
+            else Decimal("0")
         )
-        step_total = detect_round_step(header_totals["net"], total_sum)
+        net_total, vat_total, gross_total = _split_totals(
+            df, doc_discount_total, vat_rate
+        )
+        step_total = detect_round_step(header_totals["net"], net_total)
         match_symbol = (
-            "✓" if abs(total_sum - header_totals["net"]) <= step_total else "✗"
+            "✓" if abs(net_total - header_totals["net"]) <= step_total else "✗"
         )
         text = (
-            f"Skupaj povezano: {_fmt(linked_total)} €  |  "
-            f"Skupaj ostalo: {_fmt(unlinked_total)} €  |  "
-            f"Skupni seštevek: {_fmt(total_sum)} €  |  "
+            f"Neto: {_fmt(net_total)} €  |  "
+            f"DDV: {_fmt(vat_total)} €  |  "
+            f"Bruto: {_fmt(gross_total)} €  |  "
             f"Skupna vrednost računa: {_fmt(header_totals['net'])} € {match_symbol}"  # noqa: E501
         )
         total_label.setText(text)

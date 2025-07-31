@@ -16,9 +16,11 @@ def _calc_totals(xml_path: Path):
     df["wsm_sifra"] = pd.NA
     df.loc[df["naziv"] == "Normal", "wsm_sifra"] = "X"
 
-    linked_total, unlinked_total, _ = _split_totals(df, doc_discount_total)
+    net, vat, gross = _split_totals(
+        df, doc_discount_total, vat_rate=Decimal("0")
+    )
     assert ok
-    return linked_total, unlinked_total
+    return net, vat, gross
 
 
 def test_gratis_line_excluded_from_totals(tmp_path):
@@ -52,6 +54,7 @@ def test_gratis_line_excluded_from_totals(tmp_path):
     xml_path = tmp_path / "gratis.xml"
     xml_path.write_text(xml)
 
-    linked, unlinked = _calc_totals(xml_path)
-    assert linked == Decimal("10")
-    assert unlinked == Decimal("0")
+    net, vat, gross = _calc_totals(xml_path)
+    assert net == Decimal("10")
+    assert vat == Decimal("0")
+    assert gross == net
