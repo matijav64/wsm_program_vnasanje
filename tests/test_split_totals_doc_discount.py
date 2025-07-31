@@ -22,16 +22,16 @@ def test_split_totals_linked_discount():
     path = Path("tests/minimal_doc_discount.xml")
     df, disc, header = _prepare(path)
     df.loc[0, "wsm_sifra"] = "X"
-    linked, unlinked, total = _split_totals(df, disc)
-    assert total == header
-    assert linked == df.loc[0, "total_net"] + disc
-    assert unlinked == Decimal("0")
+    net, vat, gross = _split_totals(df, disc, vat_rate=Decimal("0"))
+    assert net == header
+    assert vat == Decimal("0")
+    assert gross == net
 
 
 def test_split_totals_unlinked_discount():
     path = Path("tests/minimal_doc_discount.xml")
     df, disc, header = _prepare(path)
-    linked, unlinked, total = _split_totals(df, disc)
-    assert total == header
-    assert linked == Decimal("0")
-    assert unlinked == df["total_net"].sum() + disc
+    net, vat, gross = _split_totals(df, disc, vat_rate=Decimal("0"))
+    assert net == header
+    assert vat == Decimal("0")
+    assert gross == net

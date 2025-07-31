@@ -266,23 +266,27 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _split_totals(
-    df: pd.DataFrame, doc_discount_total: Decimal | float | int = 0
+    df: pd.DataFrame,
+    doc_discount_total: Decimal | float | int = 0,
+    vat_rate: Decimal | float | int | None = None,
 ) -> tuple[Decimal, Decimal, Decimal]:
-    """Return linked, unlinked and combined totals for review tables.
+    """Return net, VAT and gross totals for review tables.
 
     Parameters
     ----------
     df : pandas.DataFrame
-        Invoice lines excluding document discount rows.
-        Must contain ``total_net`` and ``wsm_sifra`` columns and may include
-        ``is_gratis``.
+        Invoice lines excluding document discount rows. Must contain
+        ``total_net`` and ``wsm_sifra`` columns and may include ``is_gratis``.
     doc_discount_total : Decimal
         Document level discount amount to apply.
+    vat_rate : Decimal | float | int | None
+        VAT rate as a fraction (e.g. ``0.22`` for 22 %). ``None`` means 0.
 
     Returns
     -------
     tuple[Decimal, Decimal, Decimal]
-        ``(linked_total, unlinked_total, total_sum)``.
+        ``(net, vat, gross)`` where ``net`` is the sum of all invoice lines
+        after discounts.
     """
 
     valid = df.copy()
@@ -322,8 +326,21 @@ def _split_totals(
         else:
             unlinked_total += dd_total
 
-    total_sum = linked_total + unlinked_total
-    return linked_total, unlinked_total, total_sum
+    net_amount = linked_total + unlinked_total
+
+    try:
+        rate = Decimal(str(vat_rate)) if vat_rate is not None else Decimal("0")
+    except Exception:
+        rate = Decimal("0")
+
+    vat = (
+        (net_amount * rate).quantize(Decimal("0.01"))
+        if net_amount
+        else Decimal("0")
+    )
+    gross = net_amount + vat
+
+    return net_amount, vat, gross
 
 
 def _apply_price_warning(

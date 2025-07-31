@@ -23,18 +23,17 @@ def test_split_totals_matches_header_without_doc_row():
     df, disc, header = _prepare(path)
     assert disc == Decimal("0")
     df.loc[0, "wsm_sifra"] = "X"
-    linked, unlinked, total = _split_totals(df, disc)
-    assert linked == df["total_net"].sum()
-    assert unlinked == Decimal("0")
-    assert total == header
+    net, vat, gross = _split_totals(df, disc, vat_rate=Decimal("0"))
+    assert net == df["total_net"].sum()
+    assert vat == Decimal("0")
+    assert gross == header
 
 
 def test_split_totals_matches_header_with_doc_row():
     path = Path("tests/minimal_doc_discount.xml")
     df, disc, header = _prepare(path)
     df.loc[0, "wsm_sifra"] = "X"
-    linked, unlinked, total = _split_totals(df, disc)
-    assert (df["total_net"].sum() + disc).quantize(Decimal("0.01")) == header
-    assert linked == df.loc[0, "total_net"] + disc
-    assert unlinked == Decimal("0")
-    assert total == header
+    net, vat, gross = _split_totals(df, disc, vat_rate=Decimal("0"))
+    assert (df["total_net"].sum() + disc).quantize(Decimal("0.01")) == net
+    assert vat == Decimal("0")
+    assert gross == net

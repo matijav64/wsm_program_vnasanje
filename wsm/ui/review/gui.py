@@ -598,18 +598,26 @@ def review_links(
     total_frame = tk.Frame(root)
     total_frame.pack(fill="x", pady=5)
 
-    linked_total, unlinked_total, total_sum = _split_totals(
-        df, doc_discount_total
+    vat_rate = (
+        header_totals["vat"] / header_totals["net"]
+        if header_totals["net"]
+        else Decimal("0")
+    )
+    net_total, vat_total, gross_total = _split_totals(
+        df, doc_discount_total, vat_rate
     )
     match_symbol = (
         "✓"
-        if abs(total_sum - header_totals["net"]) <= Decimal("0.02")
+        if abs(net_total - header_totals["net"]) <= Decimal("0.02")
         else "✗"
     )
 
     tk.Label(
         total_frame,
-        text=f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(header_totals['net'])} € {match_symbol}",
+        text=(
+            f"Neto: {_fmt(net_total)} € | DDV: {_fmt(vat_total)} € | Bruto: {_fmt(gross_total)} € | "
+            f"Skupna vrednost računa: {_fmt(header_totals['net'])} € {match_symbol}"
+        ),
         font=("Arial", 10, "bold"),
         name="total_sum",
     ).pack(side="left", padx=10)
@@ -646,16 +654,21 @@ def review_links(
                 ),
             )
 
-        linked_total, unlinked_total, total_sum = _split_totals(
-            df, dd_total if not df_doc.empty else Decimal("0")
+        vat_rate = (
+            header_totals["vat"] / header_totals["net"]
+            if header_totals["net"]
+            else Decimal("0")
+        )
+        net_total, vat_total, gross_total = _split_totals(
+            df, dd_total if not df_doc.empty else Decimal("0"), vat_rate
         )
         match_symbol = (
-            "✓" if abs(total_sum - inv_total) <= Decimal("0.02") else "✗"
+            "✓" if abs(net_total - inv_total) <= Decimal("0.02") else "✗"
         )
         total_frame.children["total_sum"].config(
             text=(
-                f"Skupaj povezano: {_fmt(linked_total)} € + Skupaj ostalo: {_fmt(unlinked_total)} € = "
-                f"Skupni seštevek: {_fmt(total_sum)} € | Skupna vrednost računa: {_fmt(inv_total)} € {match_symbol}"
+                f"Neto: {_fmt(net_total)} € | DDV: {_fmt(vat_total)} € | Bruto: {_fmt(gross_total)} € | "
+                f"Skupna vrednost računa: {_fmt(inv_total)} € {match_symbol}"
             )
         )
 
