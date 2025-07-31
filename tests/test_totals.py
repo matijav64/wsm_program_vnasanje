@@ -6,6 +6,7 @@ import pandas as pd
 
 import wsm.ui.review.gui as rl
 from wsm.parsing.money import detect_round_step
+from wsm.ui.review.helpers import _split_totals
 
 
 class DummyLabel:
@@ -62,3 +63,13 @@ def test_totals_label_contains_terms():
     ns["_update_totals"]()
     assert "DDV:" in lbl.text
     assert "Skupaj:" in lbl.text
+
+
+def test_split_totals_simple():
+    df = pd.DataFrame({"wsm_sifra": ["X"], "total_net": [Decimal("100")]})
+    result = _split_totals(df, Decimal("0"), vat_rate=Decimal("0.095"))
+    assert result == (
+        Decimal("100"),
+        Decimal("9.5"),
+        Decimal("109.5"),
+    )
