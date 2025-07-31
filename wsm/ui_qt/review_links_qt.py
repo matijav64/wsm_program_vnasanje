@@ -282,20 +282,12 @@ def review_links_qt(
             if header_totals["net"]
             else Decimal("0")
         )
-        net_total, vat_total, gross_total = _split_totals(
-            df, doc_discount_total, vat_rate
+        net, vat, gross = _split_totals(df, doc_discount_total, vat_rate)
+        total_label.setText(
+            f"Neto:   {net:,.2f} €\n"
+            f"DDV:    {vat:,.2f} €\n"
+            f"Skupaj: {gross:,.2f} €"
         )
-        step_total = detect_round_step(header_totals["net"], net_total)
-        match_symbol = (
-            "✓" if abs(net_total - header_totals["net"]) <= step_total else "✗"
-        )
-        text = (
-            f"Neto: {_fmt(net_total)} €  |  "
-            f"DDV: {_fmt(vat_total)} €  |  "
-            f"Bruto: {_fmt(gross_total)} €  |  "
-            f"Skupna vrednost računa: {_fmt(header_totals['net'])} € {match_symbol}"  # noqa: E501
-        )
-        total_label.setText(text)
 
     update_summary()
 

@@ -606,21 +606,19 @@ def review_links(
     net_total, vat_total, gross_total = _split_totals(
         df, doc_discount_total, vat_rate
     )
-    match_symbol = (
-        "✓"
-        if abs(net_total - header_totals["net"]) <= Decimal("0.02")
-        else "✗"
-    )
 
-    tk.Label(
+    lbl_totals = tk.Label(
         total_frame,
         text=(
-            f"Neto: {_fmt(net_total)} € | DDV: {_fmt(vat_total)} € | Bruto: {_fmt(gross_total)} € | "
-            f"Skupna vrednost računa: {_fmt(header_totals['net'])} € {match_symbol}"
+            f"Neto:   {net_total:,.2f} €\n"
+            f"DDV:    {vat_total:,.2f} €\n"
+            f"Skupaj: {gross_total:,.2f} €"
         ),
         font=("Arial", 10, "bold"),
         name="total_sum",
-    ).pack(side="left", padx=10)
+        justify="left",
+    )
+    lbl_totals.pack(side="left", padx=10)
 
     def _update_totals():
         line_total_raw = df["total_net"].sum()
@@ -659,16 +657,14 @@ def review_links(
             if header_totals["net"]
             else Decimal("0")
         )
-        net_total, vat_total, gross_total = _split_totals(
+        net, vat, gross = _split_totals(
             df, dd_total if not df_doc.empty else Decimal("0"), vat_rate
-        )
-        match_symbol = (
-            "✓" if abs(net_total - inv_total) <= Decimal("0.02") else "✗"
         )
         total_frame.children["total_sum"].config(
             text=(
-                f"Neto: {_fmt(net_total)} € | DDV: {_fmt(vat_total)} € | Bruto: {_fmt(gross_total)} € | "
-                f"Skupna vrednost računa: {_fmt(inv_total)} € {match_symbol}"
+                f"Neto:   {net:,.2f} €\n"
+                f"DDV:    {vat:,.2f} €\n"
+                f"Skupaj: {gross:,.2f} €"
             )
         )
 
