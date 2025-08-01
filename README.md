@@ -192,7 +192,8 @@ pip install -r requirements-dev.txt
 
 ### Poganjanje testov
 
-Pred zagonom `pytest` namestite pakete iz `requirements-dev.txt`:
+Pred zagonom `pytest` je **obvezno**, da namestite pakete iz
+`requirements-dev.txt`. Uporabite naslednje ukaze:
 
 ```bash
 pip install -r requirements-dev.txt
