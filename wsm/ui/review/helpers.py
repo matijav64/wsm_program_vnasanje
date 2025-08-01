@@ -268,7 +268,7 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
 def _split_totals(
     df: pd.DataFrame,
     doc_discount_total: Decimal | float | int = 0,
-    vat_rate: Decimal | float | int | None = None,
+    vat_rate: Decimal | float | int = Decimal("0.095"),
 ) -> tuple[Decimal, Decimal, Decimal]:
     """Return net, VAT and gross totals for review tables.
 
@@ -279,8 +279,8 @@ def _split_totals(
         ``total_net`` and ``wsm_sifra`` columns and may include ``is_gratis``.
     doc_discount_total : Decimal
         Document level discount amount to apply.
-    vat_rate : Decimal | float | int | None
-        VAT rate as a fraction (e.g. ``0.22`` for 22 %). ``None`` means 0.
+    vat_rate : Decimal | float | int
+        VAT rate as a fraction (e.g. ``0.22`` for 22 %). Defaults to ``0.095``.
 
     Returns
     -------
@@ -329,7 +329,7 @@ def _split_totals(
     net_amount = linked_total + unlinked_total
 
     try:
-        rate = Decimal(str(vat_rate)) if vat_rate is not None else Decimal("0")
+        rate = Decimal(str(vat_rate))
     except Exception:
         rate = Decimal("0")
 
@@ -338,7 +338,7 @@ def _split_totals(
         if net_amount
         else Decimal("0")
     )
-    gross = net_amount + vat
+    gross = (net_amount + vat).quantize(Decimal("0.01"))
 
     return net_amount, vat, gross
 
