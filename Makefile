@@ -1,6 +1,6 @@
 ﻿SHELL := /bin/bash
 
-.PHONY: sync deps test run
+.PHONY: sync deps test validate run
 
 # 1) Sinhronizacija z GitHub (če obstaja .git mape)
 sync:
@@ -19,8 +19,12 @@ if [ -f "wsm_program_vnasanje/requirements.txt" ] ; then \
   pip install -r wsm_program_vnasanje/requirements.txt ; \
 fi
 
-# 3) Zagon validacije
+# 3) Zagon unit testov
 test:
+pytest -q
+
+# Dodatna validacija
+validate:
 python -m wsm validate tests
 
 # 4) Celoten “pipeline” (sync → deps → test)

@@ -206,6 +206,12 @@ pre-commit install  # opcijsko
 
 Če je nastavljen `pre-commit`, se oba orodja zaženeta ob vsakem commitu.
 
+### Okoljske spremenljivke
+
+- `AVG_COST_SKIP_ZERO` — when set to `1` (default `0`) the helper
+  `wsm.utils.average_cost` skips zero-price invoice lines while computing
+  the average.
+
 ## Možne izboljšave
 
 - **Izboljšano samodejno povezovanje**: poleg iskanja po ključnih besedah bi lahko uporabili knjižnice za "bližnje ujemanje" (npr. `rapidfuzz`), ali pa vektorsko iskanje, kot nakazuje mapa `wsm_vector_embedding`. Tako bi sistem lažje našel ustrezno WSM šifro tudi pri rahlo različnih nazivih artiklov.
