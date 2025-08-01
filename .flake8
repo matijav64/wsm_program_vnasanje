@@ -1,3 +1,2 @@
 [flake8]
 max-line-length = 79
-filename = tests/test_cli_env.py, tests/test_analyze_invoice.py, wsm/cli.py

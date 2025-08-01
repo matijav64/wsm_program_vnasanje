@@ -28,7 +28,25 @@ def _update_supplier_info(
     sup_file: Path,
     vat: str | None,
 ) -> tuple[Path, Path]:
-    """Return updated links file path and supplier folder."""
+    """Update supplier details and rename folders if needed.
+
+    Args:
+        df: Invoice lines with supplier columns.
+        links_file: Excel file with manual mappings.
+        supplier_name: Name of the supplier from the invoice.
+        supplier_code: Supplier code from the invoice.
+        sup_map: Dictionary loaded from ``supplier.json``.
+        sup_file: Directory containing supplier folders.
+        vat: VAT number if available.
+
+    Returns:
+        Tuple containing the updated ``links_file`` path and the supplier
+        folder.
+
+    Side effects:
+        - Renames or moves folders on disk.
+        - Updates ``supplier.json`` and logs warnings.
+    """
 
     df["sifra_dobavitelja"] = df["sifra_dobavitelja"].fillna("").astype(str)
     empty_sifra = df["sifra_dobavitelja"] == ""
@@ -160,7 +178,16 @@ def _write_excel_links(
     manual_old: pd.DataFrame,
     links_file: Path,
 ) -> None:
-    """Write updated mappings to ``links_file``."""
+    """Persist manual links to an Excel file.
+
+    Args:
+        df: DataFrame with updated links from the GUI.
+        manual_old: DataFrame loaded from the existing ``links_file``.
+        links_file: Target Excel file for writing mappings.
+
+    Side effects:
+        Overwrites ``links_file`` with merged data and logs progress.
+    """
 
     if not manual_old.empty:
         manual_old = manual_old.dropna(
@@ -242,7 +269,23 @@ def _write_history_files(
     sup_file: Path,
     root,
 ) -> bool:
-    """Record price history and clean temporary files."""
+    """Save price history for an invoice.
+
+    Args:
+        df: Processed invoice DataFrame.
+        invoice_path: Original XML or PDF invoice.
+        new_folder: Directory where supplier files are stored.
+        links_file: Excel file with manual mappings.
+        sup_file: Base directory with supplier subfolders.
+        root: Tkinter root widget used for message boxes.
+
+    Returns:
+        ``True`` if the user aborted due to a duplicate invoice, otherwise
+        ``False``.
+
+    Side effects:
+        Writes to ``price_history.xlsx`` and may remove temporary folders.
+    """
 
     invoice_hash = None
     if invoice_path and invoice_path.suffix.lower() == ".xml":
