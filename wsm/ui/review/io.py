@@ -28,7 +28,21 @@ def _update_supplier_info(
     sup_file: Path,
     vat: str | None,
 ) -> tuple[Path, Path]:
-    """Return updated links file path and supplier folder."""
+    """Update supplier metadata and return new file and folder paths.
+
+    Args:
+        df (pandas.DataFrame): Invoice rows with supplier codes.
+        links_file (pathlib.Path): Existing mapping file path.
+        supplier_name (str): Display name of the supplier.
+        supplier_code (str): Unique supplier identifier.
+        sup_map (dict): Mapping of supplier codes to info dictionaries.
+        sup_file (pathlib.Path): Directory containing per-supplier data.
+        vat (str | None): VAT number used when renaming folders.
+
+    Returns:
+        tuple[pathlib.Path, pathlib.Path]: Updated ``links_file`` path and
+        the supplier folder where it resides.
+    """
 
     df["sifra_dobavitelja"] = df["sifra_dobavitelja"].fillna("").astype(str)
     empty_sifra = df["sifra_dobavitelja"] == ""
@@ -160,7 +174,17 @@ def _write_excel_links(
     manual_old: pd.DataFrame,
     links_file: Path,
 ) -> None:
-    """Write updated mappings to ``links_file``."""
+    """Write updated mappings to ``links_file``.
+
+    Args:
+        df (pandas.DataFrame): Invoice lines to persist.
+        manual_old (pandas.DataFrame): Existing mappings read from
+            ``links_file``.
+        links_file (pathlib.Path): Destination Excel file.
+
+    Returns:
+        None
+    """
 
     if not manual_old.empty:
         manual_old = manual_old.dropna(
@@ -242,7 +266,21 @@ def _write_history_files(
     sup_file: Path,
     root,
 ) -> bool:
-    """Record price history and clean temporary files."""
+    """Record price history and clean temporary files.
+
+    Args:
+        df (pandas.DataFrame): Rows to log in the history file.
+        invoice_path (pathlib.Path | None): Original invoice for hash and
+            metadata extraction.
+        new_folder (pathlib.Path): Supplier folder containing history data.
+        links_file (pathlib.Path): Mapping file referenced in history logs.
+        sup_file (pathlib.Path): Directory containing supplier folders.
+        root: ``tkinter`` root used for prompts and closing.
+
+    Returns:
+        bool: ``True`` when the user opts to cancel due to a duplicate
+        invoice, ``False`` otherwise.
+    """
 
     invoice_hash = None
     if invoice_path and invoice_path.suffix.lower() == ".xml":

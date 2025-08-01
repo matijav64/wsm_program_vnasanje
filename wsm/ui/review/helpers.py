@@ -26,7 +26,14 @@ PRICE_DIFF_THRESHOLD = (
 
 
 def _fmt(v) -> str:
-    """Human-friendly format števil (Decimal / float / int)."""
+    """Return a human-friendly representation of ``v``.
+
+    Args:
+        v: Numeric value convertible to :class:`~decimal.Decimal`.
+
+    Returns:
+        str: ``v`` formatted without trailing zeros.
+    """
     if v is None or (isinstance(v, float) and math.isnan(v)) or pd.isna(v):
         return ""
     d = v if isinstance(v, Decimal) else Decimal(str(v))
@@ -47,7 +54,14 @@ _rx_fraction = re.compile(r"(\d+(?:[.,]\d+)?)/1\b", re.I)
 
 
 def _dec(x: str) -> Decimal:
-    """Convert a comma-separated string to ``Decimal``."""
+    """Convert a comma-separated string to :class:`~decimal.Decimal`.
+
+    Args:
+        x (str): Numeric value using a comma as decimal separator.
+
+    Returns:
+        Decimal: Parsed numeric value.
+    """
     return Decimal(x.replace(",", "."))
 
 
@@ -58,7 +72,26 @@ def _norm_unit(
     vat_rate: Decimal | float | str | None = None,
     code: str | None = None,
 ) -> Tuple[Decimal, str]:
-    """Normalize quantity and unit to (kg / L / ``kos``)."""
+    """Normalize quantity and unit to ``kg``/``L``/``kos``.
+
+    Parameters
+    ----------
+    q : Decimal
+        Original quantity value.
+    u : str
+        Unit code or textual unit.
+    name : str
+        Item description used for unit detection.
+    vat_rate : Decimal | float | str | None, optional
+        VAT rate used for fallback heuristics.
+    code : str | None, optional
+        Supplier article code for weight lookup.
+
+    Returns
+    -------
+    tuple[Decimal, str]
+        ``(quantity, unit)`` in normalized form.
+    """
     log.debug(f"Normalizacija: q={q}, u={u}, name={name}")
     unit_map = {
         "KGM": ("kg", 1),
