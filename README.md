@@ -172,6 +172,15 @@ stalno maso pakiranja, jo dodajte v ta slovar.
 Ukaz izpiše povzetek po WSM šifrah in preveri, ali se vsota ujema z
 vrednostjo na računu.
 
+### Okoljske spremenljivke
+
+| Ime | Privzeto | Opis |
+| --- | --- | --- |
+| `WSM_LINKS_DIR` | `links` | Mapa, kjer se shranjujejo ročno povezani računi. |
+| `WSM_CODES_FILE` | `sifre_wsm.xlsx` | Excel s šiframi WSM, ki jih uporablja program. |
+| `WSM_KEYWORDS_FILE` | `kljucne_besede_wsm_kode.xlsx` | Datoteka s ključnimi besedami za hitrejše iskanje ustreznih šifer. |
+| `AVG_COST_SKIP_ZERO` | `0` | Če je nastavljena na `1`, funkcija `wsm.utils.average_cost` pri izračunu povprečne cene preskoči postavke z ničelno ceno. |
+
 ### Namestitev razvojnih odvisnosti
 
 Pred zagonom testov namestite pakete iz `requirements-dev.txt`. Datoteka že
