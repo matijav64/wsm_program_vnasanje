@@ -99,7 +99,6 @@ def review_links_qt(
     df = df[df["sifra_dobavitelja"] != "_DOC_"].reset_index(drop=True)
 
     header_totals = _build_header_totals(invoice_path, invoice_total)
-    invoice_total = header_totals["net"]
 
     df["cena_pred_rabatom"] = df.apply(
         lambda r: (
