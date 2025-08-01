@@ -137,7 +137,6 @@ def review_links(
     log.debug(f"Supplier info: {supplier_info}")
 
     header_totals = _build_header_totals(invoice_path, invoice_total)
-    invoice_total = header_totals["net"]
 
     try:
         manual_old = pd.read_excel(links_file, dtype=str)

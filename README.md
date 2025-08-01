@@ -45,8 +45,16 @@ ki avtomatizira vnos in obdelavo računov ter povezovanje s šiframi izdelkov.
    ```
    Namesto zgornjih ukazov lahko uporabite skripto, ki naloži vse pakete:
    ```bash
-   ./scripts/setup_env.sh
-   ```
+  ./scripts/setup_env.sh
+  ```
+
+## Development setup
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest -q        # run test-suite
+pre-commit run -a  # lint & format
+```
 
 
 3. (Opcijsko) namestite paket v razvojni načini:

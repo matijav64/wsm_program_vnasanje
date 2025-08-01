@@ -14,46 +14,34 @@ from wsm.supplier_store import (
     save_supplier as _write_supplier_map,
 )
 
+__all__ = ["_load_supplier_map", "_save_and_close"]
+
 log = logging.getLogger(__name__)
 
 
-def _save_and_close(
-    df,
-    manual_old,
-    wsm_df,
-    links_file,
-    root,
-    supplier_name,
-    supplier_code,
-    sup_map,
-    sup_file,
-    *,
-    invoice_path=None,
-    vat=None,
-):
-    log.debug(
-        f"Shranjevanje: supplier_name={supplier_name}, supplier_code={supplier_code}"
-    )
+def _update_supplier_info(
+    df: pd.DataFrame,
+    links_file: Path,
+    supplier_name: str,
+    supplier_code: str,
+    sup_map: dict,
+    sup_file: Path,
+    vat: str | None,
+) -> tuple[Path, Path]:
+    """Return updated links file path and supplier folder."""
 
-    log.info(
-        f"Shranjujem {len(df)} vrstic z enotami: {df['enota_norm'].value_counts().to_dict()}"
-    )
-
-    # Preverimo prazne sifra_dobavitelja
     df["sifra_dobavitelja"] = df["sifra_dobavitelja"].fillna("").astype(str)
     empty_sifra = df["sifra_dobavitelja"] == ""
     if empty_sifra.any():
         log.warning(
-            f"Prazne vrednosti v sifra_dobavitelja za {empty_sifra.sum()} vrstic"
+            "Prazne vrednosti v sifra_dobavitelja za %s vrstic",
+            empty_sifra.sum(),
         )
-        log.debug(
-            f"Primer vrstic s prazno sifra_dobavitelja: {df[empty_sifra][['naziv', 'sifra_dobavitelja']].head().to_dict()}"
+        sample = (
+            df[empty_sifra][["naziv", "sifra_dobavitelja"]].head().to_dict()
         )
+        log.debug("Primer vrstic s prazno sifra_dobavitelja: %s", sample)
 
-    # -------------------------------------------------------------
-    # posodobi zapise, da ALWAYS vsebujejo vat + ime
-    # -------------------------------------------------------------
-    # Ne ustvarjaj ključa vnaprej; poglej le, kaj že obstaja
     new_info = sup_map.get(supplier_code, {}).copy()
     changed = False
     if vat and new_info.get("vat") != vat:
@@ -62,6 +50,7 @@ def _save_and_close(
     if supplier_name and new_info.get("ime") != supplier_name:
         new_info["ime"] = supplier_name
         changed = True
+
     from wsm.utils import sanitize_folder_name
     from wsm.supplier_store import choose_supplier_key
 
@@ -102,7 +91,10 @@ def _save_and_close(
                     moved = True
             except Exception as exc:
                 log.warning(
-                    f"Napaka pri preimenovanju {old_folder} v {new_folder}: {exc}"
+                    "Napaka pri preimenovanju %s v %s: %s",
+                    old_folder,
+                    new_folder,
+                    exc,
                 )
                 try:
                     new_folder.mkdir(exist_ok=True)
@@ -115,7 +107,10 @@ def _save_and_close(
                     moved = True
                 except Exception as exc2:
                     log.warning(
-                        f"Napaka pri prenosu vsebine {old_folder} v {new_folder}: {exc2}"
+                        "Napaka pri prenosu vsebine %s v %s: %s",
+                        old_folder,
+                        new_folder,
+                        exc2,
                     )
             if moved:
                 if supplier_code.casefold() == new_safe.casefold():
@@ -137,7 +132,6 @@ def _save_and_close(
                     new_folder / f"{supplier_code}_{new_safe}_povezane.xlsx"
                 )
 
-    # pospravi stare _VAT_VAT_povezane.xlsx v isti mapi
     for p in links_file.parent.glob(
         f"{supplier_code}_{supplier_code}_povezane.xlsx"
     ):
@@ -147,34 +141,43 @@ def _save_and_close(
         except Exception:
             pass
 
-    # -------------------------------------------------------------
-    #  Trdno počisti stare sledi "unknown"
-    # -------------------------------------------------------------
     if "unknown" in sup_map and supplier_code != "unknown":
-        sup_map.pop("unknown", None)  # odstrani ključ
+        sup_map.pop("unknown", None)
         changed = True
         unk_folder = Path(sup_file) / "unknown"
         if unk_folder.exists():
             shutil.rmtree(unk_folder, ignore_errors=True)
 
-    # Zapiši supplier.json, če smo posodobili podatke ali je to prvi vnos
     if changed or supplier_code not in sup_map:
         sup_map[supplier_code] = new_info
         _write_supplier_map(sup_map, sup_file)
 
-    # Nastavi indeks za manual_old
+    return links_file, new_folder
+
+
+def _write_excel_links(
+    df: pd.DataFrame,
+    manual_old: pd.DataFrame,
+    links_file: Path,
+) -> None:
+    """Write updated mappings to ``links_file``."""
+
     if not manual_old.empty:
-        # Odstrani prazne ali neveljavne vrstice
         manual_old = manual_old.dropna(
-            subset=["sifra_dobavitelja", "naziv"], how="all"
+            subset=["sifra_dobavitelja", "naziv"],
+            how="all",
         )
         manual_old["naziv_ckey"] = manual_old["naziv"].map(_clean)
         manual_new = manual_old.set_index(["sifra_dobavitelja", "naziv_ckey"])
         if "enota_norm" not in manual_new.columns:
             manual_new["enota_norm"] = pd.NA
-        log.info(f"Število prebranih povezav iz manual_old: {len(manual_old)}")
+        log.info(
+            "Število prebranih povezav iz manual_old: %s",
+            len(manual_old),
+        )
         log.debug(
-            f"Primer povezav iz manual_old: {manual_old.head().to_dict()}"
+            "Primer povezav iz manual_old: %s",
+            manual_old.head().to_dict(),
         )
     else:
         manual_new = pd.DataFrame(
@@ -189,14 +192,12 @@ def _save_and_close(
         ).set_index(["sifra_dobavitelja", "naziv_ckey"])
         log.info("Manual_old je prazen, ustvarjam nov DataFrame")
 
-    # Ustvari df_links z istim indeksom
     df["sifra_dobavitelja"] = df["sifra_dobavitelja"].fillna("").astype(str)
     df["naziv_ckey"] = df["naziv"].map(_clean)
     df_links = df.set_index(["sifra_dobavitelja", "naziv_ckey"])[
         ["naziv", "wsm_sifra", "dobavitelj", "enota_norm"]
     ]
 
-    # Posodobi obstoječe elemente (dovoli tudi brisanje povezav)
     if manual_new.empty:
         manual_new = df_links.copy()
         log.debug(
@@ -215,14 +216,10 @@ def _save_and_close(
                 manual_new["enota_norm"].value_counts().to_dict(),
             )
 
-    # Dodaj nove elemente, ki niso v manual_new
     new_items = df_links[~df_links.index.isin(manual_new.index)]
     manual_new = pd.concat([manual_new, new_items])
-
-    # Ponastavi indeks, da vrneš stolpce
     manual_new = manual_new.reset_index()
 
-    # Shrani v Excel
     log.info(f"Shranjujem {len(manual_new)} povezav v {links_file}")
     log.debug(f"Primer shranjenih povezav: {manual_new.head().to_dict()}")
     if "enota_norm" in manual_new.columns:
@@ -236,6 +233,17 @@ def _save_and_close(
     except Exception as e:
         log.error(f"Napaka pri shranjevanju v {links_file}: {e}")
 
+
+def _write_history_files(
+    df: pd.DataFrame,
+    invoice_path: Path | None,
+    new_folder: Path,
+    links_file: Path,
+    sup_file: Path,
+    root,
+) -> bool:
+    """Record price history and clean temporary files."""
+
     invoice_hash = None
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
@@ -243,24 +251,26 @@ def _save_and_close(
 
             service_date = extract_service_date(invoice_path)
         except Exception as exc:
-            log.warning(f"Napaka pri branju datuma storitve: {exc}")
+            log.warning("Napaka pri branju datuma storitve: %s", exc)
             service_date = None
         try:
-            invoice_hash = hashlib.md5(invoice_path.read_bytes()).hexdigest()
+            invoice_hash = hashlib.md5(
+                invoice_path.read_bytes()
+            ).hexdigest()
         except Exception as exc:
-            log.warning(f"Napaka pri izračunu hash: {exc}")
+            log.warning("Napaka pri izračunu hash: %s", exc)
     elif invoice_path and invoice_path.suffix.lower() == ".pdf":
         try:
             from wsm.parsing.pdf import extract_service_date
 
             service_date = extract_service_date(invoice_path)
         except Exception as exc:
-            log.warning(f"Napaka pri branju datuma storitve: {exc}")
+            log.warning("Napaka pri branju datuma storitve: %s", exc)
             service_date = None
         try:
             invoice_hash = hashlib.md5(invoice_path.read_bytes()).hexdigest()
         except Exception as exc:
-            log.warning(f"Napaka pri izračunu hash: {exc}")
+            log.warning("Napaka pri izračunu hash: %s", exc)
     else:
         service_date = None
         if invoice_path and invoice_path.exists():
@@ -269,7 +279,7 @@ def _save_and_close(
                     invoice_path.read_bytes()
                 ).hexdigest()
             except Exception as exc:
-                log.warning(f"Napaka pri izračunu hash: {exc}")
+                log.warning("Napaka pri izračunu hash: %s", exc)
 
     if invoice_hash:
         from wsm.utils import history_contains
@@ -293,7 +303,7 @@ def _save_and_close(
                     except Exception:
                         pass
                 root.quit()
-                return
+                return True
 
     try:
         from wsm.utils import log_price_history
@@ -315,4 +325,49 @@ def _save_and_close(
         except Exception:
             pass
 
-    root.quit()
+    return False
+
+
+def _save_and_close(
+    df,
+    manual_old,
+    wsm_df,
+    links_file,
+    root,
+    supplier_name,
+    supplier_code,
+    sup_map,
+    sup_file,
+    *,
+    invoice_path=None,
+    vat=None,
+):
+    log.debug(
+        "Shranjevanje: supplier_name=%s, supplier_code=%s",
+        supplier_name,
+        supplier_code,
+    )
+
+    log.info(
+        "Shranjujem %s vrstic z enotami: %s",
+        len(df),
+        df["enota_norm"].value_counts().to_dict(),
+    )
+
+    links_file, new_folder = _update_supplier_info(
+        df, links_file, supplier_name, supplier_code, sup_map, sup_file, vat
+    )
+
+    _write_excel_links(df, manual_old, links_file)
+
+    should_stop = _write_history_files(
+        df,
+        invoice_path,
+        new_folder,
+        links_file,
+        sup_file,
+        root,
+    )
+
+    if not should_stop:
+        root.quit()
