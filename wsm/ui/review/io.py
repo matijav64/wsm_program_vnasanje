@@ -254,9 +254,7 @@ def _write_history_files(
             log.warning("Napaka pri branju datuma storitve: %s", exc)
             service_date = None
         try:
-            invoice_hash = hashlib.md5(
-                invoice_path.read_bytes()
-            ).hexdigest()
+            invoice_hash = hashlib.md5(invoice_path.read_bytes()).hexdigest()
         except Exception as exc:
             log.warning("Napaka pri izračunu hash: %s", exc)
     elif invoice_path and invoice_path.suffix.lower() == ".pdf":
@@ -342,6 +340,29 @@ def _save_and_close(
     invoice_path=None,
     vat=None,
 ):
+    """Save mapping files, record history and close the window.
+
+    Args:
+        df (pandas.DataFrame): Invoice rows to persist.
+        manual_old (pandas.DataFrame): Previously saved mappings from
+            ``links_file``.
+        wsm_df (pandas.DataFrame): Table of WSM articles. Currently unused.
+        links_file (pathlib.Path): Excel file where mappings are written.
+        root: ``tkinter`` root object that will be terminated.
+        supplier_name (str): Display name of the supplier.
+        supplier_code (str): Identifier used as a key in ``sup_map``.
+        sup_map (dict): Supplier metadata loaded from ``sup_file``.
+        sup_file (pathlib.Path): Directory containing per-supplier data.
+        invoice_path (pathlib.Path | None, optional): Path to the processed
+            invoice for history logging.
+        vat (str | None, optional): Supplier VAT number.
+
+    Returns:
+        None
+
+    Raises:
+        Exception: Propagated if updating supplier info or writing files fails.
+    """
     log.debug(
         "Shranjevanje: supplier_name=%s, supplier_code=%s",
         supplier_name,
