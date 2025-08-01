@@ -23,7 +23,7 @@ deps:
 test:
 	pytest -q
 
-# 4) Validacija podatkov
+# 4) Validacija podatkov (pytest)
 validate:
 	pytest -q
 
