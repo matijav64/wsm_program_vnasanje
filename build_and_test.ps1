@@ -1,4 +1,4 @@
-﻿param()
+param()
 Write-Host "► Preverjam repozitorij"
 if (Test-Path ".git") {
     Write-Host "► git pull origin main"
@@ -21,4 +21,4 @@ if (Test-Path "wsm_program_vnasanje\requirements.txt") {
 }
 
 Write-Host "► Zagon validacije"
-python -m wsm validate tests
+pytest -q
