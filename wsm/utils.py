@@ -747,6 +747,11 @@ def average_cost(
     skip_zero : bool, optional
         When ``True`` lines with zero price are ignored. Defaults to the value
         of the ``AVG_COST_SKIP_ZERO`` environment variable.
+
+    Returns
+    -------
+    decimal.Decimal
+        Weighted average unit cost rounded to four decimal places.
     """
     if skip_zero is None:
         env = os.getenv("AVG_COST_SKIP_ZERO", "0")
