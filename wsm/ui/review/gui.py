@@ -61,6 +61,14 @@ def review_links(
         rows.
     """
     df = df.copy()
+    if {"cena_bruto", "cena_netto"}.issubset(df.columns):
+        for idx, row in df.iterrows():
+            log.info(
+                "XML[%s] bruto=%s neto=%s",
+                idx,
+                row.get("cena_bruto"),
+                row.get("cena_netto"),
+            )
     price_warn_threshold = (
         Decimal(str(price_warn_pct))
         if price_warn_pct is not None
@@ -472,6 +480,11 @@ def review_links(
             for c in cols
         ]
         tree.insert("", "end", iid=str(i), values=vals)
+        log.info(
+            "GRID[%s] cena_po_rabatu=%s",
+            i,
+            row.get("cena_po_rabatu"),
+        )
         label = f"{row['sifra_dobavitelja']} - {row['naziv']}"
         try:
             from wsm.utils import load_last_price
@@ -592,6 +605,11 @@ def review_links(
                     _fmt(row["vrednost"]),
                 ]
                 summary_tree.insert("", "end", values=vals)
+                log.info(
+                    "SUMMARY[%s] cena=%s",
+                    row["wsm_sifra"],
+                    row.get("vrednost"),
+                )
             log.debug(f"Povzetek posodobljen: {len(summary_df)} WSM šifer")
 
     # Skupni zneski pod povzetkom
