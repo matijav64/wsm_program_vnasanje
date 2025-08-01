@@ -25,7 +25,7 @@ test:
 
 # 4) Validacija podatkov
 validate:
-	python -m wsm validate tests
+	pytest -q
 
 # 5) Celoten “pipeline” (sync → deps → test)
 run: sync deps test
