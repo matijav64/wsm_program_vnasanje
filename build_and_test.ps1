@@ -20,5 +20,5 @@ if (Test-Path "wsm_program_vnasanje\requirements.txt") {
     pip install -r wsm_program_vnasanje\requirements.txt
 }
 
-Write-Host "► Zagon validacije"
+Write-Host "► Zagon testov"
 pytest -q
