@@ -192,17 +192,17 @@ pip install -r requirements-dev.txt
 
 ### Poganjanje testov
 
-Za poganjanje `pytest` zadostuje, da izvedete zgornji ukaz, saj
-`requirements-dev.txt` samodejno povleče tudi vse pakete iz
-`requirements.txt`. Datoteka vključuje tudi `matplotlib` in `mplcursors`, ki
-sta potrebna za teste **Price Watch**:
+Pred zagonom `pytest` namestite pakete iz `requirements-dev.txt`:
 
 ```bash
 pip install -r requirements-dev.txt
-pytest
+pytest -q
 ```
 
-Brez teh paketov se testi ne bodo pravilno zagnali. Namesto ročnega izvajanja lahko uporabite skripto `./scripts/setup_env.sh`.
+`requirements-dev.txt` samodejno povleče vse pakete iz `requirements.txt` in
+vključuje tudi `matplotlib` ter `mplcursors`, ki sta potrebna za teste
+**Price Watch**. Brez teh paketov se testi ne bodo pravilno zagnali. Namesto
+ročnega izvajanja lahko uporabite skripto `./scripts/setup_env.sh`.
 
 ### Linting in formatiranje
 
