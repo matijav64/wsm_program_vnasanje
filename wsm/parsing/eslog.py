@@ -270,7 +270,15 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
 
 # ─────────────────────── vsota iz glave ───────────────────────
 def extract_header_net(source: Path | str | Any) -> Decimal:
-    """Vrne znesek iz MOA 389 (neto brez DDV) oz. po potrebi iz MOA 79."""
+    """Return invoice net amount adjusted for document discounts/charges.
+
+    The base net amount is looked up in header ``S_MOA`` segments using the
+    common MOA codes ``203`` (line item amount), ``389`` (invoice amount) and
+    ``79``.  After obtaining the base net value the function subtracts any
+    document level discounts (``DEFAULT_DOC_DISCOUNT_CODES``) and adds document
+    level charges (``DEFAULT_DOC_CHARGE_CODES``) using :func:`sum_moa`.
+    """
+
     try:
         if hasattr(source, "findall"):
             root = source
@@ -278,10 +286,44 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
             tree = LET.parse(source, parser=XML_PARSER)
             root = tree.getroot()
 
-        for code in ("389", "79"):
+        header_base = Decimal("0")
+        for code in ("203", "389", "79"):
             for moa in root.findall(".//e:G_SG50/e:S_MOA", NS):
                 if _text(moa.find("./e:C_C516/e:D_5025", NS)) == code:
-                    return _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                    header_base = _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                    break
+            if header_base != 0:
+                break
+
+        line_base = Decimal("0")
+        for seg in root.findall(".//e:G_SG26", NS) + root.findall(".//G_SG26"):
+            for moa in seg.findall(".//e:S_MOA", NS) + seg.findall(".//S_MOA"):
+                code_el = moa.find("./e:C_C516/e:D_5025", NS)
+                if code_el is None:
+                    code_el = moa.find("./C_C516/D_5025")
+                if code_el is not None and _text(code_el) == "203":
+                    val_el = moa.find("./e:C_C516/e:D_5004", NS)
+                    if val_el is None:
+                        val_el = moa.find("./C_C516/D_5004")
+                    line_base += _decimal(val_el)
+
+        doc_discount = sum_moa(root, DEFAULT_DOC_DISCOUNT_CODES)
+        doc_charge = sum_moa(root, DEFAULT_DOC_CHARGE_CODES)
+        if doc_discount < 0:
+            doc_discount = Decimal("0")
+
+        if line_base != 0:
+            base = line_base
+            line_adjusted = line_base - doc_discount + doc_charge
+            if header_base != 0 and abs(header_base - line_adjusted) > DEC2:
+                base = header_base
+        else:
+            base = header_base
+
+        net = base - doc_discount + doc_charge
+        if net < 0 and header_base > 0:
+            net = header_base
+        return net.quantize(DEC2, ROUND_HALF_UP)
     except Exception:
         pass
     return Decimal("0")
