@@ -500,7 +500,7 @@ def _get_document_discount(xml_root: LET._Element) -> Decimal:
         else _find_moa_values(set(DEFAULT_DOC_DISCOUNT_CODES))
     )
 
-    return discount.quantize(Decimal("0.01"))
+    return discount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _line_discount(sg26: LET._Element) -> Decimal:
@@ -853,9 +853,11 @@ def parse_eslog_invoice(
         # izračun cen pred in po rabatu
         if qty:
             cena_pred = ((net_amount + rebate) / qty).quantize(
-                Decimal("0.0001")
+                Decimal("0.0001"), rounding=ROUND_HALF_UP
             )
-            cena_post = (net_amount / qty).quantize(Decimal("0.0001"))
+            cena_post = (net_amount / qty).quantize(
+                Decimal("0.0001"), rounding=ROUND_HALF_UP
+            )
         else:
             cena_pred = cena_post = Decimal("0")
 
@@ -1060,7 +1062,9 @@ def parse_invoice(source: str | Path):
         ]
         if not doc_rows.empty:
             allow_total = doc_rows["vrednost"].sum()
-            discount_total = (-Decimal(allow_total)).quantize(Decimal("0.01"))
+            discount_total = (-Decimal(allow_total)).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
         else:
             discount_total = sum_moa(root, DEFAULT_DOC_DISCOUNT_CODES)
 
