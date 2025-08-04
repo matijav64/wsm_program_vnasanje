@@ -575,6 +575,51 @@ def _line_pct_discount(sg26: LET._Element) -> Decimal:
     return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 
+def _line_gross(sg26: LET._Element) -> Decimal:
+    """Return gross line amount including VAT.
+
+    Tries ``PRI.AAA`` × ``QTY`` first, then ``PRI.AAB``.  If both prices are
+    missing, the function falls back to ``MOA 38`` which contains the gross
+    amount with VAT.
+    """
+
+    qty = _decimal(sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
+
+    price = Decimal("0")
+    for pri in sg26.findall(".//e:S_PRI", NS) + sg26.findall(".//S_PRI"):
+        code = _text(pri.find("./e:C_C509/e:D_5125", NS)) or _text(
+            pri.find("./C_C509/D_5125")
+        )
+        if code == "AAA":
+            val_el = pri.find("./e:C_C509/e:D_5118", NS)
+            if val_el is None:
+                val_el = pri.find("./C_C509/D_5118")
+            price = _decimal(val_el)
+            break
+        if code == "AAB" and price == 0:
+            val_el = pri.find("./e:C_C509/e:D_5118", NS)
+            if val_el is None:
+                val_el = pri.find("./C_C509/D_5118")
+            price = _decimal(val_el)
+
+    if price != 0 and qty != 0:
+        return (price * qty).quantize(DEC2, ROUND_HALF_UP)
+
+    for moa in sg26.findall(".//e:S_MOA", NS) + sg26.findall(".//S_MOA"):
+        code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
+            moa.find("./C_C516/D_5025")
+        )
+        if code == "38":
+            val_el = moa.find("./e:C_C516/e:D_5004", NS)
+            if val_el is None:
+                val_el = moa.find("./C_C516/D_5004")
+            val = _decimal(val_el)
+            if val:
+                return val.quantize(DEC2, ROUND_HALF_UP)
+
+    return Decimal("0")
+
+
 def _line_net(sg26: LET._Element) -> Decimal:
     """Return net line amount without VAT or discounts."""
 
@@ -741,31 +786,8 @@ def parse_eslog_invoice(
 
         desc = _text(sg26.find(".//e:S_IMD/e:C_C273/e:D_7008", NS))
 
-        # read percent discount and gross/net prices
-        pcd_nodes = sg26.xpath(".//e:S_PCD/e:C_C501/e:D_5482", namespaces=NS)
-        pcd_pct = _decimal(pcd_nodes[0] if pcd_nodes else None)
+        gross_amount = _line_gross(sg26)
 
-        gross_nodes = sg26.xpath(
-            ".//e:S_PRI[e:C_C509/e:D_5125='AAB']/e:C_C509/e:D_5118",
-            namespaces=NS,
-        )
-        price_gross = _decimal(gross_nodes[0] if gross_nodes else None)
-
-        net_nodes = sg26.xpath(
-            ".//e:S_PRI[e:C_C509/e:D_5125='AAA']/e:C_C509/e:D_5118",
-            namespaces=NS,
-        )
-        price_net = _decimal(net_nodes[0] if net_nodes else None)
-
-        if price_gross == 0:
-            price_gross = price_net
-
-        if price_net == 0 and price_gross != 0 and pcd_pct != 0:
-            price_net = (
-                price_gross * (Decimal("1") - pcd_pct / Decimal("100"))
-            ).quantize(Decimal("0.0001"), ROUND_HALF_UP)
-
-        # net line amount and VAT
         net_amount_moa: Decimal | None = None
         for moa in sg26.findall(".//e:S_MOA", NS):
             if _text(moa.find("./e:C_C516/e:D_5025", NS)) == Moa.NET.value:
@@ -774,7 +796,17 @@ def parse_eslog_invoice(
                 ).quantize(Decimal("0.01"), ROUND_HALF_UP)
                 break
 
+        rebate_moa = _line_discount(sg26)
+        pct_rebate = _line_pct_discount(sg26)
+        rebate = rebate_moa + pct_rebate
+
         net_amount = _line_net(sg26)
+        tax_amount = _line_tax(sg26, header_rate if header_rate != 0 else None)
+        if net_amount == 0 and gross_amount != 0:
+            net_amount = (
+                gross_amount - rebate - tax_amount
+            ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
         if net_amount_moa is not None and net_amount != net_amount_moa:
             log.warning(
                 "Line net mismatch: MOA 203 %s vs calculated %s",
@@ -785,7 +817,6 @@ def parse_eslog_invoice(
         net_total = (net_total + net_amount).quantize(
             Decimal("0.01"), ROUND_HALF_UP
         )
-        tax_amount = _line_tax(sg26, header_rate if header_rate != 0 else None)
         tax_total = (tax_total + tax_amount).quantize(
             Decimal("0.01"), ROUND_HALF_UP
         )
@@ -799,9 +830,6 @@ def parse_eslog_invoice(
                 break
 
         # rabat na ravni vrstice
-        rebate_moa = _line_discount(sg26)
-        pct_rebate = _line_pct_discount(sg26)
-        rebate = rebate_moa + pct_rebate
         explicit_pct: Decimal | None = None
         for sg39 in sg26.findall(".//e:G_SG39", NS):
             if _text(sg39.find("./e:S_ALC/e:D_5463", NS)) != "A":
