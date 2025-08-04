@@ -11,31 +11,30 @@ ESLOG 2.0 (INVOIC) parser
 """
 
 from __future__ import annotations
+
 import decimal
-from decimal import Decimal, ROUND_HALF_UP
-
-DEC2 = Decimal("0.01")
-from pathlib import Path
 import io
-import re
 import logging
-from lxml import etree as LET
-
-XML_PARSER = LET.XMLParser(resolve_entities=False)
-from typing import List, Dict, Optional, Tuple
+import re
+from decimal import Decimal, ROUND_HALF_UP
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
-from .utils import _normalize_date
-from .codes import Moa
+from lxml import etree as LET
 
-# Uvoz pomožnih funkcij iz money.py:
+from .codes import Moa
+from .utils import _normalize_date
 from wsm.parsing.money import (
     extract_total_amount,
     validate_invoice as validate_line_values,
 )
 
+XML_PARSER = LET.XMLParser(resolve_entities=False)
+
 # Use higher precision to avoid premature rounding when summing values.
 decimal.getcontext().prec = 28  # Python's default precision
+DEC2 = Decimal("0.01")
 
 # module logger
 log = logging.getLogger(__name__)
@@ -427,26 +426,35 @@ def extract_total_tax(xml_path: Path | str) -> Decimal:
 def sum_moa(root: LET._Element, codes: List[str]) -> Decimal:
     """Return the sum of MOA amounts for the given codes.
 
-    The search includes ``G_SG50`` and ``G_SG20`` groups as well as
-    ``G_SG16`` segments.  Both namespaced and plain variants are
-    supported.  Duplicate MOA elements are ignored.
+    Searches MOA segments within ``G_SG50`` and ``G_SG20`` groups as well
+    as top-level ``G_SG16`` segments.  Documents with or without the
+    ``urn:eslog:2.00`` namespace are supported.  Duplicate MOA elements
+    are ignored.
     """
 
     wanted = set(codes)
     total = Decimal("0")
-    for seg in root.findall(".//e:G_SG50", NS):
-        for moa in seg.findall(".//e:S_MOA", NS):
+    for seg in root.findall(".//e:G_SG50", NS) + root.findall(".//G_SG50"):
+        for moa in seg.findall(".//e:S_MOA", NS) + seg.findall(".//S_MOA"):
             code_el = moa.find("./e:C_C516/e:D_5025", NS)
+            if code_el is None:
+                code_el = moa.find("./C_C516/D_5025")
             if code_el is not None and _text(code_el) in wanted:
-                val = _decimal(moa.find("./e:C_C516/e:D_5004", NS))
-                total += val
+                val_el = moa.find("./e:C_C516/e:D_5004", NS)
+                if val_el is None:
+                    val_el = moa.find("./C_C516/D_5004")
+                total += _decimal(val_el)
 
-    for seg in root.findall(".//e:G_SG20", NS):
-        for moa in seg.findall(".//e:S_MOA", NS):
+    for seg in root.findall(".//e:G_SG20", NS) + root.findall(".//G_SG20"):
+        for moa in seg.findall(".//e:S_MOA", NS) + seg.findall(".//S_MOA"):
             code_el = moa.find("./e:C_C516/e:D_5025", NS)
+            if code_el is None:
+                code_el = moa.find("./C_C516/D_5025")
             if code_el is not None and _text(code_el) in wanted:
-                val = _decimal(moa.find("./e:C_C516/e:D_5004", NS))
-                total += val
+                val_el = moa.find("./e:C_C516/e:D_5004", NS)
+                if val_el is None:
+                    val_el = moa.find("./C_C516/D_5004")
+                total += _decimal(val_el)
 
     for sg16 in root.findall(".//e:G_SG16", NS) + root.findall(".//G_SG16"):
         for moa in sg16.findall("./e:S_MOA", NS) + sg16.findall("./S_MOA"):
@@ -983,7 +991,8 @@ def parse_invoice(source: str | Path):
     Vrne:
       • df: DataFrame s stolpci ['cena_netto', 'kolicina', 'rabata_pct',
         'izracunana_vrednost'] (vrednosti so Decimal v object stolpcih)
-      • header_total: Decimal (InvoiceTotal – DocumentDiscount + DocumentCharge)
+      • header_total: Decimal (InvoiceTotal –
+        DocumentDiscount + DocumentCharge)
       • discount_total: Decimal (znesek dokumentarnega popusta)
     Uporablja se v CLI (wsm/cli.py).
     """
@@ -1007,7 +1016,7 @@ def parse_invoice(source: str | Path):
         header_total = extract_header_net(
             root if parsed_from_string else xml_source
         )
-        # ───────────────────────── dokumentarni popusti ─────────────────────────
+        # ─────────────────────── dokumentarni popusti ───────────────────────
         # V vrstici "_DOC_" se lahko pojavijo negativne vrednosti (allowance)
         # in pozitivne (charge).  Popust naj vključuje le negativne zneske.
         doc_rows = df_items[df_items["sifra_dobavitelja"] == "_DOC_"]
@@ -1015,7 +1024,9 @@ def parse_invoice(source: str | Path):
         discount_total = (-allow_total).quantize(Decimal("0.01"))
 
         # Če želimo posebej slediti tudi pribitkom:
-        # charge_total = doc_rows.loc[doc_rows["vrednost"] > 0, "vrednost"].sum()
+        # charge_total = doc_rows.loc[
+        #     doc_rows["vrednost"] > 0, "vrednost"
+        # ].sum()
         df = pd.DataFrame(
             {
                 "cena_netto": df_items["cena_netto"],
