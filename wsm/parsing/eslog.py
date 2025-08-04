@@ -18,9 +18,11 @@ import logging
 import re
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
+from defusedxml import ElementTree as ET
+from defusedxml.common import EntitiesForbidden
 from lxml import etree as LET
 
 from .codes import Moa
@@ -267,10 +269,10 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
 
 
 # ─────────────────────── vsota iz glave ───────────────────────
-def extract_header_net(source: Path | str | LET._Element) -> Decimal:
+def extract_header_net(source: Path | str | Any) -> Decimal:
     """Vrne znesek iz MOA 389 (neto brez DDV) oz. po potrebi iz MOA 79."""
     try:
-        if isinstance(source, LET._Element):
+        if hasattr(source, "findall"):
             root = source
         else:
             tree = LET.parse(source, parser=XML_PARSER)
@@ -513,7 +515,9 @@ def _line_discount(sg26: LET._Element) -> Decimal:
             amount_el = moa.find("./e:C_C516/e:D_5004", NS)
             if amount_el is None:
                 amount_el = moa.find("./C_C516/D_5004")
-            amount = _decimal(amount_el).quantize(Decimal("0.01"), ROUND_HALF_UP)
+            amount = _decimal(amount_el).quantize(
+                Decimal("0.01"), ROUND_HALF_UP
+            )
             key = (id(moa), code, amount)
             if key in seen:
                 continue
@@ -763,7 +767,10 @@ def parse_eslog_invoice(
     """
     supplier_code, _ = get_supplier_info(xml_path)
 
-    tree = LET.parse(xml_path, parser=XML_PARSER)
+    try:
+        tree = ET.parse(xml_path)
+    except EntitiesForbidden:
+        return pd.DataFrame(), True
     root = tree.getroot()
     header_rate = _tax_rate_from_header(root)
     header_net = extract_header_net(root)
@@ -806,9 +813,9 @@ def parse_eslog_invoice(
         net_amount = _line_net(sg26)
         tax_amount = _line_tax(sg26, header_rate if header_rate != 0 else None)
         if net_amount == 0 and gross_amount != 0:
-            net_amount = (
-                gross_amount - rebate - tax_amount
-            ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+            net_amount = (gross_amount - rebate - tax_amount).quantize(
+                Decimal("0.01"), ROUND_HALF_UP
+            )
 
         if net_amount_moa is not None and net_amount != net_amount_moa:
             log.warning(
@@ -949,9 +956,7 @@ def parse_eslog_invoice(
             )
 
     # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
-    doc_discount = sum_moa(
-        root, discount_codes or DEFAULT_DOC_DISCOUNT_CODES
-    )
+    doc_discount = sum_moa(root, discount_codes or DEFAULT_DOC_DISCOUNT_CODES)
     doc_charge = sum_moa(root, DEFAULT_DOC_CHARGE_CODES)
 
     if doc_discount != 0:
@@ -1045,10 +1050,10 @@ def parse_invoice(source: str | Path):
         )
         # ─────────────────────── dokumentarni popusti ───────────────────────
         # V vrstici "_DOC_" se lahko pojavijo negativne vrednosti (allowance)
-        # in pozitivne (charge).  Popust naj vključuje le negativne zneske, zato
-        # najprej filtriramo le tiste "_DOC_" vrstice, katerih ``vrednost`` je
-        # manjša od 0.  Vrstice "DOC_CHG" (dokumentarni stroški) so tako že
-        # privzeto izključene.
+        # in pozitivne (charge).  Popust naj vključuje le negativne zneske,
+        # zato najprej filtriramo le tiste "_DOC_" vrstice,
+        # katerih ``vrednost`` je manjša od 0.  Vrstice "DOC_CHG"
+        # (dokumentarni stroški) so tako že privzeto izključene.
         doc_rows = df_items[
             (df_items["sifra_dobavitelja"] == "_DOC_")
             & (df_items["vrednost"] < 0)
