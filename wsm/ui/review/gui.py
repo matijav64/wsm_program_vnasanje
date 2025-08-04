@@ -655,9 +655,7 @@ def review_links(
             else Decimal(str(header_totals["net"]))
         )
 
-        calc_total = line_total + (
-            dd_total if not df_doc.empty else Decimal("0")
-        )
+        calc_total = line_total
         diff = inv_total - calc_total
         step = detect_round_step(inv_total, calc_total)
         if abs(diff) > step:
