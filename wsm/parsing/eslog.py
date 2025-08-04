@@ -517,25 +517,44 @@ def _line_pct_discount(sg26: LET._Element) -> Decimal:
     total = Decimal("0")
     qty = _decimal(sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
     price_gross = Decimal("0")
-    for pri in sg26.findall(".//e:S_PRI", NS):
-        if _text(pri.find("./e:C_C509/e:D_5125", NS)) == "AAB":
-            price_gross = _decimal(pri.find("./e:C_C509/e:D_5118", NS))
+    for pri in sg26.findall(".//e:S_PRI", NS) + sg26.findall(".//S_PRI"):
+        code_el = pri.find("./e:C_C509/e:D_5125", NS)
+        if code_el is None:
+            code_el = pri.find("./C_C509/D_5125")
+        if _text(code_el) == "AAB":
+            val_el = pri.find("./e:C_C509/e:D_5118", NS)
+            if val_el is None:
+                val_el = pri.find("./C_C509/D_5118")
+            price_gross = _decimal(val_el)
             break
     if price_gross == 0:
-        for pri in sg26.findall(".//e:S_PRI", NS):
-            if _text(pri.find("./e:C_C509/e:D_5125", NS)) == "AAA":
-                price_gross = _decimal(pri.find("./e:C_C509/e:D_5118", NS))
+        for pri in sg26.findall(".//e:S_PRI", NS) + sg26.findall(".//S_PRI"):
+            code_el = pri.find("./e:C_C509/e:D_5125", NS)
+            if code_el is None:
+                code_el = pri.find("./C_C509/D_5125")
+            if _text(code_el) == "AAA":
+                val_el = pri.find("./e:C_C509/e:D_5118", NS)
+                if val_el is None:
+                    val_el = pri.find("./C_C509/D_5118")
+                price_gross = _decimal(val_el)
                 break
 
-    for sg39 in sg26.findall(".//e:G_SG39", NS):
-        if _text(sg39.find("./e:S_ALC/e:C_C552/e:D_5189", NS)) != "95":
+    for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(".//G_SG39"):
+        code_el = sg39.find("./e:S_ALC/e:C_C552/e:D_5189", NS)
+        if code_el is None:
+            code_el = sg39.find("./S_ALC/C_C552/D_5189")
+        if _text(code_el) != "95":
             continue
-        qualifier = _text(
-            sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5249", NS)
-        )
+        qualifier_el = sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5249", NS)
+        if qualifier_el is None:
+            qualifier_el = sg39.find("./G_SG41/S_PCD/C_C501/D_5249")
+        qualifier = _text(qualifier_el)
         if qualifier not in {"1", "2", "3"}:
             continue
-        val = _decimal(sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5482", NS))
+        val_el = sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5482", NS)
+        if val_el is None:
+            val_el = sg39.find("./G_SG41/S_PCD/C_C501/D_5482")
+        val = _decimal(val_el)
         if val == 0 or qty == 0:
             continue
         if qualifier == "1":
