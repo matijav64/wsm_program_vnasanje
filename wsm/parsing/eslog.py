@@ -562,18 +562,18 @@ def _line_pct_discount(sg26: LET._Element) -> Decimal:
         qualifier = _text(qualifier_el)
         if qualifier not in {"1", "2", "3"}:
             continue
-        val_el = sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5482", NS)
-        if val_el is None:
-            val_el = sg39.find("./G_SG41/S_PCD/C_C501/D_5482")
-        val = _decimal(val_el)
-        if val == 0 or qty == 0:
+        pct_el = sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5482", NS)
+        if pct_el is None:
+            pct_el = sg39.find("./G_SG41/S_PCD/C_C501/D_5482")
+        pct = _decimal(pct_el)
+        if pct == 0 or qty == 0:
             continue
         if qualifier == "1":
-            total += price_gross * qty * val / Decimal("100")
+            total += price_gross * qty * pct / Decimal("100")
         elif qualifier == "2":
-            total += price_gross * qty * (Decimal("1") - val)
+            total += price_gross * qty * (Decimal("1") - pct)
         else:  # qualifier == "3"
-            total += val
+            total += pct
 
     return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
