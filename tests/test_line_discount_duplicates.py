@@ -4,7 +4,7 @@ from pathlib import Path
 from wsm.parsing.eslog import parse_eslog_invoice
 
 
-def test_line_discount_deduplicates_segments(tmp_path: Path) -> None:
+def test_line_discount_counts_duplicate_amounts(tmp_path: Path) -> None:
     xml = (
         "<Invoice xmlns='urn:eslog:2.00'>"
         "  <M_INVOIC>"
@@ -15,7 +15,7 @@ def test_line_discount_deduplicates_segments(tmp_path: Path) -> None:
         "      <S_IMD><C_C273><D_7008>Item</D_7008></C_C273></S_IMD>"
         "      <S_PRI><C_C509><D_5125>AAA</D_5125><D_5118>10"
         "</D_5118></C_C509></S_PRI>"
-        "      <S_MOA><C_C516><D_5025>203</D_5025><D_5004>8"
+        "      <S_MOA><C_C516><D_5025>203</D_5025><D_5004>6"
         "</D_5004></C_C516></S_MOA>"
         "      <G_SG39>"
         "        <S_ALC><D_5463>A</D_5463></S_ALC>"
@@ -38,6 +38,6 @@ def test_line_discount_deduplicates_segments(tmp_path: Path) -> None:
     df, ok = parse_eslog_invoice(xml_path)
     line = df.iloc[0]
 
-    assert line["rabata"] == Decimal("2.00")
-    assert line["vrednost"] == Decimal("8.00")
+    assert line["rabata"] == Decimal("4.00")
+    assert line["vrednost"] == Decimal("6.00")
     assert ok
