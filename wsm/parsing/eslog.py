@@ -974,13 +974,6 @@ def parse_eslog_invoice(
                     }
                 )
 
-    if tax_total == 0:
-        default_rate = _tax_rate_from_header(root)
-        if default_rate != 0:
-            tax_total = (net_total * default_rate).quantize(
-                Decimal("0.01"), ROUND_HALF_UP
-            )
-
     # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
     doc_discount = sum_moa(root, discount_codes or DEFAULT_DOC_DISCOUNT_CODES)
     doc_charge = sum_moa(root, DEFAULT_DOC_CHARGE_CODES)
@@ -992,8 +985,8 @@ def parse_eslog_invoice(
                 "naziv": "Popust na ravni računa",
                 "kolicina": Decimal("1"),
                 "enota": "",
-                "cena_bruto": doc_discount,
-                "cena_netto": Decimal("0"),
+                "cena_bruto": -doc_discount,
+                "cena_netto": -doc_discount,
                 "rabata": doc_discount,
                 "rabata_pct": Decimal("100.00"),
                 "vrednost": -doc_discount,
@@ -1017,6 +1010,15 @@ def parse_eslog_invoice(
             }
         )
 
+    net_total = (net_total - doc_discount + doc_charge).quantize(
+        Decimal("0.01"), ROUND_HALF_UP
+    )
+
+    if tax_total == 0 and header_rate != 0:
+        tax_total = (net_total * header_rate).quantize(
+            Decimal("0.01"), ROUND_HALF_UP
+        )
+
     df = pd.DataFrame(items)
     if "sifra_dobavitelja" in df.columns and not df["sifra_dobavitelja"].any():
         df["sifra_dobavitelja"] = supplier_code
@@ -1026,7 +1028,7 @@ def parse_eslog_invoice(
         )
 
     calculated_total = _invoice_total(
-        header_net, net_total, doc_discount, doc_charge, tax_total
+        header_net, net_total, Decimal("0"), Decimal("0"), tax_total
     )
     grand_total = extract_grand_total(xml_path)
     ok = True
