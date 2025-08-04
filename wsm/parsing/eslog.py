@@ -504,17 +504,20 @@ def _get_document_discount(xml_root: LET._Element) -> Decimal:
 def _line_discount(sg26: LET._Element) -> Decimal:
     """Return discount amount for a line (sum of MOA 204 values)."""
     total = Decimal("0")
-    seen_ids: set[int] = set()
-    seen_amounts: set[Decimal] = set()
+    seen: set[tuple[int, str, Decimal]] = set()
     for moa in sg26.findall(".//e:S_MOA", NS) + sg26.findall(".//S_MOA"):
-        if _text(moa.find("./e:C_C516/e:D_5025", NS)) == Moa.DISCOUNT.value:
-            amount = _decimal(moa.find("./e:C_C516/e:D_5004", NS)).quantize(
-                Decimal("0.01"), ROUND_HALF_UP
-            )
-            if id(moa) in seen_ids or amount in seen_amounts:
+        code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
+            moa.find("./C_C516/D_5025")
+        )
+        if code == Moa.DISCOUNT.value:
+            amount_el = moa.find("./e:C_C516/e:D_5004", NS)
+            if amount_el is None:
+                amount_el = moa.find("./C_C516/D_5004")
+            amount = _decimal(amount_el).quantize(Decimal("0.01"), ROUND_HALF_UP)
+            key = (id(moa), code, amount)
+            if key in seen:
                 continue
-            seen_ids.add(id(moa))
-            seen_amounts.add(amount)
+            seen.add(key)
             total += amount
 
     return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
