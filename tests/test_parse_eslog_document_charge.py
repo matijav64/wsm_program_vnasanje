@@ -16,10 +16,10 @@ def test_parse_eslog_invoice_handles_doc_charge():
     charge_value = charge_rows.iloc[0]["vrednost"]
 
     header_total = extract_header_net(xml_path)
-    lines_total = df["vrednost"].sum()
+    lines_total = df[df["sifra_dobavitelja"] != "DOC_CHG"]["vrednost"].sum()
 
     assert charge_value == Decimal("1")
-    assert lines_total == header_total
+    assert (lines_total + charge_value).quantize(Decimal("0.01")) == header_total
     assert ok
 
     # parse_invoice should ignore document charges when computing discounts
