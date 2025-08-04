@@ -24,11 +24,14 @@ def test_parse_eslog_invoice_sets_supplier_when_missing(monkeypatch, tmp_path):
         "      </S_NAD>"
         "    </G_SG2>"
         "    <G_SG26>"
-        "      <S_QTY><C_C186><D_6060>1</D_6060><D_6411>PCE</D_6411></C_C186></S_QTY>"
+        "      <S_QTY><C_C186><D_6060>1</D_6060>"
+        "<D_6411>PCE</D_6411></C_C186></S_QTY>"
         "      <S_LIN><C_C212><D_7140>1</D_7140></C_C212></S_LIN>"
         "      <S_IMD><C_C273><D_7008>Item</D_7008></C_C273></S_IMD>"
-        "      <S_PRI><C_C509><D_5125>AAA</D_5125><D_5118>10</D_5118></C_C509></S_PRI>"
-        "      <S_MOA><C_C516><D_5025>203</D_5025><D_5004>10</D_5004></C_C516></S_MOA>"
+        "      <S_PRI><C_C509><D_5125>AAA</D_5125>"
+        "<D_5118>10</D_5118></C_C509></S_PRI>"
+        "      <S_MOA><C_C516><D_5025>203</D_5025>"
+        "<D_5004>10</D_5004></C_C516></S_MOA>"
         "    </G_SG26>"
         "  </M_INVOIC>"
         "</Invoice>"
@@ -92,3 +95,14 @@ def test_line_discount_moa_and_pcd_are_summed():
     assert line["vrednost"] == Decimal("17.00")
     assert line["cena_bruto"] == Decimal("10")
     assert line["cena_netto"] == Decimal("8.5000")
+
+
+def test_line_discount_without_namespace():
+    xml = Path("tests/discount_line_no_ns.xml")
+    df, ok = eslog.parse_eslog_invoice(xml)
+    assert ok
+    line = df.iloc[0]
+    assert line["rabata"] == Decimal("2.00")
+    assert line["vrednost"] == Decimal("18.00")
+    assert line["cena_bruto"] == Decimal("10")
+    assert line["cena_netto"] == Decimal("9.0000")
