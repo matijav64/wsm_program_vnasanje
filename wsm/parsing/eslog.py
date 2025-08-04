@@ -270,7 +270,15 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
 
 # ─────────────────────── vsota iz glave ───────────────────────
 def extract_header_net(source: Path | str | Any) -> Decimal:
-    """Vrne znesek iz MOA 389 (neto brez DDV) oz. po potrebi iz MOA 79."""
+    """Return net amount excluding VAT from the invoice header.
+
+    The value is taken from ``MOA`` code ``389`` (or ``79`` as a
+    fallback) and adjusted for document-level discounts and charges.
+    Document discounts are subtracted while document charges are added to
+    the base amount.  The final result is rounded to two decimal places
+    using ``ROUND_HALF_UP``.
+    """
+
     try:
         if hasattr(source, "findall"):
             root = source
@@ -278,10 +286,19 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
             tree = LET.parse(source, parser=XML_PARSER)
             root = tree.getroot()
 
+        base_net = Decimal("0")
         for code in ("389", "79"):
             for moa in root.findall(".//e:G_SG50/e:S_MOA", NS):
                 if _text(moa.find("./e:C_C516/e:D_5025", NS)) == code:
-                    return _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                    base_net = _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                    break
+            if base_net != 0:
+                break
+
+        doc_discount = sum_moa(root, DEFAULT_DOC_DISCOUNT_CODES)
+        doc_charge = sum_moa(root, DEFAULT_DOC_CHARGE_CODES)
+        net = base_net - doc_discount + doc_charge
+        return net.quantize(DEC2, ROUND_HALF_UP)
     except Exception:
         pass
     return Decimal("0")
