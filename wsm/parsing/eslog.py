@@ -527,6 +527,30 @@ def _line_discount(sg26: LET._Element) -> Decimal:
     return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 
+def _line_amount_discount(sg26: LET._Element) -> Decimal:
+    """Return sum of MOA 204 and 25 allowance amounts for a line."""
+
+    total = Decimal("0")
+    seen: set[tuple[int, str, Decimal]] = set()
+    for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(".//G_SG39"):
+        for moa in sg39.findall(".//e:S_MOA", NS) + sg39.findall(".//S_MOA"):
+            code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
+                moa.find("./C_C516/D_5025")
+            )
+            if code in {Moa.DISCOUNT.value, "25"}:
+                amount_el = moa.find("./e:C_C516/e:D_5004", NS)
+                if amount_el is None:
+                    amount_el = moa.find("./C_C516/D_5004")
+                amount = _decimal(amount_el).quantize(DEC2, ROUND_HALF_UP)
+                key = (id(moa), code, amount)
+                if key in seen:
+                    continue
+                seen.add(key)
+                total += amount
+
+    return total.quantize(DEC2, ROUND_HALF_UP)
+
+
 def _line_pct_discount(sg26: LET._Element) -> Decimal:
     """Return discount amount calculated from ``G_SG39`` percentage values."""
     total = Decimal("0")
