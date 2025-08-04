@@ -66,7 +66,7 @@ NS = {"e": "urn:eslog:2.00"}
 # Common document discount codes.  Extend this list or pass a custom
 # sequence to ``parse_eslog_invoice`` if your suppliers use different
 # identifiers.
-DEFAULT_DOC_DISCOUNT_CODES = ["204", "260", "131", "128", "176", "500"]
+DEFAULT_DOC_DISCOUNT_CODES = ["204", "260", "131", "128", "176", "500", "25"]
 
 # Common document charge codes.  These represent additional amounts
 # that increase the invoice total.
@@ -949,29 +949,10 @@ def parse_eslog_invoice(
             )
 
     # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
-    allowance_total = Decimal("0")
-    charge_total = Decimal("0")
-
-    for sg16 in root.findall(".//e:G_SG16", NS) + root.findall(".//G_SG16"):
-        alc = sg16.find("./e:S_ALC", NS) or sg16.find("./S_ALC")
-        alc_type = _text(alc.find("./e:D_5463", NS) if alc is not None else None)
-
-        for moa in sg16.findall("./e:S_MOA", NS) + sg16.findall("./S_MOA"):
-            code_el = moa.find("./e:C_C516/e:D_5025", NS) or moa.find(
-                "./C_C516/D_5025"
-            )
-            code = _text(code_el)
-            val_el = moa.find("./e:C_C516/e:D_5004", NS) or moa.find(
-                "./C_C516/D_5004"
-            )
-            amount = _decimal(val_el)
-            if alc_type == "C" or code == "504":
-                charge_total += amount
-            elif code == "204":
-                allowance_total += amount
-
-    doc_discount = allowance_total.quantize(Decimal("0.01"), ROUND_HALF_UP)
-    doc_charge = charge_total.quantize(Decimal("0.01"), ROUND_HALF_UP)
+    doc_discount = sum_moa(
+        root, discount_codes or DEFAULT_DOC_DISCOUNT_CODES
+    )
+    doc_charge = sum_moa(root, DEFAULT_DOC_CHARGE_CODES)
 
     if doc_discount != 0:
         items.append(
@@ -1064,10 +1045,19 @@ def parse_invoice(source: str | Path):
         )
         # ─────────────────────── dokumentarni popusti ───────────────────────
         # V vrstici "_DOC_" se lahko pojavijo negativne vrednosti (allowance)
-        # in pozitivne (charge).  Popust naj vključuje le negativne zneske.
-        doc_rows = df_items[df_items["sifra_dobavitelja"] == "_DOC_"]
-        allow_total = doc_rows.loc[doc_rows["vrednost"] < 0, "vrednost"].sum()
-        discount_total = (-allow_total).quantize(Decimal("0.01"))
+        # in pozitivne (charge).  Popust naj vključuje le negativne zneske, zato
+        # najprej filtriramo le tiste "_DOC_" vrstice, katerih ``vrednost`` je
+        # manjša od 0.  Vrstice "DOC_CHG" (dokumentarni stroški) so tako že
+        # privzeto izključene.
+        doc_rows = df_items[
+            (df_items["sifra_dobavitelja"] == "_DOC_")
+            & (df_items["vrednost"] < 0)
+        ]
+        if not doc_rows.empty:
+            allow_total = doc_rows["vrednost"].sum()
+            discount_total = (-Decimal(allow_total)).quantize(Decimal("0.01"))
+        else:
+            discount_total = sum_moa(root, DEFAULT_DOC_DISCOUNT_CODES)
 
         # Če želimo posebej slediti tudi pribitkom:
         # charge_total = doc_rows.loc[
