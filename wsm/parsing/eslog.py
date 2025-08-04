@@ -948,15 +948,30 @@ def parse_eslog_invoice(
                 Decimal("0.01"), ROUND_HALF_UP
             )
 
-    # ───────── DOCUMENT DISCOUNT (če obstaja) ─────────
-    discount_codes = list(discount_codes or DEFAULT_DOC_DISCOUNT_CODES)
-    for extra in ("204", "25"):
-        if extra not in discount_codes:
-            discount_codes.append(extra)
+    # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
+    allowance_total = Decimal("0")
+    charge_total = Decimal("0")
 
-    doc_discount = sum_moa(root, discount_codes)
+    for sg16 in root.findall(".//e:G_SG16", NS) + root.findall(".//G_SG16"):
+        alc = sg16.find("./e:S_ALC", NS) or sg16.find("./S_ALC")
+        alc_type = _text(alc.find("./e:D_5463", NS) if alc is not None else None)
 
-    doc_charge = sum_moa(root, DEFAULT_DOC_CHARGE_CODES)
+        for moa in sg16.findall("./e:S_MOA", NS) + sg16.findall("./S_MOA"):
+            code_el = moa.find("./e:C_C516/e:D_5025", NS) or moa.find(
+                "./C_C516/D_5025"
+            )
+            code = _text(code_el)
+            val_el = moa.find("./e:C_C516/e:D_5004", NS) or moa.find(
+                "./C_C516/D_5004"
+            )
+            amount = _decimal(val_el)
+            if alc_type == "C" or code == "504":
+                charge_total += amount
+            elif code == "204":
+                allowance_total += amount
+
+    doc_discount = allowance_total.quantize(Decimal("0.01"), ROUND_HALF_UP)
+    doc_charge = charge_total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
     if doc_discount != 0:
         items.append(
@@ -977,7 +992,7 @@ def parse_eslog_invoice(
     if doc_charge != 0:
         items.append(
             {
-                "sifra_dobavitelja": "_DOC_CHARGE_",
+                "sifra_dobavitelja": "DOC_CHG",
                 "naziv": "Strošek na ravni računa",
                 "kolicina": Decimal("1"),
                 "enota": "",
