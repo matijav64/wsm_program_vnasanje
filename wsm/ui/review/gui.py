@@ -153,10 +153,15 @@ def review_links(
         empty_sifra_old = manual_old["sifra_dobavitelja"].eq("")
         if empty_sifra_old.any():
             log.warning(
-                f"Prazne vrednosti v sifra_dobavitelja v manual_old za {empty_sifra_old.sum()} vrstic"
+                "Prazne vrednosti v sifra_dobavitelja v manual_old za "
+                f"{empty_sifra_old.sum()} vrstic"
             )
+            sample = manual_old[empty_sifra_old][
+                ["naziv", "sifra_dobavitelja"]
+            ]
             log.debug(
-                f"Primer vrstic s prazno sifra_dobavitelja: {manual_old[empty_sifra_old][['naziv', 'sifra_dobavitelja']].head().to_dict()}"
+                "Primer vrstic s prazno sifra_dobavitelja: %s",
+                sample.head().to_dict(),
             )
         manual_old["naziv_ckey"] = manual_old["naziv"].map(_clean)
     except Exception as e:
@@ -170,7 +175,9 @@ def review_links(
             ]
         )
         log.debug(
-            f"Manual_old ni obstajal ali napaka pri branju: {e}, ustvarjam prazen DataFrame"
+            "Manual_old ni obstajal ali napaka pri branju: %s, "
+            "ustvarjam prazen DataFrame",
+            e,
         )
 
     existing_names = sorted(
@@ -192,7 +199,8 @@ def review_links(
     empty_sifra = df["sifra_dobavitelja"] == ""
     if empty_sifra.any():
         log.warning(
-            f"Prazne vrednosti v sifra_dobavitelja za {empty_sifra.sum()} vrstic v df"
+            "Prazne vrednosti v sifra_dobavitelja za "
+            f"{empty_sifra.sum()} vrstic v df",
         )
 
     # Create a dictionary for quick lookup
@@ -290,14 +298,14 @@ def review_links(
     # subsequent calculations and when saving the file. Previously the column
     # was cast to ``float`` which could introduce rounding errors.
     df["warning"] = pd.NA
-    log.debug(f"df po normalizaciji: {df.head().to_dict()}")
+    log.debug("df po normalizaciji: %s", df.head().to_dict())
 
     # Combine duplicate invoice lines except for gratis items
     df = _merge_same_items(df)
 
     root = tk.Tk()
-    # Window title shows the full supplier name while the on-screen header can be
-    # a bit shorter for readability.
+    # Window title shows the full supplier name while the on-screen
+    # header can be a bit shorter for readability.
     root.title(f"Ročna revizija – {supplier_name}")
 
     # Determine how many rows can fit based on the screen height. Roughly
@@ -616,11 +624,15 @@ def review_links(
     total_frame.pack(fill="x", pady=5)
 
     net_raw = df["total_net"].sum()
-    net_val = Decimal(str(net_raw)) if not isinstance(net_raw, Decimal) else net_raw
+    net_val = (
+        Decimal(str(net_raw)) if not isinstance(net_raw, Decimal) else net_raw
+    )
     net = net_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
     vat_raw = df["ddv"].sum()
-    vat_val = Decimal(str(vat_raw)) if not isinstance(vat_raw, Decimal) else vat_raw
+    vat_val = (
+        Decimal(str(vat_raw)) if not isinstance(vat_raw, Decimal) else vat_raw
+    )
     vat = vat_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
     gross = (net + vat).quantize(Decimal("0.01"), ROUND_HALF_UP)
@@ -666,11 +678,20 @@ def review_links(
             )
 
         net_raw = df["total_net"].sum()
-        net_val = Decimal(str(net_raw)) if not isinstance(net_raw, Decimal) else net_raw
+        net_val = (
+            Decimal(str(net_raw))
+            if not isinstance(net_raw, Decimal)
+            else net_raw
+        )
         net = net_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
+        log.debug("DDV vrednosti po vrsticah:\n%s", df["ddv"])
         vat_raw = df["ddv"].sum()
-        vat_val = Decimal(str(vat_raw)) if not isinstance(vat_raw, Decimal) else vat_raw
+        vat_val = (
+            Decimal(str(vat_raw))
+            if not isinstance(vat_raw, Decimal)
+            else vat_raw
+        )
         vat = vat_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
         gross = (net + vat).quantize(Decimal("0.01"), ROUND_HALF_UP)
@@ -942,7 +963,12 @@ def review_links(
         ]
         tree.item(sel_i, values=new_vals)
         log.debug(
-            f"Potrjeno: idx={idx}, wsm_naziv={choice}, wsm_sifra={df.at[idx, 'wsm_sifra']}, sifra_dobavitelja={df.at[idx, 'sifra_dobavitelja']}"
+            "Potrjeno: idx=%s, wsm_naziv=%s, wsm_sifra=%s, "
+            "sifra_dobavitelja=%s",
+            idx,
+            choice,
+            df.at[idx, "wsm_sifra"],
+            df.at[idx, "sifra_dobavitelja"],
         )
         _update_summary()  # Update summary after confirming
         _update_totals()  # Update totals after confirming
