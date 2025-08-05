@@ -255,6 +255,8 @@ def review_links(
         axis=1,
     )
     df["total_net"] = df["vrednost"]
+    df["ddv"] = df.get("ddv", 0)
+    df["ddv"] = df["ddv"].fillna(0)
     df["is_gratis"] = df["rabata_pct"] >= Decimal("99.9")
     df["kolicina_norm"], df["enota_norm"] = zip(
         *[
@@ -615,14 +617,22 @@ def review_links(
     total_frame = tk.Frame(root)
     total_frame.pack(fill="x", pady=5)
 
-    vat_rate = (
-        header_totals["vat"] / header_totals["net"]
-        if header_totals["net"]
-        else Decimal("0")
+    net_total_raw = df["total_net"].sum()
+    net_total_val = (
+        net_total_raw
+        if isinstance(net_total_raw, Decimal)
+        else Decimal(str(net_total_raw))
     )
-    net_total, vat_total, gross_total = _split_totals(
-        df, doc_discount_total, vat_rate
+    net_total = net_total_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+    vat_total_raw = df["ddv"].sum() if "ddv" in df else 0
+    vat_total_val = (
+        vat_total_raw
+        if isinstance(vat_total_raw, Decimal)
+        else Decimal(str(vat_total_raw))
     )
+    vat_total = vat_total_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
+    gross_total = (net_total + vat_total).quantize(Decimal("0.01"), ROUND_HALF_UP)
 
     lbl_totals = tk.Label(
         total_frame,
@@ -638,6 +648,7 @@ def review_links(
     lbl_totals.pack(side="left", padx=10)
 
     def _update_totals():
+        from decimal import ROUND_HALF_UP  # local import for standalone exec
         line_total_raw = df["total_net"].sum()
         line_total = (
             line_total_raw
@@ -662,13 +673,15 @@ def review_links(
                 ),
             )
 
-        vat_rate = (
-            header_totals["vat"] / header_totals["net"]
-            if header_totals["net"]
-            else Decimal("0")
-        )
-        # _DOC_ rows were already removed from df; avoid re-applying the discount
-        net, vat, gross = _split_totals(df, Decimal("0"), vat_rate)
+        net_raw = df["total_net"].sum()
+        net_val = net_raw if isinstance(net_raw, Decimal) else Decimal(str(net_raw))
+        net = net_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+        vat_raw = df["ddv"].sum() if "ddv" in df else 0
+        vat_val = vat_raw if isinstance(vat_raw, Decimal) else Decimal(str(vat_raw))
+        vat = vat_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+        gross = (net + vat).quantize(Decimal("0.01"), ROUND_HALF_UP)
         total_frame.children["total_sum"].config(
             text=(
                 f"Neto:   {net:,.2f} €\n"
