@@ -42,7 +42,9 @@ def _extract_update_func():
 def test_totals_label_contains_terms():
     snippet = _extract_update_func()
     lbl = DummyLabel()
-    df = pd.DataFrame({"total_net": [Decimal("10")], "wsm_sifra": ["A"]})
+    df = pd.DataFrame(
+        {"total_net": [Decimal("10")], "ddv": [Decimal("2")], "wsm_sifra": ["A"]}
+    )
     df_doc = pd.DataFrame()
     ns = {
         "Decimal": Decimal,

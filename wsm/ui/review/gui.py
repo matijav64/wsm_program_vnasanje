@@ -676,15 +676,11 @@ def review_links(
             )
 
         net_raw = df["total_net"].sum()
-        net_val = (
-            net_raw if isinstance(net_raw, Decimal) else Decimal(str(net_raw))
-        )
+        net_val = Decimal(str(net_raw)) if not isinstance(net_raw, Decimal) else net_raw
         net = net_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
-        vat_raw = df["ddv"].sum() if "ddv" in df else 0
-        vat_val = (
-            vat_raw if isinstance(vat_raw, Decimal) else Decimal(str(vat_raw))
-        )
+        vat_raw = df["ddv"].sum()
+        vat_val = Decimal(str(vat_raw)) if not isinstance(vat_raw, Decimal) else vat_raw
         vat = vat_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
         gross = (net + vat).quantize(Decimal("0.01"), ROUND_HALF_UP)
