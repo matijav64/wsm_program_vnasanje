@@ -236,6 +236,9 @@ def review_links(
         else Decimal(str(doc_discount_total_raw))
     )
     df = df[df["sifra_dobavitelja"] != "_DOC_"]
+    df["ddv"] = df["ddv"].apply(
+        lambda x: Decimal(str(x)) if not isinstance(x, Decimal) else x
+    )
     # Ensure a clean sequential index so Treeview item IDs are predictable
     df = df.reset_index(drop=True)
     df["cena_pred_rabatom"] = df.apply(
@@ -629,7 +632,10 @@ def review_links(
     )
     net = net_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
-    vat_raw = df["ddv"].sum()
+    if "sifra_dobavitelja" in df.columns:
+        vat_raw = df.loc[df["sifra_dobavitelja"] != "_DOC_", "ddv"].sum()
+    else:
+        vat_raw = df["ddv"].sum()
     vat_val = (
         Decimal(str(vat_raw)) if not isinstance(vat_raw, Decimal) else vat_raw
     )
@@ -686,7 +692,12 @@ def review_links(
         net = net_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
         log.debug("DDV vrednosti po vrsticah:\n%s", df["ddv"])
-        vat_raw = df["ddv"].sum()
+        if "sifra_dobavitelja" in df.columns:
+            vat_raw = df.loc[
+                df["sifra_dobavitelja"] != "_DOC_", "ddv"
+            ].sum()
+        else:
+            vat_raw = df["ddv"].sum()
         vat_val = (
             Decimal(str(vat_raw))
             if not isinstance(vat_raw, Decimal)
