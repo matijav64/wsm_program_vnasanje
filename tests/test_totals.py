@@ -55,7 +55,7 @@ def test_totals_label_contains_terms():
             "gross": Decimal("12"),
         },
         "detect_round_step": detect_round_step,
-        "_split_totals": rl._split_totals,
+        "_split_totals": _split_totals,
         "messagebox": DummyMsgBox,
         "total_frame": DummyFrame(lbl),
     }

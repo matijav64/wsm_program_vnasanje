@@ -18,7 +18,6 @@ from .helpers import (
     _fmt,
     _norm_unit,
     _merge_same_items,
-    _split_totals,
     _apply_price_warning,
 )
 from .io import _save_and_close, _load_supplier_map
@@ -632,7 +631,9 @@ def review_links(
         else Decimal(str(vat_total_raw))
     )
     vat_total = vat_total_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
-    gross_total = (net_total + vat_total).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    gross_total = (net_total + vat_total).quantize(
+        Decimal("0.01"), ROUND_HALF_UP
+    )
 
     lbl_totals = tk.Label(
         total_frame,
@@ -649,6 +650,7 @@ def review_links(
 
     def _update_totals():
         from decimal import ROUND_HALF_UP  # local import for standalone exec
+
         line_total_raw = df["total_net"].sum()
         line_total = (
             line_total_raw
@@ -674,11 +676,15 @@ def review_links(
             )
 
         net_raw = df["total_net"].sum()
-        net_val = net_raw if isinstance(net_raw, Decimal) else Decimal(str(net_raw))
+        net_val = (
+            net_raw if isinstance(net_raw, Decimal) else Decimal(str(net_raw))
+        )
         net = net_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
         vat_raw = df["ddv"].sum() if "ddv" in df else 0
-        vat_val = vat_raw if isinstance(vat_raw, Decimal) else Decimal(str(vat_raw))
+        vat_val = (
+            vat_raw if isinstance(vat_raw, Decimal) else Decimal(str(vat_raw))
+        )
         vat = vat_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
         gross = (net + vat).quantize(Decimal("0.01"), ROUND_HALF_UP)
