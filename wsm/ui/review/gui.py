@@ -238,7 +238,7 @@ def review_links(
     df = df[df["sifra_dobavitelja"] != "_DOC_"]
     df["ddv"] = df["ddv"].apply(
         lambda x: Decimal(str(x)) if not isinstance(x, Decimal) else x
-    )
+    )  # ensure VAT values are Decimal for accurate totals
     # Ensure a clean sequential index so Treeview item IDs are predictable
     df = df.reset_index(drop=True)
     df["cena_pred_rabatom"] = df.apply(
