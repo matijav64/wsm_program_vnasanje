@@ -1016,6 +1016,7 @@ def parse_eslog_invoice(
                         "rabata_pct": Decimal("0.00"),
                         "vrednost": amount,
                         "ddv_stopnja": vat_rate,
+                        "ddv": vat_amount,
                         "is_gratis": False,
                     }
                 )
@@ -1036,6 +1037,7 @@ def parse_eslog_invoice(
                 "rabata": doc_discount,
                 "rabata_pct": Decimal("100.00"),
                 "vrednost": -doc_discount,
+                "ddv": Decimal("0"),
                 "is_gratis": False,
             }
         )
@@ -1052,6 +1054,7 @@ def parse_eslog_invoice(
                 "rabata": Decimal("0"),
                 "rabata_pct": Decimal("0.00"),
                 "vrednost": doc_charge,
+                "ddv": Decimal("0"),
                 "is_gratis": False,
             }
         )
