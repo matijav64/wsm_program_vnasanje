@@ -850,6 +850,7 @@ def parse_eslog_invoice(
         if qty == 0:
             continue
         unit = _text(sg26.find(".//e:S_QTY/e:C_C186/e:D_6411", NS))
+        row: Dict[str, Any] = {}
 
         # poiščemo šifro artikla
         art_code = ""
@@ -878,6 +879,7 @@ def parse_eslog_invoice(
 
         net_amount = _line_net(sg26)
         tax_amount = _line_tax(sg26, header_rate if header_rate != 0 else None)
+        row["ddv"] = tax_amount if tax_amount is not None else Decimal("0")
         if net_amount == 0 and gross_amount != 0:
             net_amount = (gross_amount - rebate - tax_amount).quantize(
                 Decimal("0.01"), ROUND_HALF_UP
@@ -940,7 +942,7 @@ def parse_eslog_invoice(
 
         is_gratis = rabata_pct >= Decimal("99.9")
 
-        items.append(
+        row.update(
             {
                 "sifra_dobavitelja": supplier_code,
                 "naziv": desc,
@@ -956,6 +958,8 @@ def parse_eslog_invoice(
                 "sifra_artikla": art_code,
             }
         )
+
+        items.append(row)
 
         for ac in sg26.findall(".//e:AllowanceCharge", NS) + sg26.findall(
             ".//AllowanceCharge"
