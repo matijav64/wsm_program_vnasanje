@@ -959,6 +959,9 @@ def parse_eslog_invoice(
             }
         )
 
+        if "ddv" not in item:
+            item["ddv"] = Decimal("0")
+
         items.append(item)
 
         for ac in sg26.findall(".//e:AllowanceCharge", NS) + sg26.findall(
