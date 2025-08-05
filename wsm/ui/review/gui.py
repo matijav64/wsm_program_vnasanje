@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 import pandas as pd
@@ -21,7 +21,7 @@ from .helpers import (
     _split_totals,
     _apply_price_warning,
 )
-from .io import _save_and_close, _load_supplier_map, _write_supplier_map
+from .io import _save_and_close, _load_supplier_map
 
 # Logger setup
 log = logging.getLogger(__name__)
@@ -248,7 +248,7 @@ def review_links(
         lambda r: (
             (
                 (r["rabata"] / (r["vrednost"] + r["rabata"])) * Decimal("100")
-            ).quantize(Decimal("0.01"))
+            ).quantize(Decimal("0.01"), ROUND_HALF_UP)
             if (r["vrednost"] + r["rabata"])
             else Decimal("0.00")
         ),
@@ -587,7 +587,7 @@ def review_links(
                         row["rabata"]
                         / row["neto_brez_popusta"]
                         * Decimal("100")
-                    ).quantize(Decimal("0.01"))
+                    ).quantize(Decimal("0.01"), ROUND_HALF_UP)
                     if row["neto_brez_popusta"]
                     else Decimal("0.00")
                 )
