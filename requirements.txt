@@ -7,3 +7,4 @@ PyQt5; extra == "pyqt"
 matplotlib
 mplcursors
 lxml>=5.2
+defusedxml
