@@ -2,6 +2,7 @@ import inspect
 import textwrap
 from decimal import Decimal
 
+import logging
 import pandas as pd
 
 import wsm.ui.review.gui as rl
@@ -43,7 +44,11 @@ def test_totals_label_contains_terms():
     snippet = _extract_update_func()
     lbl = DummyLabel()
     df = pd.DataFrame(
-        {"total_net": [Decimal("10")], "ddv": [Decimal("2")], "wsm_sifra": ["A"]}
+        {
+            "total_net": [Decimal("10")],
+            "ddv": [Decimal("2")],
+            "wsm_sifra": ["A"],
+        }
     )
     df_doc = pd.DataFrame()
     ns = {
@@ -60,6 +65,7 @@ def test_totals_label_contains_terms():
         "_split_totals": _split_totals,
         "messagebox": DummyMsgBox,
         "total_frame": DummyFrame(lbl),
+        "log": logging.getLogger("test"),
     }
     exec(snippet, ns)
     ns["_update_totals"]()
