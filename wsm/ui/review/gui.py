@@ -63,10 +63,11 @@ def review_links(
     if {"cena_bruto", "cena_netto"}.issubset(df.columns):
         for idx, row in df.iterrows():
             log.info(
-                "XML[%s] bruto=%s neto=%s",
+                "XML[%s] bruto=%s neto=%s ddv=%s",
                 idx,
                 row.get("cena_bruto"),
                 row.get("cena_netto"),
+                row.get("ddv"),
             )
     price_warn_threshold = (
         Decimal(str(price_warn_pct))
