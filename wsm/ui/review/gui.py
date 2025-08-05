@@ -644,20 +644,13 @@ def review_links(
             if isinstance(line_total_raw, Decimal)
             else Decimal(str(line_total_raw))
         )
-        dd_total = (
-            doc_discount_total
-            if isinstance(doc_discount_total, Decimal)
-            else Decimal(str(doc_discount_total))
-        )
         inv_total = (
             header_totals["net"]
             if isinstance(header_totals["net"], Decimal)
             else Decimal(str(header_totals["net"]))
         )
 
-        calc_total = line_total + (
-            dd_total if not df_doc.empty else Decimal("0")
-        )
+        calc_total = line_total + doc_discount_total
         diff = inv_total - calc_total
         step = detect_round_step(inv_total, calc_total)
         if abs(diff) > step:
@@ -674,9 +667,8 @@ def review_links(
             if header_totals["net"]
             else Decimal("0")
         )
-        net, vat, gross = _split_totals(
-            df, dd_total if not df_doc.empty else Decimal("0"), vat_rate
-        )
+        # _DOC_ rows were already removed from df; avoid re-applying the discount
+        net, vat, gross = _split_totals(df, Decimal("0"), vat_rate)
         total_frame.children["total_sum"].config(
             text=(
                 f"Neto:   {net:,.2f} €\n"
