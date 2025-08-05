@@ -630,6 +630,7 @@ def review_links(
     net_val = (
         Decimal(str(net_raw)) if not isinstance(net_raw, Decimal) else net_raw
     )
+    net_val += doc_discount_total
     net = net_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
     if "sifra_dobavitelja" in df.columns:
@@ -659,19 +660,31 @@ def review_links(
     def _update_totals():
         from decimal import ROUND_HALF_UP  # local import for standalone exec
 
-        line_total_raw = df["total_net"].sum()
-        line_total = (
-            line_total_raw
-            if isinstance(line_total_raw, Decimal)
-            else Decimal(str(line_total_raw))
+        net_raw = df["total_net"].sum()
+        net_total = (
+            Decimal(str(net_raw))
+            if not isinstance(net_raw, Decimal)
+            else net_raw
         )
-        inv_total = (
-            header_totals["net"]
-            if isinstance(header_totals["net"], Decimal)
-            else Decimal(str(header_totals["net"]))
+        net_total += doc_discount_total
+
+        log.debug("DDV vrednosti po vrsticah:\n%s", df["ddv"])
+        if "sifra_dobavitelja" in df.columns:
+            vat_raw = df.loc[df["sifra_dobavitelja"] != "_DOC_", "ddv"].sum()
+        else:
+            vat_raw = df["ddv"].sum()
+        vat_val = (
+            Decimal(str(vat_raw))
+            if not isinstance(vat_raw, Decimal)
+            else vat_raw
         )
 
-        calc_total = line_total + doc_discount_total
+        calc_total = net_total + vat_val
+        inv_total = (
+            header_totals["gross"]
+            if isinstance(header_totals["gross"], Decimal)
+            else Decimal(str(header_totals["gross"]))
+        )
         diff = inv_total - calc_total
         step = detect_round_step(inv_total, calc_total)
         if abs(diff) > step:
@@ -683,28 +696,8 @@ def review_links(
                 ),
             )
 
-        net_raw = df["total_net"].sum()
-        net_val = (
-            Decimal(str(net_raw))
-            if not isinstance(net_raw, Decimal)
-            else net_raw
-        )
-        net = net_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
-
-        log.debug("DDV vrednosti po vrsticah:\n%s", df["ddv"])
-        if "sifra_dobavitelja" in df.columns:
-            vat_raw = df.loc[
-                df["sifra_dobavitelja"] != "_DOC_", "ddv"
-            ].sum()
-        else:
-            vat_raw = df["ddv"].sum()
-        vat_val = (
-            Decimal(str(vat_raw))
-            if not isinstance(vat_raw, Decimal)
-            else vat_raw
-        )
+        net = net_total.quantize(Decimal("0.01"), ROUND_HALF_UP)
         vat = vat_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
-
         gross = (net + vat).quantize(Decimal("0.01"), ROUND_HALF_UP)
         total_frame.children["total_sum"].config(
             text=(
