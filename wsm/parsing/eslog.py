@@ -68,8 +68,14 @@ NS = {"e": "urn:eslog:2.00"}
 
 # Namespaces for UBL documents
 UBL_NS = {
-    "cac": "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
-    "cbc": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+    "cac": (
+        "urn:oasis:names:specification:ubl:"
+        "schema:xsd:CommonAggregateComponents-2"
+    ),
+    "cbc": (
+        "urn:oasis:names:specification:ubl:"
+        "schema:xsd:CommonBasicComponents-2"
+    ),
 }
 
 # Common document discount codes.  Extend this list or pass a custom
@@ -850,6 +856,7 @@ def parse_eslog_invoice(
     items: List[Dict] = []
     net_total = Decimal("0")
     tax_total = Decimal("0")
+    vat_mismatch = False
 
     # ───────────── LINE ITEMS ─────────────
     for sg26 in root.findall(".//e:G_SG26", NS):
@@ -913,6 +920,17 @@ def parse_eslog_invoice(
             if rate != 0:
                 vat_rate = rate
                 break
+
+        expected_tax = calculate_vat(net_amount, vat_rate)
+        if expected_tax != tax_amount:
+            log.error(
+                "Line VAT mismatch: XML %s vs calculated %s (net %s rate %s)",
+                tax_amount,
+                expected_tax,
+                net_amount,
+                vat_rate,
+            )
+            vat_mismatch = True
 
         # rabat na ravni vrstice
         explicit_pct: Decimal | None = None
@@ -995,34 +1013,48 @@ def parse_eslog_invoice(
                 code_ac = _text(code_el) or "_CHARGE_"
 
                 rate_el = ac.find(
-                    ".//e:TaxCategory/e:Percent", {**NS, **UBL_NS}
+                    ".//e:TaxCategory/e:Percent",
+                    {**NS, **UBL_NS},
                 )
                 if rate_el is None:
                     rate_el = ac.find(
-                        ".//cac:TaxCategory/cbc:Percent", {**NS, **UBL_NS}
+                        ".//cac:TaxCategory/cbc:Percent",
+                        {**NS, **UBL_NS},
                     )
                     if rate_el is None:
                         log.warning(
-                            "Tax rate element not found with namespaces; falling back"
+                            "Tax rate element not found with namespaces; "
+                            "falling back",
                         )
                         rate_el = ac.find(".//TaxCategory/Percent")
                 vat_rate = _decimal(rate_el)
 
                 tax_el = ac.find(
-                    ".//e:TaxTotal/e:TaxAmount", {**NS, **UBL_NS}
+                    ".//cac:TaxTotal/cbc:TaxAmount", {**NS, **UBL_NS}
                 )
-                if tax_el is None:
+                if tax_el is not None:
+                    log.debug("cbc:TaxAmount raw value: %s", tax_el.text)
+                else:
+                    log.warning("Missing .//cbc:TaxAmount; falling back")
                     tax_el = ac.find(
-                        ".//cac:TaxTotal/cbc:TaxAmount", {**NS, **UBL_NS}
-                    )
-                    if tax_el is None:
-                        log.warning(
-                            "Tax amount element not found with namespaces; falling back"
-                        )
-                        tax_el = ac.find(".//TaxTotal/TaxAmount")
+                        ".//e:TaxTotal/e:TaxAmount",
+                        {**NS, **UBL_NS},
+                    ) or ac.find(".//TaxTotal/TaxAmount")
                 vat_amount = _decimal(tax_el)
                 if vat_amount == 0 and vat_rate != 0:
                     vat_amount = calculate_vat(amount, vat_rate)
+
+                expected_vat = calculate_vat(amount, vat_rate)
+                if vat_amount != expected_vat:
+                    log.error(
+                        "Allowance/charge VAT mismatch: XML %s vs "
+                        "calculated %s (net %s rate %s)",
+                        vat_amount,
+                        expected_vat,
+                        amount,
+                        vat_rate,
+                    )
+                    vat_mismatch = True
 
                 net_total = (net_total + amount).quantize(
                     Decimal("0.01"), ROUND_HALF_UP
@@ -1095,6 +1127,7 @@ def parse_eslog_invoice(
         )
 
     df = pd.DataFrame(items)
+    df.attrs["vat_mismatch"] = vat_mismatch
     if "sifra_dobavitelja" in df.columns and not df["sifra_dobavitelja"].any():
         df["sifra_dobavitelja"] = supplier_code
     if not df.empty:
