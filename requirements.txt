@@ -2,9 +2,7 @@ pandas
 pdfplumber
 openpyxl
 click
-# Optional: install PyQt5 to use the alternative Qt GUI
-PyQt5; extra == "pyqt"
 matplotlib
 mplcursors
 lxml>=5.2
-defusedxml
+defusedxml>=0.7     # varen XML-parser (XXE / DoS zaščita)

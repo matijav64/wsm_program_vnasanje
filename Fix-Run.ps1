@@ -1,16 +1,16 @@
 <#
-  Fix-Run.ps1   –   posodobi repo, aktivira .venv, nastavi pot do NAS-povezav
-                    in zažene program   (privzeta veja = main, spremeni z -Branch)
+  Fix-Run.ps1  –  posodobi repo, poskrbi za .venv + odvisnosti
+                 in zažene program  (privzeta veja = main, spremeni z -Branch)
 #>
 
 param (
     [string]$Branch = 'main'
 )
 
-$ErrorActionPreference = 'Stop'      # takoj ustavi ob prvi napaki
-Set-Location $PSScriptRoot           # v mapo, kjer leži skripta
+$ErrorActionPreference = 'Stop'      # ustavi ob prvi napaki
+Set-Location $PSScriptRoot           # mapo, kjer je skripta
 
-# ---------- Git ----------------------------------------------------------------
+# ───────────────────────────────────── Git ─────────────────────────────────────
 Write-Host "[git] fetch origin" -f Cyan
 git fetch origin
 
@@ -21,30 +21,45 @@ Write-Host "[git] pull origin $Branch" -f Cyan
 git pull origin $Branch
 
 
-# ---------- virtualno okolje ---------------------------------------------------
-Write-Host "[env] activate .venv" -f Cyan
-$activate = "$PSScriptRoot\.venv\Scripts\Activate.ps1"
-if (-not (Test-Path $activate)) {
-    Write-Error "Virtual environment not found: $activate`nUstvari ga z  python -m venv .venv"
-    exit 1
+# ───────────────────────── virtualno okolje (.venv) ───────────────────────────
+$venvPath   = Join-Path $PSScriptRoot ".venv"
+$activatePS = Join-Path $venvPath "Scripts\Activate.ps1"
+
+if (-not (Test-Path $activatePS)) {
+    Write-Host "[env] create .venv" -f Cyan
+    python -m venv .venv
 }
-& $activate
+
+Write-Host "[env] activate .venv" -f Cyan
+& $activatePS
 
 
-# ---------- odvisnosti ---------------------------------------------------------
+# ───────────────────────────── odvisnosti (pip) ───────────────────────────────
+Write-Host "[pip] upgrade pip" -f Cyan
+python -m pip install --upgrade pip
+
 if (Test-Path 'requirements.txt') {
     Write-Host "[pip] install -r requirements.txt" -f Cyan
-    python -m pip install --upgrade --quiet -r requirements.txt
+    python -m pip install --upgrade -r requirements.txt
 }
 
+# -- defusedxml je kritičen za varno XML --
+Write-Host "[pip] ensure defusedxml" -f Cyan
+python -m pip install --upgrade defusedxml
 
-# ---------- poti na NAS --------------------------------------------------------
+
+# ───────────────────── poti do NAS (WSM_* environment) ────────────────────────
 Write-Host "[env] set WSM_* variables" -f Cyan
 $env:WSM_LINKS_DIR      = '\\PisarnaNAS\wsm_program_vnasanje_povezave\links'
 $env:WSM_KEYWORDS_FILE  = '\\PisarnaNAS\wsm_program_vnasanje_povezave\kljucne_besede_wsm_kode.xlsx'
 $env:WSM_CODES_FILE     = '\\PisarnaNAS\wsm_program_vnasanje_povezave\sifre_wsm.xlsx'
 
 
-# ---------- zagon --------------------------------------------------------------
+# ─────────────────────────────── zagon programa ───────────────────────────────
 Write-Host "[run] python -m wsm.run" -f Cyan
 python -m wsm.run
+$exitCode = $LASTEXITCODE
+if ($exitCode -ne 0) {
+    Write-Error "wsm.run exited with code $exitCode"
+    exit $exitCode
+}
