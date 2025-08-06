@@ -320,10 +320,10 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
                         val_el = moa.find("./C_C516/D_5004")
                     line_base += _decimal(val_el)
 
-        doc_discount = sum_moa(root, DEFAULT_DOC_DISCOUNT_CODES)
+        doc_discount = sum_moa(
+            root, DEFAULT_DOC_DISCOUNT_CODES, negative_only=True
+        )
         doc_charge = sum_moa(root, DEFAULT_DOC_CHARGE_CODES)
-        if doc_discount < 0:
-            doc_discount = Decimal("0")
 
         if line_base != 0:
             base = line_base
@@ -480,49 +480,60 @@ def extract_total_tax(xml_path: Path | str) -> Decimal:
         return Decimal("0")
 
 
-def sum_moa(root: LET._Element, codes: List[str]) -> Decimal:
+def sum_moa(
+    root: LET._Element,
+    codes: List[str],
+    *,
+    negative_only: bool = False,
+    tax_amount: Decimal | None = None,
+) -> Decimal:
     """Return the sum of MOA amounts for the given codes.
 
-    Searches MOA segments within ``G_SG50`` and ``G_SG20`` groups as well
-    as top-level ``G_SG16`` segments.  Documents with or without the
-    ``urn:eslog:2.00`` namespace are supported.  Duplicate MOA elements
-    are ignored.
+    Only ``S_MOA`` elements that appear within allowance/charge segments
+    (``S_ALC``) are considered.  Segments nested inside tax summary
+    groups (``G_SG52``) are ignored.  When ``negative_only`` is ``True``
+    only negative amounts are summed and their absolute values returned.
+    Amounts matching ``tax_amount`` are skipped to avoid mistaking VAT
+    totals for discounts.
     """
 
     wanted = set(codes)
     total = Decimal("0")
-    for seg in root.findall(".//e:G_SG50", NS) + root.findall(".//G_SG50"):
-        for moa in seg.findall(".//e:S_MOA", NS) + seg.findall(".//S_MOA"):
-            code_el = moa.find("./e:C_C516/e:D_5025", NS)
-            if code_el is None:
-                code_el = moa.find("./C_C516/D_5025")
-            if code_el is not None and _text(code_el) in wanted:
-                val_el = moa.find("./e:C_C516/e:D_5004", NS)
-                if val_el is None:
-                    val_el = moa.find("./C_C516/D_5004")
-                total += _decimal(val_el)
+    # Locate all allowance/charge segments and evaluate sibling MOA values
+    alcs = root.findall(".//e:S_ALC", NS) + root.findall(".//S_ALC")
+    for alc in alcs:
+        # Skip allowances in tax summary groups
+        parent = alc.getparent()
+        ancestor = parent
+        skip = False
+        while ancestor is not None:
+            if ancestor.tag.split("}")[-1] == "G_SG52":
+                skip = True
+                break
+            ancestor = ancestor.getparent()
+        if skip or parent is None:
+            continue
 
-    for seg in root.findall(".//e:G_SG20", NS) + root.findall(".//G_SG20"):
-        for moa in seg.findall(".//e:S_MOA", NS) + seg.findall(".//S_MOA"):
+        for moa in parent.findall("./e:S_MOA", NS) + parent.findall("./S_MOA"):
             code_el = moa.find("./e:C_C516/e:D_5025", NS)
             if code_el is None:
                 code_el = moa.find("./C_C516/D_5025")
-            if code_el is not None and _text(code_el) in wanted:
-                val_el = moa.find("./e:C_C516/e:D_5004", NS)
-                if val_el is None:
-                    val_el = moa.find("./C_C516/D_5004")
-                total += _decimal(val_el)
+            if code_el is None or _text(code_el) not in wanted:
+                continue
 
-    for sg16 in root.findall(".//e:G_SG16", NS) + root.findall(".//G_SG16"):
-        for moa in sg16.findall("./e:S_MOA", NS) + sg16.findall("./S_MOA"):
-            code_el = moa.find("./e:C_C516/e:D_5025", NS)
-            if code_el is None:
-                code_el = moa.find("./C_C516/D_5025")
-            if code_el is not None and _text(code_el) in wanted:
-                val_el = moa.find("./e:C_C516/e:D_5004", NS)
-                if val_el is None:
-                    val_el = moa.find("./C_C516/D_5004")
-                total += _decimal(val_el)
+            val_el = moa.find("./e:C_C516/e:D_5004", NS)
+            if val_el is None:
+                val_el = moa.find("./C_C516/D_5004")
+            val = _decimal(val_el)
+
+            if negative_only:
+                if val >= 0:
+                    continue
+                if tax_amount is not None and abs(val) == abs(tax_amount):
+                    continue
+                total += -val
+            else:
+                total += val
 
     return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
@@ -546,7 +557,9 @@ def _get_document_discount(xml_root: LET._Element) -> Decimal:
                 elif tag == "D_5004":
                     amount = (el.text or "").strip()
             if code in set(DEFAULT_DOC_DISCOUNT_CODES) and amount is not None:
-                total += Decimal(amount.replace(",", "."))
+                val = Decimal(amount.replace(",", "."))
+                if val < 0:
+                    total += -val
         return total
 
     discount = (
@@ -554,6 +567,8 @@ def _get_document_discount(xml_root: LET._Element) -> Decimal:
         if discount_str not in (None, "")
         else _find_moa_values(set(DEFAULT_DOC_DISCOUNT_CODES))
     )
+    if discount < 0:
+        discount = -discount
 
     return discount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -847,7 +862,7 @@ def parse_eslog_invoice(
     supplier_code, _ = get_supplier_info(xml_path)
 
     try:
-        tree = ET.parse(xml_path)
+        tree = LET.parse(xml_path, parser=XML_PARSER)
     except EntitiesForbidden:
         return pd.DataFrame(), True
     root = tree.getroot()
@@ -1080,7 +1095,12 @@ def parse_eslog_invoice(
                 )
 
     # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
-    doc_discount = sum_moa(root, discount_codes or DEFAULT_DOC_DISCOUNT_CODES)
+    doc_discount = sum_moa(
+        root,
+        discount_codes or DEFAULT_DOC_DISCOUNT_CODES,
+        negative_only=True,
+        tax_amount=tax_total,
+    )
     doc_charge = sum_moa(root, DEFAULT_DOC_CHARGE_CODES)
 
     if doc_discount != 0:
@@ -1200,7 +1220,9 @@ def parse_invoice(source: str | Path):
                 Decimal("0.01"), rounding=ROUND_HALF_UP
             )
         else:
-            discount_total = sum_moa(root, DEFAULT_DOC_DISCOUNT_CODES)
+            discount_total = sum_moa(
+                root, DEFAULT_DOC_DISCOUNT_CODES, negative_only=True
+            )
 
         # Če želimo posebej slediti tudi pribitkom:
         # charge_total = doc_rows.loc[
