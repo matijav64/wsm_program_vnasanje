@@ -157,6 +157,16 @@ def _find_vat(grp: LET._Element) -> str:
         ".//cac:PartyTaxScheme/cbc:CompanyID[@schemeID='VAT']",
         UBL_NS,
     )
+    if vat_el is None:
+        vat_el = grp.find(
+            ".//cac:PartyTaxScheme/cbc:CompanyID[@schemeID='VA']",
+            UBL_NS,
+        )
+    if vat_el is None:
+        vat_el = grp.find(
+            ".//cac:PartyIdentification/cbc:ID[@schemeID='VA']",
+            UBL_NS,
+        )
     vat = _text(vat_el)
     if vat:
         log.debug("Found VAT in UBL element: %s", vat)
