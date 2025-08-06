@@ -78,10 +78,22 @@ def review_links(
     supplier_code: str | None = None
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
-            from wsm.parsing.eslog import get_supplier_info
+            tree = LET.parse(invoice_path)
+            root = tree.getroot()
+            ns = {k: v for k, v in root.nsmap.items() if k}
+            vat_vals = root.xpath(
+                ".//cac:PartyTaxScheme/cbc:CompanyID/text()"
+                "|.//*[@schemeID='VA' or @schemeID='VAT']/text()",
+                namespaces=ns,
+            )
+            if vat_vals:
+                supplier_code = vat_vals[0].strip()
+                log.debug("Supplier VAT from invoice: %s", supplier_code)
+            else:
+                from wsm.parsing.eslog import get_supplier_info
 
-            supplier_code, _ = get_supplier_info(invoice_path)
-            log.debug("Supplier code from invoice: %s", supplier_code)
+                supplier_code, _ = get_supplier_info(invoice_path)
+                log.debug("Supplier code from invoice: %s", supplier_code)
         except Exception as exc:
             log.debug("Supplier code lookup failed: %s", exc)
     if not supplier_code:
@@ -90,7 +102,7 @@ def review_links(
     log.debug(f"Pot do mape links: {suppliers_file}")
     sup_map = _load_supplier_map(suppliers_file)
 
-    log.info(f"Supplier code extracted: {supplier_code}")
+    log.info("Resolved supplier code: %s", supplier_code)
     supplier_info = sup_map.get(supplier_code, {})
     default_name = short_supplier_name(supplier_info.get("ime", supplier_code))
     supplier_vat = supplier_info.get("vat")
