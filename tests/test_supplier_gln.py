@@ -6,3 +6,9 @@ def test_get_supplier_info_prefers_vat_over_gln():
     xml = Path("tests/vat_with_gln.xml")
     code, _ = get_supplier_info(xml)
     assert code == "SI33333333"
+
+
+def test_get_supplier_info_uses_gln_when_vat_missing():
+    xml = Path("tests/gln_only.xml")
+    code, _ = get_supplier_info(xml)
+    assert code == "9876543210987"

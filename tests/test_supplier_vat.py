@@ -1,4 +1,8 @@
 from pathlib import Path
+from decimal import Decimal
+import pandas as pd
+import pytest
+import wsm.ui.review.gui as rl
 from wsm.parsing.eslog import get_supplier_info_vat, get_supplier_info
 
 
@@ -44,3 +48,61 @@ def test_get_supplier_info_vat_reads_ubl_va_scheme():
     code, _, vat = get_supplier_info_vat(xml)
     assert vat == "SI69092958"
     assert code == "SI69092958"
+
+
+def _dummy_df():
+    return pd.DataFrame(
+        {
+            "sifra_dobavitelja": ["SUP"],
+            "naziv": ["Item"],
+            "kolicina": [Decimal("1")],
+            "enota": ["kos"],
+            "vrednost": [Decimal("1")],
+            "rabata": [Decimal("0")],
+            "ddv": [Decimal("0")],
+            "ddv_stopnja": [Decimal("0")],
+            "sifra_artikla": [pd.NA],
+        }
+    )
+
+
+def test_review_links_prefers_vat(monkeypatch, tmp_path, caplog):
+    invoice = Path("tests/ubl_vat.xml")
+    links_file = tmp_path / "sup" / "code" / "links.xlsx"
+    links_file.parent.mkdir(parents=True)
+    monkeypatch.setattr(rl, "_load_supplier_map", lambda p: {})
+    monkeypatch.setattr(rl, "_build_header_totals", lambda *a, **k: {})
+    monkeypatch.setattr(
+        rl.tk, "Tk", lambda: (_ for _ in ()).throw(RuntimeError)
+    )
+    with caplog.at_level("INFO"):
+        with pytest.raises(RuntimeError):
+            rl.review_links(
+                _dummy_df(),
+                pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"]),
+                links_file,
+                Decimal("1"),
+                invoice,
+            )
+    assert "Resolved supplier code: SI99999999" in caplog.text
+
+
+def test_review_links_falls_back_to_gln(monkeypatch, tmp_path, caplog):
+    invoice = Path("tests/gln_only.xml")
+    links_file = tmp_path / "sup" / "code" / "links.xlsx"
+    links_file.parent.mkdir(parents=True)
+    monkeypatch.setattr(rl, "_load_supplier_map", lambda p: {})
+    monkeypatch.setattr(rl, "_build_header_totals", lambda *a, **k: {})
+    monkeypatch.setattr(
+        rl.tk, "Tk", lambda: (_ for _ in ()).throw(RuntimeError)
+    )
+    with caplog.at_level("INFO"):
+        with pytest.raises(RuntimeError):
+            rl.review_links(
+                _dummy_df(),
+                pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"]),
+                links_file,
+                Decimal("1"),
+                invoice,
+            )
+    assert "Resolved supplier code: 9876543210987" in caplog.text
