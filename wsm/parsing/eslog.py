@@ -148,7 +148,8 @@ def _find_vat(grp: LET._Element) -> str:
     The helper prefers VAT identifiers declared in UBL structures before
     examining ESLOG specific segments.  It searches ``cac:PartyTaxScheme``
     and ``cac:PartyIdentification`` elements for ``cbc:CompanyID``/``cbc:ID``
-    values with a ``schemeID`` of ``VAT`` or ``VA``.  If nothing is found the
+    values with a ``schemeID`` of ``VAT`` or ``VA`` as well as ``CompanyID``
+    elements without a ``schemeID`` attribute.  If nothing is found the
     function falls back to ``S_RFF`` segments with qualifiers ``VA``, ``0199``
     or ``AHP``.  When multiple VAT values are present the first non-empty one
     is returned with ``AHP`` acting as a secondary fallback.
@@ -160,15 +161,25 @@ def _find_vat(grp: LET._Element) -> str:
         ".//cac:PartyTaxScheme/cbc:CompanyID[@schemeID='VA']",
         ".//cac:PartyIdentification/cbc:ID[@schemeID='VAT']",
         ".//cac:PartyIdentification/cbc:ID[@schemeID='VA']",
+        ".//cac:PartyTaxScheme/cbc:CompanyID[not(@schemeID) or @schemeID='']",
     ]
     for path in ubl_paths:
-        vat = _text(grp.find(path, UBL_NS))
-        if vat:
-            log.debug("Found VAT in UBL element %s: %s", path, vat)
-            return vat
+        try:
+            vat_nodes = grp.xpath(path, namespaces=UBL_NS)
+        except Exception:
+            continue
+        if vat_nodes:
+            vat = _text(vat_nodes[0])
+            if vat:
+                log.debug("Found VAT in UBL element %s: %s", path, vat)
+                return vat
 
     # --- Custom <VA> element without schemeID ---
-    for vat in [v.strip() for v in grp.xpath(".//*[local-name()='VA']/text()") if v.strip()]:
+    for vat in [
+        v.strip()
+        for v in grp.xpath(".//*[local-name()='VA']/text()")
+        if v.strip()
+    ]:
         log.debug("Found VAT in VA element: %s", vat)
         return vat
 
@@ -208,7 +219,8 @@ def get_supplier_info(tree: LET._ElementTree | LET._Element) -> str:
     precedence over other identifiers.  If no VAT information is present the
     helper falls back to GLN codes with ``schemeID="0088"`` and finally to any
     available supplier code from the NAD segment.  Debug output is emitted for
-    the VAT lookup.
+    the VAT lookup.  Returns ``"Unknown"`` when neither VAT nor GLN codes are
+    found.
     """
 
     try:
@@ -264,10 +276,12 @@ def get_supplier_info(tree: LET._ElementTree | LET._Element) -> str:
                     if v.strip()
                 ]
                 if gln:
+                    log.debug("Fallback to GLN: %s", gln[0])
                     return gln[0]
+        log.debug("No VAT or GLN found")
     except Exception as exc:
         log.debug("Supplier code extraction failed: %s", exc)
-    return ""
+    return "Unknown"
 
 
 def get_supplier_name(xml_path: str | Path) -> Optional[str]:
@@ -279,13 +293,17 @@ def get_supplier_name(xml_path: str | Path) -> Optional[str]:
         # UBL supplier name
         name = " ".join(
             n.strip()
-            for n in root.xpath(".//cac:PartyName/cbc:Name/text()", namespaces=ns)
+            for n in root.xpath(
+                ".//cac:PartyName/cbc:Name/text()", namespaces=ns
+            )
             if n and n.strip()
         )
         if name:
             return name
         # eSLOG NAD segment
-        name_els = root.xpath(".//e:S_NAD/e:C_C080/e:D_3036/text()", namespaces=NS)
+        name_els = root.xpath(
+            ".//e:S_NAD/e:C_C080/e:D_3036/text()", namespaces=NS
+        )
         if name_els:
             return " ".join(n.strip() for n in name_els if n.strip()) or None
     except Exception:
