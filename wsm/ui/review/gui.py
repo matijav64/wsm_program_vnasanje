@@ -10,9 +10,11 @@ from pathlib import Path
 import pandas as pd
 import tkinter as tk
 from tkinter import ttk, messagebox
+from lxml import etree as LET
 
 from wsm.utils import short_supplier_name, _clean, _build_header_totals
 from wsm.constants import PRICE_DIFF_THRESHOLD
+from wsm.parsing.eslog import UBL_NS
 from .helpers import (
     _fmt,
     _norm_unit,
@@ -74,12 +76,27 @@ def review_links(
         if price_warn_pct is not None
         else PRICE_DIFF_THRESHOLD
     )
-    supplier_code = links_file.stem.split("_")[0]
+    supplier_code: str | None = None
+    if invoice_path and invoice_path.suffix.lower() == ".xml":
+        try:
+            tree = LET.parse(invoice_path)
+            vat_el = tree.find(
+                ".//cac:PartyTaxScheme/cbc:CompanyID[@schemeID='VAT']",
+                UBL_NS,
+            )
+            vat_txt = vat_el.text.strip() if vat_el is not None and vat_el.text else None
+            log.debug("VAT element text: %s", vat_txt)
+            if vat_txt:
+                supplier_code = vat_txt
+        except Exception as exc:
+            log.debug("VAT lookup failed: %s", exc)
+    if not supplier_code:
+        supplier_code = links_file.stem.split("_")[0]
     suppliers_file = links_file.parent.parent
     log.debug(f"Pot do mape links: {suppliers_file}")
     sup_map = _load_supplier_map(suppliers_file)
 
-    log.info(f"Supplier code extracted: {supplier_code}")
+    log.info(f"Supplier code extracted (VAT ID): {supplier_code}")
     supplier_info = sup_map.get(supplier_code, {})
     default_name = short_supplier_name(supplier_info.get("ime", supplier_code))
     supplier_vat = supplier_info.get("vat")
