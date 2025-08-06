@@ -14,7 +14,6 @@ from lxml import etree as LET
 
 from wsm.utils import short_supplier_name, _clean, _build_header_totals
 from wsm.constants import PRICE_DIFF_THRESHOLD
-from wsm.parsing.eslog import UBL_NS
 from .helpers import (
     _fmt,
     _norm_unit,
@@ -79,24 +78,19 @@ def review_links(
     supplier_code: str | None = None
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
-            tree = LET.parse(invoice_path)
-            vat_el = tree.find(
-                ".//cac:PartyTaxScheme/cbc:CompanyID[@schemeID='VAT']",
-                UBL_NS,
-            )
-            vat_txt = vat_el.text.strip() if vat_el is not None and vat_el.text else None
-            log.debug("VAT element text: %s", vat_txt)
-            if vat_txt:
-                supplier_code = vat_txt
+            from wsm.parsing.eslog import get_supplier_info
+
+            supplier_code, _ = get_supplier_info(invoice_path)
+            log.debug("Supplier code from invoice: %s", supplier_code)
         except Exception as exc:
-            log.debug("VAT lookup failed: %s", exc)
+            log.debug("Supplier code lookup failed: %s", exc)
     if not supplier_code:
         supplier_code = links_file.stem.split("_")[0]
     suppliers_file = links_file.parent.parent
     log.debug(f"Pot do mape links: {suppliers_file}")
     sup_map = _load_supplier_map(suppliers_file)
 
-    log.info(f"Supplier code extracted (VAT ID): {supplier_code}")
+    log.info(f"Supplier code extracted: {supplier_code}")
     supplier_info = sup_map.get(supplier_code, {})
     default_name = short_supplier_name(supplier_info.get("ime", supplier_code))
     supplier_vat = supplier_info.get("vat")

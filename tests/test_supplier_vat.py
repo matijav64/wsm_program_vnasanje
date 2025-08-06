@@ -37,3 +37,10 @@ def test_get_supplier_info_vat_reads_ubl_vat():
     code, _, vat = get_supplier_info_vat(xml)
     assert vat == "SI99999999"
     assert code == "SI99999999"
+
+
+def test_get_supplier_info_vat_reads_ubl_va_scheme():
+    xml = Path("tests/ubl_vat_va.xml")
+    code, _, vat = get_supplier_info_vat(xml)
+    assert vat == "SI69092958"
+    assert code == "SI69092958"
