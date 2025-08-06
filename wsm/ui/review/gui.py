@@ -59,6 +59,7 @@ def review_links(
         rows.
     """
     df = df.copy()
+    log.debug("Initial invoice DataFrame:\n%s", df.to_string())
     if {"cena_bruto", "cena_netto"}.issubset(df.columns):
         for idx, row in df.iterrows():
             log.info(
