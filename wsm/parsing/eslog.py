@@ -65,6 +65,12 @@ def _decimal(el: LET._Element | None) -> Decimal:
 # Namespace za ESLOG (če je prisoten)
 NS = {"e": "urn:eslog:2.00"}
 
+# Namespaces for UBL documents
+UBL_NS = {
+    "cac": "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
+    "cbc": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+}
+
 # Common document discount codes.  Extend this list or pass a custom
 # sequence to ``parse_eslog_invoice`` if your suppliers use different
 # identifiers.
@@ -987,14 +993,32 @@ def parse_eslog_invoice(
                     code_el = ac.find("./AllowanceChargeReasonCode")
                 code_ac = _text(code_el) or "_CHARGE_"
 
-                rate_el = ac.find(".//e:TaxCategory/e:Percent", NS)
+                rate_el = ac.find(
+                    ".//e:TaxCategory/e:Percent", {**NS, **UBL_NS}
+                )
                 if rate_el is None:
-                    rate_el = ac.find(".//TaxCategory/Percent")
+                    rate_el = ac.find(
+                        ".//cac:TaxCategory/cbc:Percent", {**NS, **UBL_NS}
+                    )
+                    if rate_el is None:
+                        log.warning(
+                            "Tax rate element not found with namespaces; falling back"
+                        )
+                        rate_el = ac.find(".//TaxCategory/Percent")
                 vat_rate = _decimal(rate_el)
 
-                tax_el = ac.find(".//e:TaxTotal/e:TaxAmount", NS)
+                tax_el = ac.find(
+                    ".//e:TaxTotal/e:TaxAmount", {**NS, **UBL_NS}
+                )
                 if tax_el is None:
-                    tax_el = ac.find(".//TaxTotal/TaxAmount")
+                    tax_el = ac.find(
+                        ".//cac:TaxTotal/cbc:TaxAmount", {**NS, **UBL_NS}
+                    )
+                    if tax_el is None:
+                        log.warning(
+                            "Tax amount element not found with namespaces; falling back"
+                        )
+                        tax_el = ac.find(".//TaxTotal/TaxAmount")
                 vat_amount = _decimal(tax_el)
                 if vat_amount == 0 and vat_rate != 0:
                     vat_amount = (amount * vat_rate / Decimal("100")).quantize(
