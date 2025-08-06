@@ -11,7 +11,6 @@ import pandas as pd
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-from wsm.parsing.money import detect_round_step
 from wsm.utils import short_supplier_name, _clean, _build_header_totals
 from wsm.constants import PRICE_DIFF_THRESHOLD
 from .helpers import (
@@ -235,6 +234,7 @@ def review_links(
         if isinstance(doc_discount_raw, Decimal)
         else Decimal(str(doc_discount_raw))
     )
+    log.debug("df before _DOC_ filter:\n%s", df.to_string())
     df = df[df["sifra_dobavitelja"] != "_DOC_"]
     doc_discount_total = doc_discount  # backward compatibility
     df["ddv"] = df["ddv"].apply(
@@ -267,6 +267,7 @@ def review_links(
         axis=1,
     )
     df["total_net"] = df["vrednost"]
+    net_total = df["total_net"].sum().quantize(Decimal("0.01"))
     df["is_gratis"] = df["rabata_pct"] >= Decimal("99.9")
     df["kolicina_norm"], df["enota_norm"] = zip(
         *[
@@ -627,20 +628,39 @@ def review_links(
     total_frame = tk.Frame(root)
     total_frame.pack(fill="x", pady=5)
 
-    net_raw = df["total_net"].sum()
-    vat_raw = df["ddv"].sum()
-    net_val = (
-        Decimal(str(net_raw)) if not isinstance(net_raw, Decimal) else net_raw
+    vat_val = header_totals["vat"]
+    if not isinstance(vat_val, Decimal):
+        vat_val = Decimal(str(vat_val))
+    vat_total = vat_val.quantize(Decimal("0.01"))
+    gross = net_total + vat_total
+    inv_total = (
+        header_totals["gross"]
+        if isinstance(header_totals["gross"], Decimal)
+        else Decimal(str(header_totals["gross"]))
     )
-    vat_val_raw = (
-        Decimal(str(vat_raw)) if not isinstance(vat_raw, Decimal) else vat_raw
-    )
-    vat_rate = vat_val_raw / net_val if net_val else Decimal("0")
-    net_val += doc_discount
-    vat_val = (net_val * vat_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
-    net = net_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
-    vat = vat_val
-    gross = (net + vat).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    tolerance = Decimal("0.01")
+    diff = inv_total - gross
+    if abs(diff) > tolerance:
+        if doc_discount:
+            diff2 = inv_total - (gross + abs(doc_discount))
+            if abs(diff2) > tolerance:
+                messagebox.showwarning(
+                    "Opozorilo",
+                    (
+                        "Razlika med postavkami in računom je "
+                        f"{diff2:+.2f} € in presega dovoljeno zaokroževanje."
+                    ),
+                )
+        else:
+            messagebox.showwarning(
+                "Opozorilo",
+                (
+                    "Razlika med postavkami in računom je "
+                    f"{diff:+.2f} € in presega dovoljeno zaokroževanje."
+                ),
+            )
+    net = net_total
+    vat = vat_total
 
     lbl_totals = tk.Label(
         total_frame,
@@ -656,48 +676,53 @@ def review_links(
     lbl_totals.pack(side="left", padx=10)
 
     def _update_totals():
-        from decimal import ROUND_HALF_UP  # local import for standalone exec
-
         net_raw = df["total_net"].sum()
-        vat_raw = df["ddv"].sum()
         net_total = (
             Decimal(str(net_raw))
             if not isinstance(net_raw, Decimal)
             else net_raw
-        )
-        vat_val_raw = (
-            Decimal(str(vat_raw))
-            if not isinstance(vat_raw, Decimal)
-            else vat_raw
-        )
-        vat_rate = vat_val_raw / net_total if net_total else Decimal("0")
-        try:
-            discount = doc_discount
-        except NameError:  # backward compatibility for tests using old name
-            discount = doc_discount_total
-        net_total += discount
-        vat_val = (net_total * vat_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
-
+        ).quantize(Decimal("0.01"))
+        vat_val = header_totals["vat"]
+        if not isinstance(vat_val, Decimal):
+            vat_val = Decimal(str(vat_val))
+        vat_val = vat_val.quantize(Decimal("0.01"))
         calc_total = net_total + vat_val
         inv_total = (
             header_totals["gross"]
             if isinstance(header_totals["gross"], Decimal)
             else Decimal(str(header_totals["gross"]))
         )
+        tolerance = Decimal("0.01")
         diff = inv_total - calc_total
-        step = detect_round_step(inv_total, calc_total)
-        if abs(diff) > step:
-            messagebox.showwarning(
-                "Opozorilo",
-                (
-                    "Razlika med postavkami in računom je "
-                    f"{diff:+.2f} € in presega dovoljeno zaokroževanje."
-                ),
-            )
+        try:
+            discount = doc_discount
+        except NameError:  # backward compatibility
+            discount = doc_discount_total
+        if abs(diff) > tolerance:
+            if discount:
+                diff2 = inv_total - (calc_total + abs(discount))
+                if abs(diff2) > tolerance:
+                    messagebox.showwarning(
+                        "Opozorilo",
+                        (
+                            "Razlika med postavkami in računom je "
+                            f"{diff2:+.2f} € in presega "
+                            "dovoljeno zaokroževanje."
+                        ),
+                    )
+            else:
+                messagebox.showwarning(
+                    "Opozorilo",
+                    (
+                        "Razlika med postavkami in računom je "
+                        f"{diff:+.2f} € in presega "
+                        "dovoljeno zaokroževanje."
+                    ),
+                )
 
-        net = net_total.quantize(Decimal("0.01"), ROUND_HALF_UP)
-        vat = vat_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
-        gross = (net + vat).quantize(Decimal("0.01"), ROUND_HALF_UP)
+        net = net_total
+        vat = vat_val
+        gross = calc_total
         total_frame.children["total_sum"].config(
             text=(
                 f"Neto:   {net:,.2f} €\n"
