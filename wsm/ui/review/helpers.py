@@ -4,7 +4,7 @@ import logging
 import math
 import os
 import re
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Tuple
 
 from wsm.constants import (
@@ -367,11 +367,11 @@ def _split_totals(
         rate = Decimal("0")
 
     vat = (
-        (net_amount * rate).quantize(Decimal("0.01"))
+        (net_amount * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if net_amount
         else Decimal("0")
     )
-    gross = (net_amount + vat).quantize(Decimal("0.01"))
+    gross = (net_amount + vat).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     return net_amount, vat, gross
 
