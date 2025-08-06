@@ -14,10 +14,10 @@ def test_get_supplier_info_vat_uses_se_when_su_missing():
     assert vat == "SI11111111"
 
 
-def test_get_supplier_info_returns_gln_when_available():
+def test_get_supplier_info_prefers_vat_over_gln():
     xml = Path("tests/PR5690-Slika1.XML")
     code, _ = get_supplier_info(xml)
-    assert code == "3830029809998"
+    assert code == "1121499"
 
 
 def test_get_supplier_info_uses_vat_when_no_gln():
@@ -30,3 +30,10 @@ def test_get_supplier_info_vat_handles_plain_rff():
     xml = Path("tests/Racun_st._25-24412.xml")
     _, _, vat = get_supplier_info_vat(xml)
     assert vat == "SI47083026"
+
+
+def test_get_supplier_info_vat_reads_ubl_vat():
+    xml = Path("tests/ubl_vat.xml")
+    code, _, vat = get_supplier_info_vat(xml)
+    assert vat == "SI99999999"
+    assert code == "SI99999999"

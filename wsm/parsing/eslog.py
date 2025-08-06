@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
-from defusedxml import ElementTree as ET
 from defusedxml.common import EntitiesForbidden
 from lxml import etree as LET
 
@@ -144,10 +143,26 @@ def _find_rff(root: LET._Element, qualifier: str) -> str:
 
 
 def _find_vat(grp: LET._Element) -> str:
-    """Return VAT number from related ``S_RFF`` segments.
+    """Return VAT number from provided element.
 
-    Recognized qualifiers are ``VA``, ``0199`` and ``AHP``.
+    The function first looks for UBL-style VAT declarations at
+    ``cac:PartyTaxScheme/cbc:CompanyID[@schemeID='VAT']`` and falls back to
+    ``S_RFF`` segments with qualifiers ``VA``, ``0199`` or ``AHP``.  If
+    multiple VAT values are present the first non-empty one is returned with
+    ``AHP`` acting as a secondary fallback.
     """
+
+    # --- UBL PartyTaxScheme ---
+    vat_el = grp.find(
+        ".//cac:PartyTaxScheme/cbc:CompanyID[@schemeID='VAT']",
+        UBL_NS,
+    )
+    vat = _text(vat_el)
+    if vat:
+        log.debug("Found VAT in UBL element: %s", vat)
+        return vat
+
+    # --- ESLOG RFF qualifiers ---
     vat_ahp = ""
     rffs = grp.findall(".//e:S_RFF", NS) + grp.findall(".//S_RFF")
     for rff in rffs:
@@ -160,13 +175,19 @@ def _find_vat(grp: LET._Element) -> str:
         code = _text(code_el)
         val = _text(val_el)
         if code in VAT_QUALIFIERS and val:
+            log.debug("Found VAT in RFF %s: %s", code, val)
             if code == "AHP":
                 if not vat_ahp:
                     vat_ahp = val
             else:
                 return val
 
-    return vat_ahp
+    if vat_ahp:
+        log.debug("Found VAT in RFF AHP: %s", vat_ahp)
+        return vat_ahp
+
+    log.debug("VAT element not found")
+    return ""
 
 
 # ────────────────────── dobavitelj: koda + ime ──────────────────────
@@ -218,9 +239,9 @@ def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
                 ]
             name = " ".join(_text(el) for el in name_els if _text(el))
 
-            code = _find_gln(nad)
+            code = _find_vat(grp)
             if not code:
-                code = _find_vat(grp)
+                code = _find_gln(nad)
             if not code:
                 code = _find_any_code(nad)
 
@@ -262,6 +283,7 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
             vat_val = _find_vat(grp)
             if vat_val:
                 vat = vat_val
+                code = vat_val
                 break
             for com in grp.findall(".//e:S_COM", NS) + grp.findall(".//S_COM"):
                 com_code = _text(com.find("./e:C_C076/e:D_3155", NS)) or _text(
@@ -273,11 +295,15 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
                     ) or _text(com.find("./C_C076/D_3148"))
                     if vat_val:
                         vat = vat_val
+                        code = vat_val
                         break
             if vat:
                 break
     except Exception:
         vat = None
+
+    if vat:
+        code = vat
     return code, name, vat
 
 
