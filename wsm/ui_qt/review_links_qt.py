@@ -29,8 +29,7 @@ from wsm.ui.review.helpers import (
     _apply_price_warning,
 )
 from wsm.ui.review.io import _save_and_close, _load_supplier_map
-from wsm.parsing.money import detect_round_step
-from wsm.utils import short_supplier_name, _build_header_totals
+from wsm.utils import short_supplier_name
 
 log = logging.getLogger(__name__)
 
@@ -95,10 +94,15 @@ def review_links_qt(
     supplier_vat = supplier_info.get("vat")
 
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"]
-    doc_discount_total = df_doc["vrednost"].sum()
+    doc_discount_raw = df_doc["vrednost"].sum()
+    doc_discount = (
+        doc_discount_raw
+        if isinstance(doc_discount_raw, Decimal)
+        else Decimal(str(doc_discount_raw))
+    )
     df = df[df["sifra_dobavitelja"] != "_DOC_"].reset_index(drop=True)
+    doc_discount_total = doc_discount  # backward compatibility
 
-    header_totals = _build_header_totals(invoice_path, invoice_total)
 
     df["cena_pred_rabatom"] = df.apply(
         lambda r: (
@@ -276,12 +280,16 @@ def review_links_qt(
                         r_i, c_i, QtWidgets.QTableWidgetItem(str(v))
                     )
 
-        vat_rate = (
-            header_totals["vat"] / header_totals["net"]
-            if header_totals["net"]
-            else Decimal("0")
+        net_raw = df["total_net"].sum()
+        vat_raw = df["ddv"].sum()
+        net_val = (
+            Decimal(str(net_raw)) if not isinstance(net_raw, Decimal) else net_raw
         )
-        net, vat, gross = _split_totals(df, doc_discount_total, vat_rate)
+        vat_val = (
+            Decimal(str(vat_raw)) if not isinstance(vat_raw, Decimal) else vat_raw
+        )
+        vat_rate = vat_val / net_val if net_val else Decimal("0")
+        net, vat, gross = _split_totals(df, doc_discount, vat_rate)
         total_label.setText(
             f"Neto:   {net:,.2f} €\n"
             f"DDV:    {vat:,.2f} €\n"

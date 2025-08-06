@@ -229,13 +229,14 @@ def review_links(
     log.debug(f"df po inicializaciji: {df.head().to_dict()}")
 
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"]
-    doc_discount_total_raw = df_doc["vrednost"].sum()
-    doc_discount_total = (
-        doc_discount_total_raw
-        if isinstance(doc_discount_total_raw, Decimal)
-        else Decimal(str(doc_discount_total_raw))
+    doc_discount_raw = df_doc["vrednost"].sum()
+    doc_discount = (
+        doc_discount_raw
+        if isinstance(doc_discount_raw, Decimal)
+        else Decimal(str(doc_discount_raw))
     )
     df = df[df["sifra_dobavitelja"] != "_DOC_"]
+    doc_discount_total = doc_discount  # backward compatibility
     df["ddv"] = df["ddv"].apply(
         lambda x: Decimal(str(x)) if not isinstance(x, Decimal) else x
     )  # ensure VAT values are Decimal for accurate totals
@@ -627,21 +628,18 @@ def review_links(
     total_frame.pack(fill="x", pady=5)
 
     net_raw = df["total_net"].sum()
+    vat_raw = df["ddv"].sum()
     net_val = (
         Decimal(str(net_raw)) if not isinstance(net_raw, Decimal) else net_raw
     )
-    net_val += doc_discount_total
-    net = net_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
-
-    if "sifra_dobavitelja" in df.columns:
-        vat_raw = df.loc[df["sifra_dobavitelja"] != "_DOC_", "ddv"].sum()
-    else:
-        vat_raw = df["ddv"].sum()
-    vat_val = (
+    vat_val_raw = (
         Decimal(str(vat_raw)) if not isinstance(vat_raw, Decimal) else vat_raw
     )
-    vat = vat_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
-
+    vat_rate = vat_val_raw / net_val if net_val else Decimal("0")
+    net_val += doc_discount
+    vat_val = (net_val * vat_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    net = net_val.quantize(Decimal("0.01"), ROUND_HALF_UP)
+    vat = vat_val
     gross = (net + vat).quantize(Decimal("0.01"), ROUND_HALF_UP)
 
     lbl_totals = tk.Label(
@@ -661,23 +659,24 @@ def review_links(
         from decimal import ROUND_HALF_UP  # local import for standalone exec
 
         net_raw = df["total_net"].sum()
+        vat_raw = df["ddv"].sum()
         net_total = (
             Decimal(str(net_raw))
             if not isinstance(net_raw, Decimal)
             else net_raw
         )
-        net_total += doc_discount_total
-
-        log.debug("DDV vrednosti po vrsticah:\n%s", df["ddv"])
-        if "sifra_dobavitelja" in df.columns:
-            vat_raw = df.loc[df["sifra_dobavitelja"] != "_DOC_", "ddv"].sum()
-        else:
-            vat_raw = df["ddv"].sum()
-        vat_val = (
+        vat_val_raw = (
             Decimal(str(vat_raw))
             if not isinstance(vat_raw, Decimal)
             else vat_raw
         )
+        vat_rate = vat_val_raw / net_total if net_total else Decimal("0")
+        try:
+            discount = doc_discount
+        except NameError:  # backward compatibility for tests using old name
+            discount = doc_discount_total
+        net_total += discount
+        vat_val = (net_total * vat_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
 
         calc_total = net_total + vat_val
         inv_total = (
