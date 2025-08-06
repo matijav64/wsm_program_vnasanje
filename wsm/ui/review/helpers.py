@@ -285,6 +285,7 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         "vrednost",
         "rabata",
         "total_net",
+        "ddv",
     }
     existing_numeric = [c for c in numeric_cols if c in to_merge.columns]
     group_cols = [c for c in to_merge.columns if c not in existing_numeric]

@@ -15,6 +15,7 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
                 "vrednost": Decimal("10"),
                 "rabata": Decimal("0"),
                 "total_net": Decimal("10"),
+                "ddv": Decimal("2.2"),
                 "is_gratis": False,
             },
             {
@@ -25,6 +26,7 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
                 "vrednost": Decimal("10"),
                 "rabata": Decimal("0"),
                 "total_net": Decimal("10"),
+                "ddv": Decimal("2.2"),
                 "is_gratis": False,
             },
             {
@@ -35,6 +37,7 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
                 "vrednost": Decimal("20"),
                 "rabata": Decimal("0"),
                 "total_net": Decimal("20"),
+                "ddv": Decimal("4.4"),
                 "is_gratis": False,
             },
             {
@@ -45,6 +48,7 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
                 "vrednost": Decimal("20"),
                 "rabata": Decimal("0"),
                 "total_net": Decimal("20"),
+                "ddv": Decimal("4.4"),
                 "is_gratis": False,
             },
             {
@@ -55,6 +59,7 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
                 "vrednost": Decimal("0"),
                 "rabata": Decimal("0"),
                 "total_net": Decimal("0"),
+                "ddv": Decimal("0"),
                 "is_gratis": True,
             },
             {
@@ -65,6 +70,7 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
                 "vrednost": Decimal("0"),
                 "rabata": Decimal("0"),
                 "total_net": Decimal("0"),
+                "ddv": Decimal("0"),
                 "is_gratis": True,
             },
         ]
@@ -76,10 +82,12 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
     merged_a = result[(result["code"] == "A") & (~result["is_gratis"])].iloc[0]
     assert merged_a["kolicina"] == Decimal("2")
     assert merged_a["total_net"] == Decimal("20")
+    assert merged_a["ddv"] == Decimal("4.4")
 
     merged_b = result[(result["code"] == "B") & (~result["is_gratis"])].iloc[0]
     assert merged_b["kolicina"] == Decimal("4")
     assert merged_b["total_net"] == Decimal("40")
+    assert merged_b["ddv"] == Decimal("8.8")
 
     # Gratis lines should remain unmodified and separate
     gratis_expected = df[df["is_gratis"]].reset_index(drop=True)
@@ -88,3 +96,6 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
         gratis_result.sort_index(axis=1), gratis_expected.sort_index(axis=1)
     )
     assert len(result) == 4
+
+    # VAT should sum across merged rows as expected
+    assert result["ddv"].sum() == Decimal("13.2")
