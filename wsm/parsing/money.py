@@ -4,6 +4,15 @@ from lxml import etree as LET
 import pandas as pd
 
 
+def calculate_vat(base: Decimal, rate: Decimal) -> Decimal:
+    """Return VAT for ``base`` at ``rate`` percent.
+
+    The calculation multiplies ``base`` by ``rate`` and divides by 100,
+    rounding the result to 2 decimal places using ``ROUND_HALF_UP``.
+    """
+    return (base * rate / Decimal("100")).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+
 def round_to_step(
     value: Decimal, step: Decimal, rounding=ROUND_HALF_UP
 ) -> Decimal:

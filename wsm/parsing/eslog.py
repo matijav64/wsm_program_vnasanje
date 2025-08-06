@@ -30,6 +30,7 @@ from .utils import _normalize_date
 from wsm.parsing.money import (
     extract_total_amount,
     validate_invoice as validate_line_values,
+    calculate_vat,
 )
 
 XML_PARSER = LET.XMLParser(resolve_entities=False)
@@ -1021,9 +1022,7 @@ def parse_eslog_invoice(
                         tax_el = ac.find(".//TaxTotal/TaxAmount")
                 vat_amount = _decimal(tax_el)
                 if vat_amount == 0 and vat_rate != 0:
-                    vat_amount = (amount * vat_rate / Decimal("100")).quantize(
-                        Decimal("0.01"), ROUND_HALF_UP
-                    )
+                    vat_amount = calculate_vat(amount, vat_rate)
 
                 net_total = (net_total + amount).quantize(
                     Decimal("0.01"), ROUND_HALF_UP
