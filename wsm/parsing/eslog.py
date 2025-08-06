@@ -145,32 +145,27 @@ def _find_rff(root: LET._Element, qualifier: str) -> str:
 def _find_vat(grp: LET._Element) -> str:
     """Return VAT number from provided element.
 
-    The function first looks for UBL-style VAT declarations at
-    ``cac:PartyTaxScheme/cbc:CompanyID[@schemeID='VAT']`` and falls back to
-    ``S_RFF`` segments with qualifiers ``VA``, ``0199`` or ``AHP``.  If
-    multiple VAT values are present the first non-empty one is returned with
-    ``AHP`` acting as a secondary fallback.
+    The helper prefers VAT identifiers declared in UBL structures before
+    examining ESLOG specific segments.  It searches ``cac:PartyTaxScheme``
+    and ``cac:PartyIdentification`` elements for ``cbc:CompanyID``/``cbc:ID``
+    values with a ``schemeID`` of ``VAT`` or ``VA``.  If nothing is found the
+    function falls back to ``S_RFF`` segments with qualifiers ``VA``, ``0199``
+    or ``AHP``.  When multiple VAT values are present the first non-empty one
+    is returned with ``AHP`` acting as a secondary fallback.
     """
 
-    # --- UBL PartyTaxScheme ---
-    vat_el = grp.find(
+    # --- UBL PartyTaxScheme / PartyIdentification ---
+    ubl_paths = [
         ".//cac:PartyTaxScheme/cbc:CompanyID[@schemeID='VAT']",
-        UBL_NS,
-    )
-    if vat_el is None:
-        vat_el = grp.find(
-            ".//cac:PartyTaxScheme/cbc:CompanyID[@schemeID='VA']",
-            UBL_NS,
-        )
-    if vat_el is None:
-        vat_el = grp.find(
-            ".//cac:PartyIdentification/cbc:ID[@schemeID='VA']",
-            UBL_NS,
-        )
-    vat = _text(vat_el)
-    if vat:
-        log.debug("Found VAT in UBL element: %s", vat)
-        return vat
+        ".//cac:PartyTaxScheme/cbc:CompanyID[@schemeID='VA']",
+        ".//cac:PartyIdentification/cbc:ID[@schemeID='VAT']",
+        ".//cac:PartyIdentification/cbc:ID[@schemeID='VA']",
+    ]
+    for path in ubl_paths:
+        vat = _text(grp.find(path, UBL_NS))
+        if vat:
+            log.debug("Found VAT in UBL element %s: %s", path, vat)
+            return vat
 
     # --- ESLOG RFF qualifiers ---
     vat_ahp = ""
@@ -202,7 +197,13 @@ def _find_vat(grp: LET._Element) -> str:
 
 # ────────────────────── dobavitelj: koda + ime ──────────────────────
 def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
-    """Return supplier code and name."""
+    """Return supplier code and name.
+
+    VAT numbers take precedence over other identifiers.  The helper first
+    looks for VAT values (via :func:`_find_vat`) and only falls back to GLN
+    codes or any other available supplier codes when no VAT information is
+    present.
+    """
     try:
         tree = LET.parse(xml_path, parser=XML_PARSER)
         root = tree.getroot()
@@ -249,6 +250,7 @@ def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
                 ]
             name = " ".join(_text(el) for el in name_els if _text(el))
 
+            # Prefer VAT identification before GLN or other codes
             code = _find_vat(grp)
             if not code:
                 code = _find_gln(nad)
@@ -273,7 +275,14 @@ def get_supplier_name(xml_path: str | Path) -> Optional[str]:
 
 # ────────────────────── dobavitelj: koda + ime + davčna ──────────────────────
 def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
-    """Return supplier code, name and VAT number if available."""
+    """Return supplier code, name and VAT number if available.
+
+    VAT values are resolved via :func:`_find_vat`, which covers UBL
+    ``PartyTaxScheme``/``PartyIdentification`` elements and VAT-related
+    ``RFF`` segments.  If a VAT number is found it is returned both as the
+    supplier code and as a separate value.  The function additionally checks
+    ``COM`` segments with qualifier ``9949`` as a last resort.
+    """
     code, name = get_supplier_info(xml_path)
     vat: str | None = None
     try:
