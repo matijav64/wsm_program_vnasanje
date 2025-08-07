@@ -230,6 +230,11 @@ def review_links(
         )["enota_norm"].to_dict()
 
     df["naziv_ckey"] = df["naziv"].map(_clean)
+    booked_keys = {
+        (str(s), ck)
+        for s, ck, ws in manual_old[["sifra_dobavitelja", "naziv_ckey", "wsm_sifra"]].itertuples(index=False)
+        if pd.notna(ws) and str(ws).strip()
+    }
     df["wsm_sifra"] = df.apply(
         lambda r: old_map_dict.get(
             (r["sifra_dobavitelja"], r["naziv_ckey"]), pd.NA
@@ -490,6 +495,7 @@ def review_links(
     tree.tag_configure("linked", background="#ffe6cc")
     tree.tag_configure("suggestion", background="#ffe6cc")
     tree.tag_configure("autofix", background="#eeeeee", foreground="#444")
+    tree.tag_configure("unbooked", background="lightpink")
     vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
     tree.configure(yscrollcommand=vsb.set)
     vsb.pack(side="right", fill="y")
@@ -534,6 +540,10 @@ def review_links(
         )
         tree.item(str(i), tags=("price_warn",) if warn else ())
         df.at[i, "warning"] = tooltip
+        key = (str(row["sifra_dobavitelja"]), row["naziv_ckey"])
+        if key not in booked_keys:
+            current_tags = tree.item(str(i)).get("tags", ())
+            tree.item(str(i), tags=current_tags + ("unbooked",))
         if "is_gratis" in row and row["is_gratis"]:
             current_tags = tree.item(str(i)).get("tags", ())
             if not isinstance(current_tags, tuple):
