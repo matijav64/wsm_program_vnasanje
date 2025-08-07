@@ -2,6 +2,7 @@ from decimal import Decimal
 from pathlib import Path
 import inspect
 import textwrap
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -26,6 +27,19 @@ class DummyVar:
         return self.val
 
 
+class DummyWidget:
+    def __init__(self):
+        self.kwargs = {}
+
+    def config(self, **kwargs):
+        self.kwargs.update(kwargs)
+
+
+class DummyMessageBox:
+    def showwarning(self, *args, **kwargs):
+        pass
+
+
 def _extract_refresh_func():
     src = inspect.getsource(rl.review_links).splitlines()
     start = next(
@@ -33,6 +47,19 @@ def _extract_refresh_func():
     )
     end = start + 1
     while end < len(src) and src[end].startswith(" "):
+        end += 1
+    snippet = textwrap.dedent("\n".join(src[start:end]))
+    return snippet
+
+
+def _extract_update_totals():
+    src = inspect.getsource(rl.review_links).splitlines()
+    start = next(i for i, l in enumerate(src) if "def _update_totals()" in l)
+    indent = len(src[start]) - len(src[start].lstrip())
+    end = start + 1
+    while end < len(src) and (
+        len(src[end]) - len(src[end].lstrip()) > indent or not src[end].strip()
+    ):
         end += 1
     snippet = textwrap.dedent("\n".join(src[start:end]))
     return snippet
@@ -95,6 +122,50 @@ def test_header_totals_display_and_no_autofix(tmp_path):
     assert ns["var_net"].get() == "10"
     assert ns["var_vat"].get() == "2.2"
     assert ns["var_total"].get() == "12.2"
+
+
+def test_totals_indicator_match():
+    snippet = _extract_update_totals()
+    df = pd.DataFrame({"total_net": [Decimal("10.00")]})
+    header_totals = {"vat": Decimal("2.00"), "gross": Decimal("12.00")}
+    total_sum = DummyWidget()
+    indicator = DummyWidget()
+    total_frame = SimpleNamespace(children={"total_sum": total_sum})
+    ns = {
+        "df": df,
+        "header_totals": header_totals,
+        "total_frame": total_frame,
+        "indicator_label": indicator,
+        "Decimal": Decimal,
+        "messagebox": DummyMessageBox(),
+        "doc_discount": Decimal("0"),
+    }
+    exec(snippet, ns)
+    ns["_update_totals"]()
+    assert indicator.kwargs["text"] == "✓"
+    assert indicator.kwargs["style"] == "Indicator.Green.TLabel"
+
+
+def test_totals_indicator_mismatch():
+    snippet = _extract_update_totals()
+    df = pd.DataFrame({"total_net": [Decimal("10.00")]})
+    header_totals = {"vat": Decimal("2.00"), "gross": Decimal("15.00")}
+    total_sum = DummyWidget()
+    indicator = DummyWidget()
+    total_frame = SimpleNamespace(children={"total_sum": total_sum})
+    ns = {
+        "df": df,
+        "header_totals": header_totals,
+        "total_frame": total_frame,
+        "indicator_label": indicator,
+        "Decimal": Decimal,
+        "messagebox": DummyMessageBox(),
+        "doc_discount": Decimal("0"),
+    }
+    exec(snippet, ns)
+    ns["_update_totals"]()
+    assert indicator.kwargs["text"] == "✗"
+    assert indicator.kwargs["style"] == "Indicator.Red.TLabel"
 
 
 def test_no_doc_row_added_for_small_diff(tmp_path):

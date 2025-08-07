@@ -686,6 +686,14 @@ def review_links(
     )
     lbl_totals.pack(side="left", padx=10)
 
+    style = ttk.Style()
+    style.configure("Indicator.Green.TLabel", foreground="green")
+    style.configure("Indicator.Red.TLabel", foreground="red")
+    indicator_label = ttk.Label(
+        total_frame, text="", style="Indicator.Red.TLabel"
+    )
+    indicator_label.pack(side="left", padx=5)
+
     def _update_totals():
         net_raw = df["total_net"].sum()
         net_total = (
@@ -705,11 +713,12 @@ def review_links(
         )
         tolerance = Decimal("0.01")
         diff = inv_total - calc_total
+        difference = abs(diff)
         try:
             discount = doc_discount
         except NameError:  # backward compatibility
             discount = doc_discount_total
-        if abs(diff) > tolerance:
+        if difference > tolerance:
             if discount:
                 diff2 = inv_total - (calc_total + abs(discount))
                 if abs(diff2) > tolerance:
@@ -730,6 +739,15 @@ def review_links(
                         "dovoljeno zaokroževanje."
                     ),
                 )
+
+        indicator_label.config(
+            text="✓" if difference <= tolerance else "✗",
+            style=(
+                "Indicator.Green.TLabel"
+                if difference <= tolerance
+                else "Indicator.Red.TLabel"
+            ),
+        )
 
         net = net_total
         vat = vat_val
