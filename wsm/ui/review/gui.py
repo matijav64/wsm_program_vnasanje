@@ -780,18 +780,15 @@ def review_links(
             )
         )
 
-    bottom = tk.Frame(root)
-    bottom.pack(fill="x", padx=8, pady=6)
+    bottom = None  # backward-compatible placeholder for tests
+    entry = ttk.Entry(root, width=60)
+    entry.grid(row=7, column=0, columnspan=3, sticky="ew", pady=5, padx=8)
+    lb = tk.Listbox(root, height=6)
+    lb.grid(row=8, column=0, columnspan=3, sticky="ew", padx=8)
+    lb.grid_remove()
 
-    custom = tk.Frame(bottom)
-    custom.pack(side="left", fill="x", expand=True)
-    tk.Label(custom, text="Vpiši / izberi WSM naziv:").pack(side="left")
-    entry = tk.Entry(custom)
-    entry.pack(side="left", fill="x", expand=True, padx=(4, 0))
-    lb = tk.Listbox(custom, height=6)
-
-    btn_frame = tk.Frame(bottom)
-    btn_frame.pack(side="right")
+    btn_frame = tk.Frame(root)
+    btn_frame.grid(row=9, column=0, columnspan=3, sticky="e", padx=8, pady=(0, 6))
 
     # --- Unit change widgets ---
     unit_options = ["kos", "kg", "L"]
@@ -829,8 +826,8 @@ def review_links(
         width=14,
         command=_exit,
     )
-    exit_btn.pack(side="right", padx=(6, 0))
-    save_btn.pack(side="right", padx=(6, 0))
+    save_btn.grid(row=0, column=0, padx=(6, 0))
+    exit_btn.grid(row=0, column=1, padx=(6, 0))
 
     root.bind("<F10>", _finalize_and_save)
 
@@ -841,7 +838,10 @@ def review_links(
         if not tree.focus():
             return "break"
         entry.delete(0, "end")
-        lb.pack_forget()
+        if hasattr(lb, "grid_remove"):
+            lb.grid_remove()
+        else:
+            lb.pack_forget()
         entry.focus_set()
         return "break"
 
@@ -859,18 +859,27 @@ def review_links(
         txt = entry.get().strip().lower()
         lb.delete(0, "end")
         if not txt:
-            lb.pack_forget()
+            if hasattr(lb, "grid_remove"):
+                lb.grid_remove()
+            else:
+                lb.pack_forget()
             return
         matches = [n for n in nazivi if txt in n.lower()]
         if matches:
-            lb.pack(fill="x")
+            if hasattr(lb, "grid"):
+                lb.grid()
+            else:
+                lb.pack(fill="x")
             for m in matches:
                 lb.insert("end", m)
             lb.selection_set(0)
             lb.activate(0)
             lb.see(0)
         else:
-            lb.pack_forget()
+            if hasattr(lb, "grid_remove"):
+                lb.grid_remove()
+            else:
+                lb.pack_forget()
 
     def _init_listbox(evt=None):
         """Give focus to the listbox and handle initial navigation."""
@@ -1050,7 +1059,10 @@ def review_links(
         _update_summary()  # Update summary after confirming
         _update_totals()  # Update totals after confirming
         entry.delete(0, "end")
-        lb.pack_forget()
+        if hasattr(lb, "grid_remove"):
+            lb.grid_remove()
+        else:
+            lb.pack_forget()
         tree.focus_set()
         next_i = tree.next(sel_i)
         if next_i:
@@ -1119,7 +1131,7 @@ def review_links(
     entry.bind(
         "<Escape>",
         lambda e: (
-            lb.pack_forget(),
+            (lb.grid_remove() if hasattr(lb, "grid_remove") else lb.pack_forget()),
             entry.delete(0, "end"),
             tree.focus_set(),
             "break",
