@@ -64,7 +64,13 @@ def test_cli_review_uses_env_vars(monkeypatch, tmp_path):
         return pd.DataFrame()
 
     def fake_review_links(
-        df, wsm_df, links_file, total, invoice_path, price_warn_pct=None
+        df,
+        wsm_df,
+        links_file,
+        total,
+        invoice_path,
+        price_warn_pct=None,
+        invoice_gross=None,
     ):
         captured["links"] = links_file
         captured["pct"] = price_warn_pct
@@ -129,7 +135,13 @@ def test_open_invoice_gui_uses_env_vars(monkeypatch, tmp_path):
         return pd.DataFrame()
 
     def fake_review_links(
-        df, wsm_df, links_file, total, invoice_path, price_warn_pct=None
+        df,
+        wsm_df,
+        links_file,
+        total,
+        invoice_path,
+        price_warn_pct=None,
+        invoice_gross=None,
     ):
         captured["links"] = links_file
         captured["pct"] = price_warn_pct
@@ -197,7 +209,13 @@ def test_cli_review_uses_vat_when_not_in_map(monkeypatch, tmp_path):
         return pd.DataFrame()
 
     def fake_review_links(
-        df, wsm_df, links_file, total, invoice_path, price_warn_pct=None
+        df,
+        wsm_df,
+        links_file,
+        total,
+        invoice_path,
+        price_warn_pct=None,
+        invoice_gross=None,
     ):
         captured["links"] = links_file
         captured["pct"] = price_warn_pct
@@ -262,7 +280,13 @@ def test_cli_review_prefers_vat_from_map(monkeypatch, tmp_path):
         return pd.DataFrame()
 
     def fake_review_links(
-        df, wsm_df, links_file, total, invoice_path, price_warn_pct=None
+        df,
+        wsm_df,
+        links_file,
+        total,
+        invoice_path,
+        price_warn_pct=None,
+        invoice_gross=None,
     ):
         captured["links"] = links_file
         captured["pct"] = price_warn_pct
@@ -318,7 +342,13 @@ def test_cli_review_passes_price_warn_pct(monkeypatch, tmp_path):
         return pd.DataFrame()
 
     def fake_review_links(
-        df, wsm_df, links_file, total, invoice_path, price_warn_pct=None
+        df,
+        wsm_df,
+        links_file,
+        total,
+        invoice_path,
+        price_warn_pct=None,
+        invoice_gross=None,
     ):
         captured["pct"] = price_warn_pct
 

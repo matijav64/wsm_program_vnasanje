@@ -37,7 +37,7 @@ def test_parse_invoice_eslog_string_no_fs(monkeypatch):
 
     monkeypatch.setattr(builtins, "open", fail_open)
 
-    df, header_total, discount_total = parse_invoice(xml)
+    df, header_total, discount_total, gross_total = parse_invoice(xml)
     assert header_total == Decimal("7")
     assert discount_total == Decimal("1")
     assert not df.empty

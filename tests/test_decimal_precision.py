@@ -21,7 +21,7 @@ def test_parse_invoice_high_precision_values():
         "</Invoice>"
     )
 
-    df, header_total, discount_total = parse_invoice(xml)
+    df, header_total, discount_total, gross_total = parse_invoice(xml)
     assert header_total == Decimal("132.00")
     assert discount_total == Decimal("0")
     assert sum(df["izracunana_vrednost"]) == Decimal("132.00")

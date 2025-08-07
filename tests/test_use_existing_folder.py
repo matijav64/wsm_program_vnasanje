@@ -35,7 +35,7 @@ def test_open_invoice_gui_uses_existing_folder(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         "wsm.ui.common.review_links",
-        lambda df, wdf, lf, total, ip: captured.update({"links": lf}),
+        lambda df, wdf, lf, total, ip, **k: captured.update({"links": lf}),
     )
     monkeypatch.setattr("wsm.utils.povezi_z_wsm", lambda df, *a, **k: df)
     monkeypatch.setattr("wsm.ui.common.get_supplier_name", lambda p: "Unknown")
@@ -84,7 +84,7 @@ def test_open_invoice_gui_prefers_vat_folder(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         "wsm.ui.common.review_links",
-        lambda df, wdf, lf, total, ip: captured.update({"links": lf}),
+        lambda df, wdf, lf, total, ip, **k: captured.update({"links": lf}),
     )
     monkeypatch.setattr("wsm.utils.povezi_z_wsm", lambda df, *a, **k: df)
     monkeypatch.setattr("wsm.ui.common.get_supplier_name", lambda p: "Unknown")
@@ -130,7 +130,7 @@ def test_open_invoice_gui_uses_vat_from_map(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         "wsm.ui.common.review_links",
-        lambda df, wdf, lf, total, ip: captured.update({"links": lf}),
+        lambda df, wdf, lf, total, ip, **k: captured.update({"links": lf}),
     )
     monkeypatch.setattr("wsm.utils.povezi_z_wsm", lambda df, *a, **k: df)
     monkeypatch.setattr("wsm.ui.common.get_supplier_name", lambda p: "Unknown")

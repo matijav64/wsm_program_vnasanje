@@ -14,8 +14,9 @@ class DummyLabel:
     def __init__(self):
         self.text = ""
 
-    def config(self, *, text):
-        self.text = text
+    def config(self, **kwargs):
+        if "text" in kwargs:
+            self.text = kwargs["text"]
 
 
 class DummyMsgBox:
@@ -43,6 +44,7 @@ def _extract_update_func():
 def test_totals_label_contains_terms():
     snippet = _extract_update_func()
     lbl = DummyLabel()
+    indicator = DummyLabel()
     df = pd.DataFrame(
         {
             "total_net": [Decimal("10")],
@@ -65,6 +67,7 @@ def test_totals_label_contains_terms():
         "_split_totals": _split_totals,
         "messagebox": DummyMsgBox,
         "total_frame": DummyFrame(lbl),
+        "indicator_label": indicator,
         "log": logging.getLogger("test"),
     }
     exec(snippet, ns)

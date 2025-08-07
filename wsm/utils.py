@@ -107,7 +107,9 @@ def short_supplier_name(name: str) -> str:
 
 
 def _build_header_totals(
-    invoice_path: Path | None, invoice_total: Decimal
+    invoice_path: Path | None,
+    invoice_total: Decimal,
+    invoice_gross: Decimal | None = None,
 ) -> dict[str, Decimal]:
     """Return header ``net``, ``vat`` and ``gross`` amounts.
 
@@ -116,14 +118,14 @@ def _build_header_totals(
     and ``vat`` are non-zero, ``net`` is replaced with ``gross - vat`` to
     handle certain malformed invoices.  On any error or when the path is
     not an XML file, ``invoice_total`` is used as the net and gross
-    amount and VAT defaults to ``0``.
+    amount and VAT defaults to ``0``. When ``invoice_gross`` is provided it is
+    used as the gross fallback instead of ``invoice_total``.
     """
 
-    totals = {
-        "net": invoice_total,
-        "vat": Decimal("0"),
-        "gross": invoice_total,
-    }
+    gross_fallback = (
+        invoice_gross if invoice_gross not in (None, Decimal("0")) else invoice_total
+    )
+    totals = {"net": invoice_total, "vat": Decimal("0"), "gross": gross_fallback}
 
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
@@ -137,6 +139,8 @@ def _build_header_totals(
             net = extract_header_net(invoice_path)
             vat = extract_total_tax(invoice_path)
             gross = extract_header_gross(invoice_path)
+            if gross == 0 and invoice_gross not in (None, Decimal("0")):
+                gross = invoice_gross
 
             if net == 0 and vat != 0 and gross != 0:
                 net = (gross - vat).quantize(DEC2, ROUND_HALF_UP)

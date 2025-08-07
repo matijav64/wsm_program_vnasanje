@@ -13,7 +13,7 @@ from tkinter import filedialog, messagebox
 
 from wsm.analyze import analyze_invoice
 from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
-from wsm.parsing.eslog import get_supplier_name
+from wsm.parsing.eslog import get_supplier_name, extract_grand_total
 from wsm.utils import sanitize_folder_name, _load_supplier_map
 from wsm.supplier_store import _norm_vat, choose_supplier_key
 from wsm.ui.review.gui import review_links
@@ -60,6 +60,7 @@ def open_invoice_gui(
     try:
         if invoice_path.suffix.lower() == ".xml":
             df, total, _ = analyze_invoice(str(invoice_path), str(suppliers))
+            gross = extract_grand_total(invoice_path)
 
             if "rabata" in df.columns:
                 df["rabata"] = df["rabata"].fillna(Decimal("0"))
@@ -71,6 +72,7 @@ def open_invoice_gui(
             if "rabata" not in df.columns:
                 df["rabata"] = Decimal("0")
             total = df["vrednost"].sum()
+            gross = total
         else:
             messagebox.showerror(
                 "Napaka", f"Nepodprta datoteka: {invoice_path}"
@@ -146,4 +148,4 @@ def open_invoice_gui(
     except Exception as exc:
         logging.warning(f"Napaka pri samodejnem povezovanju: {exc}")
 
-    review_links(df, wsm_df, links_file, total, invoice_path)
+    review_links(df, wsm_df, links_file, total, invoice_path, invoice_gross=gross)

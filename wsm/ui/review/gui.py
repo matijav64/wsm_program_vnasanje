@@ -34,6 +34,7 @@ def review_links(
     invoice_total: Decimal,
     invoice_path: Path | None = None,
     price_warn_pct: float | int | Decimal | None = None,
+    invoice_gross: Decimal | None = None,
 ) -> pd.DataFrame:
     """Interactively map supplier invoice rows to WSM items.
 
@@ -53,6 +54,9 @@ def review_links(
     price_warn_pct : float | int | Decimal, optional
         Threshold for price change warnings expressed in percent. When not
         provided, the value of ``PRICE_DIFF_THRESHOLD`` is used.
+    invoice_gross : decimal.Decimal, optional
+        Invoice grand total used when the XML is not available for extracting
+        header amounts.
 
     Returns
     -------
@@ -146,7 +150,7 @@ def review_links(
     log.info(f"Default name retrieved: {default_name}")
     log.debug(f"Supplier info: {supplier_info}")
 
-    header_totals = _build_header_totals(invoice_path, invoice_total)
+    header_totals = _build_header_totals(invoice_path, invoice_total, invoice_gross)
 
     try:
         manual_old = pd.read_excel(links_file, dtype=str)
