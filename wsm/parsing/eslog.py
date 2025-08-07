@@ -3,7 +3,7 @@
 """
 ESLOG 2.0 (INVOIC) parser
 =========================
-• get_supplier_info()      → (sifra, ime) dobavitelja
+• get_supplier_info()      → koda dobavitelja
 • parse_eslog_invoice()    → DataFrame vseh postavk (vključno z _DOC_ vrstico)
 • parse_invoice()          → (DataFrame vrstic, header_total,
                               discount_total) za CLI
@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
-from defusedxml import ElementTree as ET
 from defusedxml.common import EntitiesForbidden
 from lxml import etree as LET
 
@@ -144,10 +143,48 @@ def _find_rff(root: LET._Element, qualifier: str) -> str:
 
 
 def _find_vat(grp: LET._Element) -> str:
-    """Return VAT number from related ``S_RFF`` segments.
+    """Return VAT number from provided element.
 
-    Recognized qualifiers are ``VA``, ``0199`` and ``AHP``.
+    The helper prefers VAT identifiers declared in UBL structures before
+    examining ESLOG specific segments.  It searches ``cac:PartyTaxScheme``
+    and ``cac:PartyIdentification`` elements for ``cbc:CompanyID``/``cbc:ID``
+    values with a ``schemeID`` of ``VAT`` or ``VA`` and also accepts those
+    without a ``schemeID`` attribute.  If nothing is found the function falls
+    back to ``S_RFF`` segments with qualifiers ``VA``, ``0199`` or ``AHP``.
+    When multiple VAT values are present the first non-empty one is returned
+    with ``AHP`` acting as a secondary fallback.
     """
+
+    # --- UBL PartyTaxScheme / PartyIdentification ---
+    ubl_paths = [
+        ".//cac:PartyTaxScheme/cbc:CompanyID[@schemeID='VAT']",
+        ".//cac:PartyTaxScheme/cbc:CompanyID[@schemeID='VA']",
+        ".//cac:PartyIdentification/cbc:ID[@schemeID='VAT']",
+        ".//cac:PartyIdentification/cbc:ID[@schemeID='VA']",
+        ".//cac:PartyTaxScheme/cbc:CompanyID[not(@schemeID) or @schemeID='']",
+        ".//cac:PartyIdentification/cbc:ID[not(@schemeID) or @schemeID='']",
+    ]
+    for path in ubl_paths:
+        try:
+            vat_nodes = grp.xpath(path, namespaces=UBL_NS)
+        except Exception:
+            continue
+        if vat_nodes:
+            vat = _text(vat_nodes[0])
+            if vat:
+                log.debug("Found VAT in UBL element %s: %s", path, vat)
+                return vat
+
+    # --- Custom <VA> element without schemeID ---
+    for vat in [
+        v.strip()
+        for v in grp.xpath(".//*[local-name()='VA']/text()")
+        if v.strip()
+    ]:
+        log.debug("Found VAT in VA element: %s", vat)
+        return vat
+
+    # --- ESLOG RFF qualifiers ---
     vat_ahp = ""
     rffs = grp.findall(".//e:S_RFF", NS) + grp.findall(".//S_RFF")
     for rff in rffs:
@@ -160,22 +197,35 @@ def _find_vat(grp: LET._Element) -> str:
         code = _text(code_el)
         val = _text(val_el)
         if code in VAT_QUALIFIERS and val:
+            log.debug("Found VAT in RFF %s: %s", code, val)
             if code == "AHP":
                 if not vat_ahp:
                     vat_ahp = val
             else:
                 return val
 
-    return vat_ahp
+    if vat_ahp:
+        log.debug("Found VAT in RFF AHP: %s", vat_ahp)
+        return vat_ahp
+
+    log.debug("VAT element not found")
+    return ""
 
 
-# ────────────────────── dobavitelj: koda + ime ──────────────────────
-def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
-    """Return supplier code and name."""
+# ────────────────────── dobavitelj: koda ──────────────────────
+def get_supplier_info(tree: LET._ElementTree | LET._Element) -> str:
+    """Return supplier code from a parsed XML tree.
+
+    VAT numbers (``schemeID="VA"`` or a custom ``<VA>`` element) take
+    precedence over other identifiers.  If no VAT information is present the
+    helper falls back to GLN codes with ``schemeID="0088"`` and finally to any
+    available supplier code from the NAD segment.  Debug output is emitted for
+    the VAT lookup.  Returns ``"Unknown"`` when neither VAT nor GLN codes are
+    found.
+    """
+
     try:
-        tree = LET.parse(xml_path, parser=XML_PARSER)
-        root = tree.getroot()
-        seller_code = seller_name = ""
+        root = tree.getroot() if hasattr(tree, "getroot") else tree
 
         groups: List[LET._Element] = [
             sg2
@@ -186,99 +236,98 @@ def get_supplier_info(xml_path: str | Path) -> Tuple[str, str]:
             groups = [root]
 
         for grp in groups:
+            # VAT takes precedence and can be present even without NAD segments
+            code = _find_vat(grp)
+            log.debug("Supplier VAT lookup result: %s", code or "not found")
+            if code:
+                return code
+
             nad = grp.find("./e:S_NAD", NS)
             if nad is None:
                 nad = next(
                     (c for c in grp.iter() if c.tag.split("}")[-1] == "S_NAD"),
                     None,
                 )
-            if nad is None:
-                continue
 
-            typ_el = nad.find("./e:D_3035", NS)
-            if typ_el is None:
-                typ_el = next(
-                    (
-                        el
-                        for el in nad.iter()
-                        if el.tag.split("}")[-1] == "D_3035"
-                    ),
-                    None,
-                )
-            typ = _text(typ_el)
-            if typ not in {"SU", "SE"}:
-                continue
+            if nad is not None:
+                typ_el = nad.find("./e:D_3035", NS)
+                if typ_el is None:
+                    typ_el = next(
+                        (
+                            el
+                            for el in nad.iter()
+                            if el.tag.split("}")[-1] == "D_3035"
+                        ),
+                        None,
+                    )
+                typ = _text(typ_el)
+                if typ not in {"SU", "SE"}:
+                    continue
 
-            name_els = nad.findall(".//e:C_C080/e:D_3036", NS)
-            if not name_els:
-                name_els = [
-                    el
-                    for el in nad.iter()
-                    if el.tag.split("}")[-1] == "D_3036"
+                code = _find_gln(nad)
+                if not code:
+                    code = _find_any_code(nad)
+                if code:
+                    return code
+            else:
+                # Fallback for UBL structures without NAD segments
+                gln = [
+                    v.strip()
+                    for v in grp.xpath(".//*[@schemeID='0088']/text()")
+                    if v.strip()
                 ]
-            name = " ".join(_text(el) for el in name_els if _text(el))
-
-            code = _find_gln(nad)
-            if not code:
-                code = _find_vat(grp)
-            if not code:
-                code = _find_any_code(nad)
-
-            if typ == "SU":
-                return code, name
-            if typ == "SE" and not seller_name:
-                seller_code = code
-                seller_name = name
-
-        return seller_code, seller_name
-    except Exception:
-        return "", ""
+                if gln:
+                    log.debug("Fallback to GLN: %s", gln[0])
+                    return gln[0]
+        log.debug("No VAT or GLN found")
+    except Exception as exc:
+        log.debug("Supplier code extraction failed: %s", exc)
+    return "Unknown"
 
 
 def get_supplier_name(xml_path: str | Path) -> Optional[str]:
-    _, name = get_supplier_info(xml_path)
-    return name or None
+    """Return supplier name if available."""
+    try:
+        tree = LET.parse(xml_path, parser=XML_PARSER)
+        root = tree.getroot()
+        ns = {k: v for k, v in root.nsmap.items() if k}
+        # UBL supplier name
+        name = " ".join(
+            n.strip()
+            for n in root.xpath(
+                ".//cac:PartyName/cbc:Name/text()", namespaces=ns
+            )
+            if n and n.strip()
+        )
+        if name:
+            return name
+        # eSLOG NAD segment
+        name_els = root.xpath(
+            ".//e:S_NAD/e:C_C080/e:D_3036/text()", namespaces=NS
+        )
+        if name_els:
+            return " ".join(n.strip() for n in name_els if n.strip()) or None
+    except Exception:
+        pass
+    return None
 
 
 # ────────────────────── dobavitelj: koda + ime + davčna ──────────────────────
 def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
     """Return supplier code, name and VAT number if available."""
-    code, name = get_supplier_info(xml_path)
-    vat: str | None = None
+
     try:
         tree = LET.parse(xml_path, parser=XML_PARSER)
         root = tree.getroot()
-
-        # Collect seller-related groups (SU or SE) in document order
-        groups: List[LET._Element] = [
-            sg2
-            for sg2 in root.findall(".//e:G_SG2", NS)
-            if _text(sg2.find("./e:S_NAD/e:D_3035", NS)) in {"SU", "SE"}
-        ]
-        if not groups:
-            groups = [root]
-
-        for grp in groups:
-            vat_val = _find_vat(grp)
-            if vat_val:
-                vat = vat_val
-                break
-            for com in grp.findall(".//e:S_COM", NS) + grp.findall(".//S_COM"):
-                com_code = _text(com.find("./e:C_C076/e:D_3155", NS)) or _text(
-                    com.find("./C_C076/D_3155")
-                )
-                if com_code == "9949":
-                    vat_val = _text(
-                        com.find("./e:C_C076/e:D_3148", NS)
-                    ) or _text(com.find("./C_C076/D_3148"))
-                    if vat_val:
-                        vat = vat_val
-                        break
-            if vat:
-                break
     except Exception:
-        vat = None
-    return code, name, vat
+        return "", "", None
+
+    code = get_supplier_info(tree)
+    vat_val = _find_vat(root) or None
+    name = get_supplier_name(xml_path) or ""
+    if vat_val:
+        code = vat_val
+    return code, name, vat_val
 
 
 # ─────────────────────── vsota iz glave ───────────────────────
@@ -320,10 +369,10 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
                         val_el = moa.find("./C_C516/D_5004")
                     line_base += _decimal(val_el)
 
-        doc_discount = sum_moa(root, DEFAULT_DOC_DISCOUNT_CODES)
+        doc_discount = sum_moa(
+            root, DEFAULT_DOC_DISCOUNT_CODES, negative_only=True
+        )
         doc_charge = sum_moa(root, DEFAULT_DOC_CHARGE_CODES)
-        if doc_discount < 0:
-            doc_discount = Decimal("0")
 
         if line_base != 0:
             base = line_base
@@ -480,49 +529,60 @@ def extract_total_tax(xml_path: Path | str) -> Decimal:
         return Decimal("0")
 
 
-def sum_moa(root: LET._Element, codes: List[str]) -> Decimal:
+def sum_moa(
+    root: LET._Element,
+    codes: List[str],
+    *,
+    negative_only: bool = False,
+    tax_amount: Decimal | None = None,
+) -> Decimal:
     """Return the sum of MOA amounts for the given codes.
 
-    Searches MOA segments within ``G_SG50`` and ``G_SG20`` groups as well
-    as top-level ``G_SG16`` segments.  Documents with or without the
-    ``urn:eslog:2.00`` namespace are supported.  Duplicate MOA elements
-    are ignored.
+    Only ``S_MOA`` elements that appear within allowance/charge segments
+    (``S_ALC``) are considered.  Segments nested inside tax summary
+    groups (``G_SG52``) are ignored.  When ``negative_only`` is ``True``
+    only negative amounts are summed and their absolute values returned.
+    Amounts matching ``tax_amount`` are skipped to avoid mistaking VAT
+    totals for discounts.
     """
 
     wanted = set(codes)
     total = Decimal("0")
-    for seg in root.findall(".//e:G_SG50", NS) + root.findall(".//G_SG50"):
-        for moa in seg.findall(".//e:S_MOA", NS) + seg.findall(".//S_MOA"):
-            code_el = moa.find("./e:C_C516/e:D_5025", NS)
-            if code_el is None:
-                code_el = moa.find("./C_C516/D_5025")
-            if code_el is not None and _text(code_el) in wanted:
-                val_el = moa.find("./e:C_C516/e:D_5004", NS)
-                if val_el is None:
-                    val_el = moa.find("./C_C516/D_5004")
-                total += _decimal(val_el)
+    # Locate all allowance/charge segments and evaluate sibling MOA values
+    alcs = root.findall(".//e:S_ALC", NS) + root.findall(".//S_ALC")
+    for alc in alcs:
+        # Skip allowances in tax summary groups
+        parent = alc.getparent()
+        ancestor = parent
+        skip = False
+        while ancestor is not None:
+            if ancestor.tag.split("}")[-1] == "G_SG52":
+                skip = True
+                break
+            ancestor = ancestor.getparent()
+        if skip or parent is None:
+            continue
 
-    for seg in root.findall(".//e:G_SG20", NS) + root.findall(".//G_SG20"):
-        for moa in seg.findall(".//e:S_MOA", NS) + seg.findall(".//S_MOA"):
+        for moa in parent.findall("./e:S_MOA", NS) + parent.findall("./S_MOA"):
             code_el = moa.find("./e:C_C516/e:D_5025", NS)
             if code_el is None:
                 code_el = moa.find("./C_C516/D_5025")
-            if code_el is not None and _text(code_el) in wanted:
-                val_el = moa.find("./e:C_C516/e:D_5004", NS)
-                if val_el is None:
-                    val_el = moa.find("./C_C516/D_5004")
-                total += _decimal(val_el)
+            if code_el is None or _text(code_el) not in wanted:
+                continue
 
-    for sg16 in root.findall(".//e:G_SG16", NS) + root.findall(".//G_SG16"):
-        for moa in sg16.findall("./e:S_MOA", NS) + sg16.findall("./S_MOA"):
-            code_el = moa.find("./e:C_C516/e:D_5025", NS)
-            if code_el is None:
-                code_el = moa.find("./C_C516/D_5025")
-            if code_el is not None and _text(code_el) in wanted:
-                val_el = moa.find("./e:C_C516/e:D_5004", NS)
-                if val_el is None:
-                    val_el = moa.find("./C_C516/D_5004")
-                total += _decimal(val_el)
+            val_el = moa.find("./e:C_C516/e:D_5004", NS)
+            if val_el is None:
+                val_el = moa.find("./C_C516/D_5004")
+            val = _decimal(val_el)
+
+            if negative_only:
+                if val >= 0:
+                    continue
+                if tax_amount is not None and abs(val) == abs(tax_amount):
+                    continue
+                total += -val
+            else:
+                total += val
 
     return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
@@ -546,7 +606,9 @@ def _get_document_discount(xml_root: LET._Element) -> Decimal:
                 elif tag == "D_5004":
                     amount = (el.text or "").strip()
             if code in set(DEFAULT_DOC_DISCOUNT_CODES) and amount is not None:
-                total += Decimal(amount.replace(",", "."))
+                val = Decimal(amount.replace(",", "."))
+                if val < 0:
+                    total += -val
         return total
 
     discount = (
@@ -554,6 +616,8 @@ def _get_document_discount(xml_root: LET._Element) -> Decimal:
         if discount_str not in (None, "")
         else _find_moa_values(set(DEFAULT_DOC_DISCOUNT_CODES))
     )
+    if discount < 0:
+        discount = -discount
 
     return discount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -844,13 +908,14 @@ def parse_eslog_invoice(
     Vrne tudi ``bool`` flag, ki označuje ali vsota ``net_total + tax_total``
     ustreza znesku iz segmenta ``MOA 9``.
     """
-    supplier_code, _ = get_supplier_info(xml_path)
+    supplier_code = ""
 
     try:
-        tree = ET.parse(xml_path)
+        tree = LET.parse(xml_path, parser=XML_PARSER)
     except EntitiesForbidden:
         return pd.DataFrame(), True
     root = tree.getroot()
+    supplier_code = get_supplier_info(tree)
     header_rate = _tax_rate_from_header(root)
     header_net = extract_header_net(root)
     items: List[Dict] = []
@@ -1080,7 +1145,12 @@ def parse_eslog_invoice(
                 )
 
     # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
-    doc_discount = sum_moa(root, discount_codes or DEFAULT_DOC_DISCOUNT_CODES)
+    doc_discount = sum_moa(
+        root,
+        discount_codes or DEFAULT_DOC_DISCOUNT_CODES,
+        negative_only=True,
+        tax_amount=tax_total,
+    )
     doc_charge = sum_moa(root, DEFAULT_DOC_CHARGE_CODES)
 
     if doc_discount != 0:
@@ -1200,7 +1270,9 @@ def parse_invoice(source: str | Path):
                 Decimal("0.01"), rounding=ROUND_HALF_UP
             )
         else:
-            discount_total = sum_moa(root, DEFAULT_DOC_DISCOUNT_CODES)
+            discount_total = sum_moa(
+                root, DEFAULT_DOC_DISCOUNT_CODES, negative_only=True
+            )
 
         # Če želimo posebej slediti tudi pribitkom:
         # charge_total = doc_rows.loc[

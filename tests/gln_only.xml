@@ -1,0 +1,11 @@
+<Invoice xmlns="urn:eslog:2.00" xmlns:cac="urn:dummyns:cac" xmlns:cbc="urn:dummyns:cbc">
+  <M_INVOIC>
+    <G_SG2>
+      <S_NAD>
+        <S_GLN><D_7402>9876543210987</D_7402></S_GLN>
+        <D_3035>SU</D_3035>
+        <C_C080><D_3036>GLN Seller</D_3036></C_C080>
+      </S_NAD>
+    </G_SG2>
+  </M_INVOIC>
+</Invoice>

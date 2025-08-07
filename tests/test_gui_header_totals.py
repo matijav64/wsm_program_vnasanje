@@ -69,7 +69,7 @@ def test_header_totals_display_and_no_autofix(tmp_path):
     xml_path = tmp_path / "inv.xml"
     xml_path.write_text(xml)
 
-    df, ok = parse_eslog_invoice(xml_path, {})
+    df, ok = parse_eslog_invoice(xml_path)
     header = {
         "net": extract_header_net(xml_path),
         "vat": extract_total_tax(xml_path),
@@ -125,7 +125,7 @@ def test_no_doc_row_added_for_small_diff(tmp_path):
     xml_path = tmp_path / "inv.xml"
     xml_path.write_text(xml)
 
-    df, ok = parse_eslog_invoice(xml_path, {})
+    df, ok = parse_eslog_invoice(xml_path)
     header_net = extract_header_net(xml_path)
     assert df[df["sifra_dobavitelja"] == "_DOC_"].empty
     total_calc = df[df["sifra_dobavitelja"] != "_DOC_"]["vrednost"].sum()
@@ -163,7 +163,7 @@ def test_header_totals_display_small_diff(tmp_path):
     xml_path = tmp_path / "inv.xml"
     xml_path.write_text(xml)
 
-    df, ok = parse_eslog_invoice(xml_path, {})
+    df, ok = parse_eslog_invoice(xml_path)
     header = {
         "net": extract_header_net(xml_path),
         "vat": extract_total_tax(xml_path),

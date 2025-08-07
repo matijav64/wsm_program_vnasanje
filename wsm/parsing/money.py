@@ -52,7 +52,7 @@ def extract_total_amount(xml_root: LET._Element) -> Decimal:
     base_str = base_el.text if base_el is not None else None
     discount_str = discount_el.text if discount_el is not None else None
 
-    def _find_moa_values(codes: set[str]) -> Decimal:
+    def _find_moa_values(codes: set[str], negative_only: bool = False) -> Decimal:
         total = Decimal("0")
         for seg in xml_root.iter():
             if seg.tag.split("}")[-1] != "S_MOA":
@@ -66,7 +66,12 @@ def extract_total_amount(xml_root: LET._Element) -> Decimal:
                 elif tag == "D_5004":
                     amount = (el.text or "").strip()
             if code in codes and amount is not None:
-                total += Decimal(amount.replace(",", "."))
+                val = Decimal(amount.replace(",", "."))
+                if negative_only:
+                    if val < 0:
+                        total += -val
+                else:
+                    total += val
         return total
 
     base = (
@@ -77,8 +82,10 @@ def extract_total_amount(xml_root: LET._Element) -> Decimal:
     discount = (
         Decimal(discount_str.replace(",", "."))
         if discount_str not in (None, "")
-        else _find_moa_values({"176", "204", "260", "500"})
+        else _find_moa_values({"176", "204", "260", "500"}, negative_only=True)
     )
+    if discount < 0:
+        discount = -discount
 
     return (base - discount).quantize(Decimal("0.01"))
 
