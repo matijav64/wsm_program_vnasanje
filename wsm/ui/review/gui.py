@@ -443,20 +443,17 @@ def review_links(
         f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
     )
 
-    totals_frame = tk.Frame(root)
-    totals_frame.pack(anchor="w", padx=8, pady=(0, 12))
-    tk.Label(totals_frame, text="Neto:").grid(row=0, column=0, sticky="w")
-    tk.Label(totals_frame, textvariable=var_net).grid(
-        row=0, column=1, sticky="w", padx=(0, 12)
-    )
-    tk.Label(totals_frame, text="DDV:").grid(row=0, column=2, sticky="w")
-    tk.Label(totals_frame, textvariable=var_vat).grid(
-        row=0, column=3, sticky="w", padx=(0, 12)
-    )
-    tk.Label(totals_frame, text="Skupaj:").grid(row=0, column=4, sticky="w")
-    tk.Label(totals_frame, textvariable=var_total).grid(
-        row=0, column=5, sticky="w"
-    )
+    totals_frame = ttk.Frame(root)
+    totals_frame.grid(row=5, column=0, columnspan=3, sticky="ew", padx=8, pady=(0, 12))
+    root.columnconfigure(0, weight=1)
+    root.columnconfigure(1, weight=1)
+    root.columnconfigure(2, weight=1)
+    ttk.Label(totals_frame, text="Neto:").grid(row=0, column=0, sticky="w")
+    ttk.Label(totals_frame, textvariable=var_net).grid(row=1, column=0, sticky="w")
+    ttk.Label(totals_frame, text="DDV:").grid(row=0, column=1, sticky="w")
+    ttk.Label(totals_frame, textvariable=var_vat).grid(row=1, column=1, sticky="w")
+    ttk.Label(totals_frame, text="Skupaj:").grid(row=0, column=2, sticky="w")
+    ttk.Label(totals_frame, textvariable=var_total).grid(row=1, column=2, sticky="w")
 
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
