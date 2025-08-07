@@ -77,6 +77,7 @@ def review_links(
         else PRICE_DIFF_THRESHOLD
     )
     supplier_code: str = "Unknown"
+    # Try to extract supplier code directly from the invoice XML
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
             tree = LET.parse(invoice_path, parser=XML_PARSER)
