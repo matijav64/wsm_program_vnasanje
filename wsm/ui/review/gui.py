@@ -150,7 +150,9 @@ def review_links(
     log.info(f"Default name retrieved: {default_name}")
     log.debug(f"Supplier info: {supplier_info}")
 
-    header_totals = _build_header_totals(invoice_path, invoice_total, invoice_gross)
+    header_totals = _build_header_totals(
+        invoice_path, invoice_total, invoice_gross
+    )
 
     try:
         manual_old = pd.read_excel(links_file, dtype=str)
@@ -375,6 +377,7 @@ def review_links(
         else:
             # Preserve any existing invoice number displayed in the entry.
             pass
+        invoice_label.config(text=f"Račun: {invoice_var.get()}")
         supplier_var.set(supplier_name)
         header_var.set(" – ".join(parts_display))
         root.title(f"Ročna revizija – {' – '.join(parts_full)}")
@@ -417,11 +420,14 @@ def review_links(
         text="Kopiraj storitev",
         command=lambda: _copy(date_var.get()),
     ).grid(row=0, column=1, sticky="w", padx=(0, 4))
-    tk.Button(
+    invoice_label = tk.Label(info_frame, text="Račun:")
+    invoice_label.grid(row=1, column=0, sticky="w", pady=(4, 0))
+    copy_button = tk.Button(
         info_frame,
         text="Kopiraj številko računa",
         command=lambda: _copy(invoice_var.get()),
-    ).grid(row=0, column=2, sticky="w")
+    )
+    copy_button.grid(row=1, column=1, sticky="w", padx=(0, 4), pady=(4, 0))
 
     # Refresh header once widgets exist. ``after_idle`` ensures widgets are
     # fully initialized before values are set so the entries show up

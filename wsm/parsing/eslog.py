@@ -487,10 +487,23 @@ def extract_service_date(xml_path: Path | str) -> str | None:
 
 # ───────────────────── številka računa ─────────────────────
 def extract_invoice_number(xml_path: Path | str) -> str | None:
-    """Vrne številko računa iz segmenta BGM (D_1004)."""
+    """Vrne številko računa iz dokumenta."""
     try:
         tree = LET.parse(xml_path, parser=XML_PARSER)
         root = tree.getroot()
+
+        # --- UBL ---
+        try:
+            id_el = root.find(".//cbc:ID", UBL_NS)
+        except Exception:
+            id_el = None
+        if id_el is not None:
+            num = _text(id_el)
+            if num:
+                log.debug("Extracted invoice ID from UBL: %s", num)
+                return num
+
+        # --- EDIFACT BGM fallback ---
         bgm = root.find(".//e:S_BGM", NS)
         if bgm is None:
             for node in root.iter():
@@ -511,6 +524,7 @@ def extract_invoice_number(xml_path: Path | str) -> str | None:
             if num_el is not None:
                 num = _text(num_el)
                 if num:
+                    log.debug("Extracted invoice ID from BGM: %s", num)
                     return num
     except Exception:
         pass
