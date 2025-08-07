@@ -428,6 +428,13 @@ def review_links(
     def copy_invoice_number() -> None:
         _copy(invoice_var.get())
 
+    root.copy_button = ttk.Button(
+        info_frame,
+        text="Kopiraj številko računa",
+        command=copy_invoice_number,
+    )
+    root.copy_button.grid(row=0, column=2, sticky="w", padx=(0, 4))
+
     # Refresh header once widgets exist. ``after_idle`` ensures widgets are
     # fully initialized before values are set so the entries show up
     root.after_idle(_refresh_header)
@@ -446,12 +453,6 @@ def review_links(
     skupaj_label = ttk.Label(totals_frame)
     skupaj_label.pack(side="left", padx=10)
 
-    root.copy_button = ttk.Button(
-        root,
-        text="Kopiraj številko računa",
-        command=copy_invoice_number,
-    )
-    root.copy_button.pack(fill="x", padx=8, pady=5)
 
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
