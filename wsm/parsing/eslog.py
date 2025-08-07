@@ -148,11 +148,11 @@ def _find_vat(grp: LET._Element) -> str:
     The helper prefers VAT identifiers declared in UBL structures before
     examining ESLOG specific segments.  It searches ``cac:PartyTaxScheme``
     and ``cac:PartyIdentification`` elements for ``cbc:CompanyID``/``cbc:ID``
-    values with a ``schemeID`` of ``VAT`` or ``VA`` as well as ``CompanyID``
-    elements without a ``schemeID`` attribute.  If nothing is found the
-    function falls back to ``S_RFF`` segments with qualifiers ``VA``, ``0199``
-    or ``AHP``.  When multiple VAT values are present the first non-empty one
-    is returned with ``AHP`` acting as a secondary fallback.
+    values with a ``schemeID`` of ``VAT`` or ``VA`` and also accepts those
+    without a ``schemeID`` attribute.  If nothing is found the function falls
+    back to ``S_RFF`` segments with qualifiers ``VA``, ``0199`` or ``AHP``.
+    When multiple VAT values are present the first non-empty one is returned
+    with ``AHP`` acting as a secondary fallback.
     """
 
     # --- UBL PartyTaxScheme / PartyIdentification ---
@@ -162,6 +162,7 @@ def _find_vat(grp: LET._Element) -> str:
         ".//cac:PartyIdentification/cbc:ID[@schemeID='VAT']",
         ".//cac:PartyIdentification/cbc:ID[@schemeID='VA']",
         ".//cac:PartyTaxScheme/cbc:CompanyID[not(@schemeID) or @schemeID='']",
+        ".//cac:PartyIdentification/cbc:ID[not(@schemeID) or @schemeID='']",
     ]
     for path in ubl_paths:
         try:
