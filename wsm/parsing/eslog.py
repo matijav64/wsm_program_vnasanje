@@ -405,11 +405,14 @@ def extract_header_gross(xml_path: Path | str) -> Decimal:
     return Decimal("0")
 
 
-def extract_grand_total(xml_path: Path | str) -> Decimal:
+def extract_grand_total(source: Path | str | Any) -> Decimal:
     """Return invoice grand total from MOA 9."""
     try:
-        tree = LET.parse(xml_path, parser=XML_PARSER)
-        root = tree.getroot()
+        if hasattr(source, "findall"):
+            root = source
+        else:
+            tree = LET.parse(source, parser=XML_PARSER)
+            root = tree.getroot()
         for moa in root.findall(".//e:G_SG50/e:S_MOA", NS):
             if (
                 _text(moa.find("./e:C_C516/e:D_5025", NS))
@@ -1232,6 +1235,7 @@ def parse_invoice(source: str | Path):
       • header_total: Decimal (InvoiceTotal –
         DocumentDiscount + DocumentCharge)
       • discount_total: Decimal (znesek dokumentarnega popusta)
+      • gross_total: Decimal (MOA 9 – skupni znesek računa)
     Uporablja se v CLI (wsm/cli.py).
     """
     # naložimo XML
@@ -1252,6 +1256,9 @@ def parse_invoice(source: str | Path):
     ):
         df_items, ok = parse_eslog_invoice(xml_source)
         header_total = extract_header_net(
+            root if parsed_from_string else xml_source
+        )
+        gross_total = extract_grand_total(
             root if parsed_from_string else xml_source
         )
         # ─────────────────────── dokumentarni popusti ───────────────────────
@@ -1287,12 +1294,13 @@ def parse_invoice(source: str | Path):
             },
             dtype=object,
         )
-        return df, header_total, discount_total
+        return df, header_total, discount_total, gross_total
 
     # Preprost <Racun> format z elementi <Postavka>
     if root.tag == "Racun" or root.find("Postavka") is not None:
         header_total = extract_total_amount(root)
         discount_total = _get_document_discount(root)
+        gross_total = Decimal("0")
         rows = []
         for line in root.findall("Postavka"):
             name = line.findtext("Naziv") or ""
@@ -1321,11 +1329,12 @@ def parse_invoice(source: str | Path):
                 }
             )
         df = pd.DataFrame(rows, dtype=object)
-        return df, header_total, discount_total
+        return df, header_total, discount_total, gross_total
 
     # izvzamemo glavo (InvoiceTotal – DocumentDiscount + DocumentCharge)
     header_total = extract_total_amount(root)
     discount_total = _get_document_discount(root)
+    gross_total = Decimal("0")
 
     # preberemo vse <LineItems/LineItem>
     rows = []
@@ -1386,7 +1395,7 @@ def parse_invoice(source: str | Path):
     else:
         df = pd.DataFrame(rows, dtype=object)
 
-    return df, header_total, discount_total
+    return df, header_total, discount_total, gross_total
 
 
 def validate_invoice(df: pd.DataFrame, header_total: Decimal) -> bool:

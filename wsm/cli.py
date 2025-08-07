@@ -10,6 +10,7 @@ from wsm.parsing.eslog import (
     parse_invoice,
     validate_invoice,
     get_supplier_name,
+    extract_grand_total,
 )
 from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
 from wsm.parsing.money import detect_round_step, round_to_step
@@ -56,8 +57,8 @@ def _validate_file(file_path: Path):
     """
     filename = file_path.name
     try:
-        # parse_invoice vrne tri rezultate: (df, header_total, discount_total)
-        df, header_total, _ = parse_invoice(str(file_path))
+        # parse_invoice vrne štiri rezultate: (df, header_total, discount_total, gross_total)
+        df, header_total, _, _ = parse_invoice(str(file_path))
     except Exception as e:
         click.echo(f"[NAPAKA PARSANJA] {filename}: {e}")
         return
@@ -242,6 +243,11 @@ def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct, use_pyqt):
     except Exception as exc:
         click.echo(f"[NAPAKA] Samodejno povezovanje ni uspelo: {exc}")
 
+    gross = (
+        extract_grand_total(Path(invoice))
+        if Path(invoice).suffix.lower() == ".xml"
+        else total
+    )
     try:
         review_links(
             df,
@@ -250,6 +256,7 @@ def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct, use_pyqt):
             total,
             Path(invoice),
             price_warn_pct,
+            gross,
         )
     except Exception as e:
         click.echo(f"[NAPAKA GUI] {e}")
@@ -259,7 +266,7 @@ def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct, use_pyqt):
 @click.argument("invoice", type=click.Path(exists=True))
 def round_debug(invoice):
     """Prikaži podrobnosti o seštevanju vrstic in zaokroževanju."""
-    df, header_total, _ = parse_invoice(invoice)
+    df, header_total, _, _ = parse_invoice(invoice)
     col = (
         "izracunana_vrednost"
         if "izracunana_vrednost" in df.columns

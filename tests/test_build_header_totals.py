@@ -112,3 +112,22 @@ def test_build_header_totals_fills_missing_vat(tmp_path: Path) -> None:
     assert totals["net"] == Decimal("10")
     assert totals["vat"] == Decimal("2")
     assert totals["gross"] == Decimal("12")
+
+
+def test_build_header_totals_uses_passed_gross(tmp_path: Path) -> None:
+    xml = (
+        "<Invoice xmlns='urn:eslog:2.00'>"
+        "  <M_INVOIC>"
+        "    <G_SG50>"
+        "      <S_MOA><C_C516><D_5025>389</D_5025>"
+        "<D_5004>10</D_5004></C_C516></S_MOA>"
+        "    </G_SG50>"
+        "  </M_INVOIC>"
+        "</Invoice>"
+    )
+    p = tmp_path / "inv.xml"
+    p.write_text(xml)
+    totals = _build_header_totals(p, Decimal("10"), Decimal("15"))
+    assert totals["net"] == Decimal("10")
+    assert totals["gross"] == Decimal("15")
+    assert totals["vat"] == Decimal("5")

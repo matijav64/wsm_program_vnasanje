@@ -23,5 +23,5 @@ def test_parse_eslog_invoice_handles_doc_charge():
     assert ok
 
     # parse_invoice should ignore document charges when computing discounts
-    _, _, discount_total = parse_invoice(xml_path)
+    _, _, discount_total, _ = parse_invoice(xml_path)
     assert discount_total == Decimal("0.00")
