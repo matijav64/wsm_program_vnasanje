@@ -764,14 +764,18 @@ def review_links(
         )
 
     bottom = None  # backward-compatible placeholder for tests
-    entry = ttk.Entry(root, width=60)
-    entry.pack(fill="x", pady=5, padx=8)
-    lb = tk.Listbox(root, height=6)
-    lb.pack(fill="x", padx=8)
-    lb.pack_forget()
+    entry_frame = tk.Frame(root)
+    entry_frame.pack(fill="x", padx=8)
+    entry_frame.columnconfigure(0, weight=1)
 
-    btn_frame = tk.Frame(root)
-    btn_frame.pack(fill="x", padx=8, pady=(0, 6))
+    entry = ttk.Entry(entry_frame, width=80)
+    entry.grid(row=0, column=0, pady=5, sticky="ew")
+    lb = tk.Listbox(entry_frame, height=6)
+    lb.grid(row=1, column=0, sticky="ew")
+    lb.grid_remove()
+
+    btn_frame = tk.Frame(entry_frame)
+    btn_frame.grid(row=2, column=0, pady=(0, 6), sticky="ew")
 
     # --- Unit change widgets ---
     unit_options = ["kos", "kg", "L"]
