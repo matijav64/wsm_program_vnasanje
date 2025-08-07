@@ -464,6 +464,50 @@ def _invoice_total(
     )
 
 
+# ───────────────────── vrsta računa ─────────────────────
+def extract_invoice_type(source: Path | str | Any) -> str:
+    """Return the invoice type code if available.
+
+    The helper inspects UBL ``cbc:InvoiceTypeCode`` elements and
+    EDIFACT ``D_1001`` values inside ``S_BGM`` segments.  When the
+    type cannot be determined an empty string is returned.
+    """
+
+    try:
+        if hasattr(source, "find"):
+            root = source
+        else:
+            tree = LET.parse(source, parser=XML_PARSER)
+            root = tree.getroot()
+
+        # --- UBL InvoiceTypeCode ---
+        try:
+            itc = root.find(".//cbc:InvoiceTypeCode", UBL_NS)
+        except Exception:
+            itc = None
+        if itc is not None:
+            val = _text(itc)
+            if val:
+                return val
+
+        # --- EDIFACT D_1001 in BGM ---
+        path_ns = ".//e:S_BGM/e:C_C002/e:D_1001"
+        path_no = ".//S_BGM/C_C002/D_1001"
+        el = root.find(path_ns, NS) or root.find(path_no)
+        if el is None:
+            el = next(
+                (
+                    node
+                    for node in root.iter()
+                    if node.tag.split("}")[-1] == "D_1001"
+                ),
+                None,
+            )
+        return _text(el)
+    except Exception:
+        return ""
+
+
 # ───────────────────── datum opravljene storitve ─────────────────────
 def extract_service_date(xml_path: Path | str) -> str | None:
     """Vrne datum opravljene storitve (DTM 35) ali datum računa (DTM 137)."""

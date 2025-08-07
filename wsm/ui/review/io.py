@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import shutil
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -281,13 +282,23 @@ def _write_history_files(
         bool: ``True`` when the user opts to cancel due to a duplicate
         invoice, ``False`` otherwise.
     """
+    try:
+        invoice_total = df["total_net"].sum()
+    except Exception:
+        invoice_total = Decimal("0")
 
+    invoice_type = ""
     invoice_hash = None
+
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
-            from wsm.parsing.eslog import extract_service_date
+            from wsm.parsing.eslog import (
+                extract_service_date,
+                extract_invoice_type,
+            )
 
             service_date = extract_service_date(invoice_path)
+            invoice_type = extract_invoice_type(invoice_path)
         except Exception as exc:
             log.warning("Napaka pri branju datuma storitve: %s", exc)
             service_date = None
@@ -316,6 +327,20 @@ def _write_history_files(
                 ).hexdigest()
             except Exception as exc:
                 log.warning("Napaka pri izračunu hash: %s", exc)
+
+    if invoice_type == "381" or invoice_total < 0:
+        log.info(
+            "Skipping price history logging for credit note: type=%s total=%s",
+            invoice_type,
+            invoice_total,
+        )
+        unk = Path(sup_file) / "unknown"
+        if unk.exists():
+            try:
+                shutil.rmtree(unk, ignore_errors=True)
+            except Exception:
+                pass
+        return False
 
     if invoice_hash:
         from wsm.utils import history_contains
