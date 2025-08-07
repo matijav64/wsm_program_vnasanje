@@ -543,6 +543,8 @@ def review_links(
         key = (str(row["sifra_dobavitelja"]), row["naziv_ckey"])
         if key not in booked_keys:
             current_tags = tree.item(str(i)).get("tags", ())
+            if not isinstance(current_tags, tuple):
+                current_tags = (current_tags,) if current_tags else ()
             tree.item(str(i), tags=current_tags + ("unbooked",))
         if "is_gratis" in row and row["is_gratis"]:
             current_tags = tree.item(str(i)).get("tags", ())
