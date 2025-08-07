@@ -1,0 +1,20 @@
+Metadata-Version: 2.4
+Name: wsm
+Version: 0.1.0
+License-File: LICENSE
+Requires-Dist: pandas
+Requires-Dist: pdfplumber
+Requires-Dist: openpyxl
+Requires-Dist: click
+Provides-Extra: pyqt
+Requires-Dist: PyQt5>=5.15; extra == "pyqt"
+Provides-Extra: plot
+Requires-Dist: matplotlib; extra == "plot"
+Requires-Dist: mplcursors; extra == "plot"
+Provides-Extra: dev
+Requires-Dist: pandas; extra == "dev"
+Requires-Dist: openpyxl; extra == "dev"
+Requires-Dist: pdfplumber; extra == "dev"
+Requires-Dist: PyQt5; extra == "dev"
+Requires-Dist: matplotlib; extra == "dev"
+Dynamic: license-file
