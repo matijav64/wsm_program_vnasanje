@@ -40,18 +40,6 @@ class DummyMessageBox:
         pass
 
 
-def _extract_refresh_func():
-    src = inspect.getsource(rl.review_links).splitlines()
-    start = next(
-        i for i, l in enumerate(src) if "def _refresh_header_totals" in l
-    )
-    end = start + 1
-    while end < len(src) and src[end].startswith(" "):
-        end += 1
-    snippet = textwrap.dedent("\n".join(src[start:end]))
-    return snippet
-
-
 def _extract_update_totals():
     src = inspect.getsource(rl.review_links).splitlines()
     start = next(i for i, l in enumerate(src) if "def _update_totals()" in l)
@@ -108,20 +96,24 @@ def test_header_totals_display_and_no_autofix(tmp_path):
     diff = header["net"] - total_calc
     assert not (abs(diff) <= step and diff != 0)
 
-    snippet = _extract_refresh_func()
+    snippet = _extract_update_totals()
+    total_sum = DummyWidget()
+    indicator = DummyWidget()
+    total_frame = SimpleNamespace(children={"total_sum": total_sum})
     ns = {
-        "_fmt": rl._fmt,
-        "Decimal": Decimal,
-        "neto_label": DummyWidget(),
-        "ddv_label": DummyWidget(),
-        "skupaj_label": DummyWidget(),
+        "df": pd.DataFrame({"total_net": [total_calc]}),
         "header_totals": header,
+        "total_frame": total_frame,
+        "indicator_label": indicator,
+        "Decimal": Decimal,
+        "messagebox": DummyMessageBox(),
+        "doc_discount": Decimal("0"),
     }
     exec(snippet, ns)
-    ns["_refresh_header_totals"]()
-    assert ns["neto_label"].kwargs["text"] == "Neto: 10 €"
-    assert ns["ddv_label"].kwargs["text"] == "DDV: 2.2 €"
-    assert ns["skupaj_label"].kwargs["text"] == "Skupaj: 12.2 €"
+    ns["_update_totals"]()
+    assert total_sum.kwargs["text"] == (
+        "Neto:   10.00 €\nDDV:    2.20 €\nSkupaj: 12.20 €"
+    )
 
 
 def test_totals_indicator_match():
@@ -252,17 +244,21 @@ def test_header_totals_display_small_diff(tmp_path):
     diff = header["net"] - total_calc
     assert abs(diff) <= step and diff != 0
 
-    snippet = _extract_refresh_func()
+    snippet = _extract_update_totals()
+    total_sum = DummyWidget()
+    indicator = DummyWidget()
+    total_frame = SimpleNamespace(children={"total_sum": total_sum})
     ns = {
-        "_fmt": rl._fmt,
-        "Decimal": Decimal,
-        "neto_label": DummyWidget(),
-        "ddv_label": DummyWidget(),
-        "skupaj_label": DummyWidget(),
+        "df": pd.DataFrame({"total_net": [total_calc]}),
         "header_totals": header,
+        "total_frame": total_frame,
+        "indicator_label": indicator,
+        "Decimal": Decimal,
+        "messagebox": DummyMessageBox(),
+        "doc_discount": Decimal("0"),
     }
     exec(snippet, ns)
-    ns["_refresh_header_totals"]()
-    assert ns["neto_label"].kwargs["text"] == "Neto: 10 €"
-    assert ns["ddv_label"].kwargs["text"] == "DDV: 2.2 €"
-    assert ns["skupaj_label"].kwargs["text"] == "Skupaj: 12.2 €"
+    ns["_update_totals"]()
+    assert total_sum.kwargs["text"] == (
+        f"Neto:   {total_calc:,.2f} €\nDDV:    {header['vat']:,.2f} €\nSkupaj: {(total_calc + header['vat']):,.2f} €"
+    )

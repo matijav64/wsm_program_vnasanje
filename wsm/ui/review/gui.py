@@ -387,14 +387,6 @@ def review_links(
             f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
         )
 
-    def _refresh_header_totals():
-        net = _fmt(header_totals["net"])
-        vat = _fmt(header_totals["vat"])
-        gross = _fmt(header_totals["gross"])
-        neto_label.config(text=f"Neto: {net} €")
-        ddv_label.config(text=f"DDV: {vat} €")
-        skupaj_label.config(text=f"Skupaj: {gross} €")
-
     header_lbl = tk.Label(
         root,
         textvariable=header_var,
@@ -438,20 +430,13 @@ def review_links(
     # Refresh header once widgets exist. ``after_idle`` ensures widgets are
     # fully initialized before values are set so the entries show up
     root.after_idle(_refresh_header)
-    root.after_idle(_refresh_header_totals)
     log.debug(
         f"after_idle scheduled: supplier_var={supplier_var.get()}, "
         f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
     )
 
-    totals_frame = ttk.Frame(root)
-    totals_frame.pack(fill="x", padx=8, pady=(0, 12))
-    neto_label = ttk.Label(totals_frame)
-    neto_label.pack(side="left")
-    ddv_label = ttk.Label(totals_frame)
-    ddv_label.pack(side="left", padx=10)
-    skupaj_label = ttk.Label(totals_frame)
-    skupaj_label.pack(side="left", padx=10)
+    # totals_frame and individual total labels have been removed in favor of
+    # displaying aggregated totals only within ``total_frame``.
 
 
     # Allow Escape to restore the original window size
@@ -770,9 +755,6 @@ def review_links(
         net = net_total
         vat = vat_val
         gross = calc_total
-        neto_label.config(text=f"Neto: {net:,.2f} €")
-        ddv_label.config(text=f"DDV: {vat:,.2f} €")
-        skupaj_label.config(text=f"Skupaj: {gross:,.2f} €")
         total_frame.children["total_sum"].config(
             text=(
                 f"Neto:   {net:,.2f} €\n"
