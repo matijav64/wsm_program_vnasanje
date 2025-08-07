@@ -838,7 +838,10 @@ def review_links(
         if not tree.focus():
             return "break"
         entry.delete(0, "end")
-        lb.pack_forget()
+        if lb.winfo_manager() == "grid":
+            lb.grid_remove()
+        else:
+            lb.pack_forget()
         entry.focus_set()
         return "break"
 
@@ -856,18 +859,27 @@ def review_links(
         txt = entry.get().strip().lower()
         lb.delete(0, "end")
         if not txt:
-            lb.pack_forget()
+            if lb.winfo_manager() == "grid":
+                lb.grid_remove()
+            else:
+                lb.pack_forget()
             return
         matches = [n for n in nazivi if txt in n.lower()]
         if matches:
-            lb.pack(fill="x", padx=8)
+            if lb.winfo_manager() == "grid":
+                lb.grid()
+            else:
+                lb.pack(fill="x")
             for m in matches:
                 lb.insert("end", m)
             lb.selection_set(0)
             lb.activate(0)
             lb.see(0)
         else:
-            lb.pack_forget()
+            if lb.winfo_manager() == "grid":
+                lb.grid_remove()
+            else:
+                lb.pack_forget()
 
     def _init_listbox(evt=None):
         """Give focus to the listbox and handle initial navigation."""
