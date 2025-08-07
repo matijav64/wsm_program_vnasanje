@@ -382,7 +382,6 @@ def review_links(
         else:
             # Preserve any existing invoice number displayed in the entry.
             pass
-        invoice_label.config(text=f"Račun: {invoice_var.get()}")
         supplier_var.set(supplier_name)
         header_var.set(" – ".join(parts_display))
         root.title(f"Ročna revizija – {' – '.join(parts_full)}")
@@ -425,14 +424,9 @@ def review_links(
         text="Kopiraj storitev",
         command=lambda: _copy(date_var.get()),
     ).grid(row=0, column=1, sticky="w", padx=(0, 4))
-    invoice_label = tk.Label(info_frame, text="Račun:")
-    invoice_label.grid(row=1, column=0, sticky="w", pady=(4, 0))
-    copy_button = tk.Button(
-        info_frame,
-        text="Kopiraj številko računa",
-        command=lambda: _copy(invoice_var.get()),
-    )
-    copy_button.grid(row=1, column=1, sticky="w", padx=(0, 4), pady=(4, 0))
+
+    def copy_invoice_number() -> None:
+        _copy(invoice_var.get())
 
     # Refresh header once widgets exist. ``after_idle`` ensures widgets are
     # fully initialized before values are set so the entries show up
@@ -454,6 +448,13 @@ def review_links(
     ttk.Label(totals_frame, textvariable=var_vat).grid(row=1, column=1, sticky="w")
     ttk.Label(totals_frame, text="Skupaj:").grid(row=0, column=2, sticky="w")
     ttk.Label(totals_frame, textvariable=var_total).grid(row=1, column=2, sticky="w")
+
+    root.copy_button = ttk.Button(
+        root,
+        text="Kopiraj številko računa",
+        command=copy_invoice_number,
+    )
+    root.copy_button.grid(row=6, column=0, columnspan=3, sticky="ew", pady=5)
 
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
