@@ -11,6 +11,7 @@ pytest
 pytest-cov
 mplcursors
 lxml>=5.2
+pyvirtualdisplay
 flake8
 black
 pre-commit
