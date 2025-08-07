@@ -112,16 +112,16 @@ def test_header_totals_display_and_no_autofix(tmp_path):
     ns = {
         "_fmt": rl._fmt,
         "Decimal": Decimal,
-        "var_net": DummyVar(),
-        "var_vat": DummyVar(),
-        "var_total": DummyVar(),
+        "neto_label": DummyWidget(),
+        "ddv_label": DummyWidget(),
+        "skupaj_label": DummyWidget(),
         "header_totals": header,
     }
     exec(snippet, ns)
     ns["_refresh_header_totals"]()
-    assert ns["var_net"].get() == "10"
-    assert ns["var_vat"].get() == "2.2"
-    assert ns["var_total"].get() == "12.2"
+    assert ns["neto_label"].kwargs["text"] == "Neto: 10 €"
+    assert ns["ddv_label"].kwargs["text"] == "DDV: 2.2 €"
+    assert ns["skupaj_label"].kwargs["text"] == "Skupaj: 12.2 €"
 
 
 def test_totals_indicator_match():
@@ -139,6 +139,9 @@ def test_totals_indicator_match():
         "Decimal": Decimal,
         "messagebox": DummyMessageBox(),
         "doc_discount": Decimal("0"),
+        "neto_label": DummyWidget(),
+        "ddv_label": DummyWidget(),
+        "skupaj_label": DummyWidget(),
     }
     exec(snippet, ns)
     ns["_update_totals"]()
@@ -161,6 +164,9 @@ def test_totals_indicator_mismatch():
         "Decimal": Decimal,
         "messagebox": DummyMessageBox(),
         "doc_discount": Decimal("0"),
+        "neto_label": DummyWidget(),
+        "ddv_label": DummyWidget(),
+        "skupaj_label": DummyWidget(),
     }
     exec(snippet, ns)
     ns["_update_totals"]()
@@ -250,13 +256,13 @@ def test_header_totals_display_small_diff(tmp_path):
     ns = {
         "_fmt": rl._fmt,
         "Decimal": Decimal,
-        "var_net": DummyVar(),
-        "var_vat": DummyVar(),
-        "var_total": DummyVar(),
+        "neto_label": DummyWidget(),
+        "ddv_label": DummyWidget(),
+        "skupaj_label": DummyWidget(),
         "header_totals": header,
     }
     exec(snippet, ns)
     ns["_refresh_header_totals"]()
-    assert ns["var_net"].get() == "10"
-    assert ns["var_vat"].get() == "2.2"
-    assert ns["var_total"].get() == "12.2"
+    assert ns["neto_label"].kwargs["text"] == "Neto: 10 €"
+    assert ns["ddv_label"].kwargs["text"] == "DDV: 2.2 €"
+    assert ns["skupaj_label"].kwargs["text"] == "Skupaj: 12.2 €"

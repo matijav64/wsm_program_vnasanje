@@ -353,9 +353,6 @@ def review_links(
     supplier_var = tk.StringVar()
     date_var = tk.StringVar()
     invoice_var = tk.StringVar()
-    var_net = tk.StringVar()
-    var_vat = tk.StringVar()
-    var_total = tk.StringVar()
 
     def _refresh_header():
         parts_full = [supplier_name]
@@ -391,9 +388,12 @@ def review_links(
         )
 
     def _refresh_header_totals():
-        var_net.set(_fmt(header_totals["net"]))
-        var_vat.set(_fmt(header_totals["vat"]))
-        var_total.set(_fmt(header_totals["gross"]))
+        net = _fmt(header_totals["net"])
+        vat = _fmt(header_totals["vat"])
+        gross = _fmt(header_totals["gross"])
+        neto_label.config(text=f"Neto: {net} €")
+        ddv_label.config(text=f"DDV: {vat} €")
+        skupaj_label.config(text=f"Skupaj: {gross} €")
 
     header_lbl = tk.Label(
         root,
@@ -438,23 +438,20 @@ def review_links(
     )
 
     totals_frame = ttk.Frame(root)
-    totals_frame.grid(row=5, column=0, columnspan=3, sticky="ew", padx=8, pady=(0, 12))
-    root.columnconfigure(0, weight=1)
-    root.columnconfigure(1, weight=1)
-    root.columnconfigure(2, weight=1)
-    ttk.Label(totals_frame, text="Neto:").grid(row=0, column=0, sticky="w")
-    ttk.Label(totals_frame, textvariable=var_net).grid(row=1, column=0, sticky="w")
-    ttk.Label(totals_frame, text="DDV:").grid(row=0, column=1, sticky="w")
-    ttk.Label(totals_frame, textvariable=var_vat).grid(row=1, column=1, sticky="w")
-    ttk.Label(totals_frame, text="Skupaj:").grid(row=0, column=2, sticky="w")
-    ttk.Label(totals_frame, textvariable=var_total).grid(row=1, column=2, sticky="w")
+    totals_frame.pack(fill="x", padx=8, pady=(0, 12))
+    neto_label = ttk.Label(totals_frame)
+    neto_label.pack(side="left")
+    ddv_label = ttk.Label(totals_frame)
+    ddv_label.pack(side="left", padx=10)
+    skupaj_label = ttk.Label(totals_frame)
+    skupaj_label.pack(side="left", padx=10)
 
     root.copy_button = ttk.Button(
         root,
         text="Kopiraj številko računa",
         command=copy_invoice_number,
     )
-    root.copy_button.grid(row=6, column=0, columnspan=3, sticky="ew", pady=5)
+    root.copy_button.pack(fill="x", padx=8, pady=5)
 
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
@@ -772,6 +769,9 @@ def review_links(
         net = net_total
         vat = vat_val
         gross = calc_total
+        neto_label.config(text=f"Neto: {net:,.2f} €")
+        ddv_label.config(text=f"DDV: {vat:,.2f} €")
+        skupaj_label.config(text=f"Skupaj: {gross:,.2f} €")
         total_frame.children["total_sum"].config(
             text=(
                 f"Neto:   {net:,.2f} €\n"
@@ -782,13 +782,13 @@ def review_links(
 
     bottom = None  # backward-compatible placeholder for tests
     entry = ttk.Entry(root, width=60)
-    entry.grid(row=7, column=0, columnspan=3, sticky="ew", pady=5, padx=8)
+    entry.pack(fill="x", pady=5, padx=8)
     lb = tk.Listbox(root, height=6)
-    lb.grid(row=8, column=0, columnspan=3, sticky="ew", padx=8)
-    lb.grid_remove()
+    lb.pack(fill="x", padx=8)
+    lb.pack_forget()
 
     btn_frame = tk.Frame(root)
-    btn_frame.grid(row=9, column=0, columnspan=3, sticky="e", padx=8, pady=(0, 6))
+    btn_frame.pack(fill="x", padx=8, pady=(0, 6))
 
     # --- Unit change widgets ---
     unit_options = ["kos", "kg", "L"]
@@ -838,10 +838,7 @@ def review_links(
         if not tree.focus():
             return "break"
         entry.delete(0, "end")
-        if hasattr(lb, "grid_remove"):
-            lb.grid_remove()
-        else:
-            lb.pack_forget()
+        lb.pack_forget()
         entry.focus_set()
         return "break"
 
@@ -859,27 +856,18 @@ def review_links(
         txt = entry.get().strip().lower()
         lb.delete(0, "end")
         if not txt:
-            if hasattr(lb, "grid_remove"):
-                lb.grid_remove()
-            else:
-                lb.pack_forget()
+            lb.pack_forget()
             return
         matches = [n for n in nazivi if txt in n.lower()]
         if matches:
-            if hasattr(lb, "grid"):
-                lb.grid()
-            else:
-                lb.pack(fill="x")
+            lb.pack(fill="x", padx=8)
             for m in matches:
                 lb.insert("end", m)
             lb.selection_set(0)
             lb.activate(0)
             lb.see(0)
         else:
-            if hasattr(lb, "grid_remove"):
-                lb.grid_remove()
-            else:
-                lb.pack_forget()
+            lb.pack_forget()
 
     def _init_listbox(evt=None):
         """Give focus to the listbox and handle initial navigation."""
@@ -1059,10 +1047,7 @@ def review_links(
         _update_summary()  # Update summary after confirming
         _update_totals()  # Update totals after confirming
         entry.delete(0, "end")
-        if hasattr(lb, "grid_remove"):
-            lb.grid_remove()
-        else:
-            lb.pack_forget()
+        lb.pack_forget()
         tree.focus_set()
         next_i = tree.next(sel_i)
         if next_i:
@@ -1131,7 +1116,7 @@ def review_links(
     entry.bind(
         "<Escape>",
         lambda e: (
-            (lb.grid_remove() if hasattr(lb, "grid_remove") else lb.pack_forget()),
+            lb.pack_forget(),
             entry.delete(0, "end"),
             tree.focus_set(),
             "break",

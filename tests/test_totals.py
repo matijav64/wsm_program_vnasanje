@@ -68,6 +68,9 @@ def test_totals_label_contains_terms():
         "messagebox": DummyMsgBox,
         "total_frame": DummyFrame(lbl),
         "indicator_label": indicator,
+        "neto_label": DummyLabel(),
+        "ddv_label": DummyLabel(),
+        "skupaj_label": DummyLabel(),
         "log": logging.getLogger("test"),
     }
     exec(snippet, ns)
