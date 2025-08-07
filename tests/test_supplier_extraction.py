@@ -1,68 +1,56 @@
-# flake8: noqa
 import pytest
 from lxml import etree
 
 from wsm.parsing.eslog import get_supplier_info
 
+UBL_NSMAP = {
+    "cac": "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
+    "cbc": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+}
+CAC = UBL_NSMAP["cac"]
+CBC = UBL_NSMAP["cbc"]
+
 
 @pytest.fixture
-def sample_xml():
-    xml_str = """
-<Invoice xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
-         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
-  <cac:AccountingSupplierParty>
-    <cac:Party>
-      <cac:PartyTaxScheme>
-        <cbc:CompanyID>SI69092958</cbc:CompanyID>
-      </cac:PartyTaxScheme>
-      <cac:PartyIdentification>
-        <cbc:ID schemeID="0088">3830045969997</cbc:ID>
-      </cac:PartyIdentification>
-    </cac:Party>
-  </cac:AccountingSupplierParty>
-</Invoice>
-    """
-    return etree.fromstring(xml_str.encode())
+def supplier_with_vat_and_gln():
+    invoice = etree.Element("Invoice", nsmap=UBL_NSMAP)
+    party = etree.SubElement(
+        etree.SubElement(invoice, f"{{{CAC}}}AccountingSupplierParty"),
+        f"{{{CAC}}}Party",
+    )
+    tax_scheme = etree.SubElement(party, f"{{{CAC}}}PartyTaxScheme")
+    etree.SubElement(tax_scheme, f"{{{CBC}}}CompanyID").text = "SI69092958"
+    identification = etree.SubElement(party, f"{{{CAC}}}PartyIdentification")
+    etree.SubElement(
+        identification, f"{{{CBC}}}ID", schemeID="0088"
+    ).text = "3830045969997"
+    return invoice
 
 
-def test_get_supplier_info_prioritizes_vat(sample_xml):
-    code = get_supplier_info(sample_xml)
-    assert code == "SI69092958"
+def test_vat_priority(supplier_with_vat_and_gln):
+    assert get_supplier_info(supplier_with_vat_and_gln) == "SI69092958"
 
 
-def test_get_supplier_info_fallback_to_gln():
-    xml_str = """
-<Invoice xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
-         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
-  <cac:AccountingSupplierParty>
-    <cac:Party>
-      <cac:PartyIdentification>
-        <cbc:ID schemeID="0088">3830045969997</cbc:ID>
-      </cac:PartyIdentification>
-    </cac:Party>
-  </cac:AccountingSupplierParty>
-</Invoice>
-    """
-    tree = etree.fromstring(xml_str.encode())
-    code = get_supplier_info(tree)
-    assert code == "3830045969997"
+def test_gln_fallback():
+    invoice = etree.Element("Invoice", nsmap=UBL_NSMAP)
+    party = etree.SubElement(
+        etree.SubElement(invoice, f"{{{CAC}}}AccountingSupplierParty"),
+        f"{{{CAC}}}Party",
+    )
+    identification = etree.SubElement(party, f"{{{CAC}}}PartyIdentification")
+    etree.SubElement(
+        identification, f"{{{CBC}}}ID", schemeID="0088"
+    ).text = "3830045969997"
+    assert get_supplier_info(invoice) == "3830045969997"
 
 
-def test_get_supplier_info_custom_va_tag():
-    xml_str = """
-<Invoice>
-  <VA>SI69092958</VA>
-</Invoice>
-    """
-    tree = etree.fromstring(xml_str.encode())
-    code = get_supplier_info(tree)
-    assert code == "SI69092958"
+def test_custom_va_tag():
+    invoice = etree.Element("Invoice")
+    etree.SubElement(invoice, "VA").text = "SI69092958"
+    assert get_supplier_info(invoice) == "SI69092958"
 
 
-def test_get_supplier_info_unknown():
-    xml_str = """
-<Invoice />
-    """
-    tree = etree.fromstring(xml_str.encode())
-    code = get_supplier_info(tree)
-    assert code == "Unknown"
+def test_unknown_supplier():
+    invoice = etree.Element("Invoice")
+    assert get_supplier_info(invoice) == "Unknown"
+
