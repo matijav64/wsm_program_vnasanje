@@ -9,50 +9,50 @@ from pyvirtualdisplay import Display
 
 
 def test_unbooked_highlight():
-    df = pd.DataFrame([
-        {
-            "sifra_dobavitelja": "1",
-            "naziv": "Booked",
-            "enota_norm": "",
-            "kolicina_norm": Decimal("1"),
-            "cena_pred_rabatom": Decimal("0"),
-            "rabata_pct": Decimal("0"),
-            "cena_po_rabatu": Decimal("0"),
-            "total_net": Decimal("0"),
-            "warning": "",
-            "wsm_naziv": "",
-            "dobavitelj": "",
-            "multiplier": Decimal("1"),
-        },
-        {
-            "sifra_dobavitelja": "2",
-            "naziv": "Unbooked",
-            "enota_norm": "",
-            "kolicina_norm": Decimal("1"),
-            "cena_pred_rabatom": Decimal("0"),
-            "rabata_pct": Decimal("0"),
-            "cena_po_rabatu": Decimal("0"),
-            "total_net": Decimal("0"),
-            "warning": "",
-            "wsm_naziv": "",
-            "dobavitelj": "",
-            "multiplier": Decimal("1"),
-        },
-        {
-            "sifra_dobavitelja": "3",
-            "naziv": "Multiplied",
-            "enota_norm": "",
-            "kolicina_norm": Decimal("1"),
-            "cena_pred_rabatom": Decimal("0"),
-            "rabata_pct": Decimal("0"),
-            "cena_po_rabatu": Decimal("0"),
-            "total_net": Decimal("0"),
-            "warning": "",
-            "wsm_naziv": "",
-            "dobavitelj": "",
-            "multiplier": Decimal("10"),
-        },
-    ])
+    df = pd.DataFrame(
+        [
+            {
+                "sifra_dobavitelja": "1",
+                "naziv": "Booked",
+                "enota_norm": "",
+                "kolicina_norm": Decimal("1"),
+                "cena_pred_rabatom": Decimal("0"),
+                "rabata_pct": Decimal("0"),
+                "cena_po_rabatu": Decimal("0"),
+                "total_net": Decimal("0"),
+                "warning": "",
+                "wsm_naziv": "",
+                "dobavitelj": "",
+            },
+            {
+                "sifra_dobavitelja": "2",
+                "naziv": "Unbooked",
+                "enota_norm": "",
+                "kolicina_norm": Decimal("1"),
+                "cena_pred_rabatom": Decimal("0"),
+                "rabata_pct": Decimal("0"),
+                "cena_po_rabatu": Decimal("0"),
+                "total_net": Decimal("0"),
+                "warning": "",
+                "wsm_naziv": "",
+                "dobavitelj": "",
+            },
+            {
+                "sifra_dobavitelja": "3",
+                "naziv": "Multiplied",
+                "enota_norm": "",
+                "kolicina_norm": Decimal("1"),
+                "cena_pred_rabatom": Decimal("0"),
+                "rabata_pct": Decimal("0"),
+                "cena_po_rabatu": Decimal("0"),
+                "total_net": Decimal("0"),
+                "warning": "",
+                "wsm_naziv": "",
+                "dobavitelj": "",
+            },
+        ]
+    )
+    df["multiplier"] = [Decimal("1"), Decimal("1"), Decimal("2")]
     df["naziv_ckey"] = df["naziv"].map(_clean)
 
     manual_old = pd.DataFrame([
