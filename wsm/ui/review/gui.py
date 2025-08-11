@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 import pandas as pd
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 from lxml import etree as LET
 
 from wsm.utils import short_supplier_name, _clean, _build_header_totals
@@ -25,6 +26,57 @@ from .io import _save_and_close, _load_supplier_map
 
 # Logger setup
 log = logging.getLogger(__name__)
+
+
+def _apply_multiplier(
+    df: pd.DataFrame,
+    idx: int,
+    multiplier: Decimal,
+    tree: ttk.Treeview | None = None,
+    update_summary: Callable | None = None,
+    update_totals: Callable | None = None,
+) -> None:
+    """Apply a quantity multiplier to a DataFrame row.
+
+    The quantity is multiplied by ``multiplier`` while unit prices are divided
+    by the same value so the line total remains unchanged. When a Treeview and
+    update callbacks are provided, the visual row and aggregated totals are
+    refreshed as well.
+
+    Parameters
+    ----------
+    df:
+        DataFrame containing invoice lines.
+    idx:
+        Index of the row to update.
+    multiplier:
+        Factor by which to multiply the normalized quantity.
+    tree:
+        Optional ``ttk.Treeview`` showing the invoice lines.
+    update_summary:
+        Callback to refresh the summary Treeview.
+    update_totals:
+        Callback to refresh aggregated totals.
+    """
+    if not isinstance(multiplier, Decimal):
+        multiplier = Decimal(str(multiplier))
+
+    df.at[idx, "kolicina_norm"] *= multiplier
+    df.at[idx, "cena_po_rabatu"] /= multiplier
+    df.at[idx, "cena_pred_rabatom"] /= multiplier
+    df.at[idx, "total_net"] = df.at[idx, "kolicina_norm"] * df.at[idx, "cena_po_rabatu"]
+
+    if tree is not None:
+        row_id = str(idx)
+        tree.set(row_id, "kolicina_norm", _fmt(df.at[idx, "kolicina_norm"]))
+        tree.set(row_id, "cena_pred_rabatom", _fmt(df.at[idx, "cena_pred_rabatom"]))
+        tree.set(row_id, "cena_po_rabatu", _fmt(df.at[idx, "cena_po_rabatu"]))
+        tree.set(row_id, "total_net", _fmt(df.at[idx, "total_net"]))
+
+    if update_summary:
+        update_summary()
+    if update_totals:
+        update_totals()
 
 
 def review_links(
@@ -1059,13 +1111,32 @@ def review_links(
         _update_summary()  # Update summary after confirming
         _update_totals()  # Update totals after confirming
         entry.delete(0, "end")
-        lb.grid_remove()
+        lb.pack_forget()
         tree.focus_set()
         next_i = tree.next(sel_i)
         if next_i:
             tree.selection_set(next_i)
             tree.focus(next_i)
             tree.see(next_i)
+        return "break"
+
+    def _apply_multiplier_prompt(_=None):
+        sel_i = tree.focus()
+        if not sel_i:
+            return "break"
+        multiplier_val = simpledialog.askinteger(
+            "Množitelj", "Vnesi množitelj:", parent=root, minvalue=2
+        )
+        if not multiplier_val:
+            return "break"
+        _apply_multiplier(
+            df,
+            int(sel_i),
+            Decimal(multiplier_val),
+            tree,
+            _update_summary,
+            _update_totals,
+        )
         return "break"
 
     def _clear_wsm_connection(_=None):
@@ -1114,6 +1185,7 @@ def review_links(
     # drugje pa sprozi urejanje vnosa.
     tree.bind("<Return>", _start_edit)
     tree.bind("<BackSpace>", _clear_wsm_connection)
+    tree.bind("<Control-m>", _apply_multiplier_prompt)
     tree.bind("<Up>", _tree_nav_up)
     tree.bind("<Down>", _tree_nav_down)
     tree.bind("<Double-Button-1>", _edit_unit)
