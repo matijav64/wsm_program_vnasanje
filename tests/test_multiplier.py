@@ -13,6 +13,7 @@ def test_apply_multiplier():
                 "cena_pred_rabatom": Decimal("20"),
                 "cena_po_rabatu": Decimal("10"),
                 "total_net": Decimal("20"),
+                "multiplier": Decimal("1"),
             }
         ]
     )
@@ -24,3 +25,4 @@ def test_apply_multiplier():
     assert df.at[0, "cena_pred_rabatom"] == Decimal("2")
     assert df.at[0, "cena_po_rabatu"] == Decimal("1")
     assert df.at[0, "total_net"] == original_total
+    assert df.at[0, "multiplier"] == Decimal("10")

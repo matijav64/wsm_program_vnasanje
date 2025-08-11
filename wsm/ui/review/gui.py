@@ -61,15 +61,32 @@ def _apply_multiplier(
     if not isinstance(multiplier, Decimal):
         multiplier = Decimal(str(multiplier))
 
+    if "multiplier" not in df.columns:
+        df["multiplier"] = Decimal("1")
+    try:
+        current = df.at[idx, "multiplier"]
+    except Exception:
+        current = Decimal("1")
+    if not isinstance(current, Decimal):
+        try:
+            current = Decimal(str(current))
+        except Exception:
+            current = Decimal("1")
+    df.at[idx, "multiplier"] = current * multiplier
+
     df.at[idx, "kolicina_norm"] *= multiplier
     df.at[idx, "cena_po_rabatu"] /= multiplier
     df.at[idx, "cena_pred_rabatom"] /= multiplier
-    df.at[idx, "total_net"] = df.at[idx, "kolicina_norm"] * df.at[idx, "cena_po_rabatu"]
+    df.at[idx, "total_net"] = (
+        df.at[idx, "kolicina_norm"] * df.at[idx, "cena_po_rabatu"]
+    )
 
     if tree is not None:
         row_id = str(idx)
         tree.set(row_id, "kolicina_norm", _fmt(df.at[idx, "kolicina_norm"]))
-        tree.set(row_id, "cena_pred_rabatom", _fmt(df.at[idx, "cena_pred_rabatom"]))
+        tree.set(
+            row_id, "cena_pred_rabatom", _fmt(df.at[idx, "cena_pred_rabatom"])
+        )
         tree.set(row_id, "cena_po_rabatu", _fmt(df.at[idx, "cena_po_rabatu"]))
         tree.set(row_id, "total_net", _fmt(df.at[idx, "total_net"]))
 
@@ -281,10 +298,22 @@ def review_links(
             ["sifra_dobavitelja", "naziv_ckey"]
         )["enota_norm"].to_dict()
 
+    old_multiplier_dict = {}
+    if "multiplier" in manual_old.columns:
+        old_multiplier_dict = (
+            manual_old.set_index(["sifra_dobavitelja", "naziv_ckey"])[
+                "multiplier"
+            ]
+            .apply(lambda x: Decimal(str(x)) if pd.notna(x) else Decimal("1"))
+            .to_dict()
+        )
+
     df["naziv_ckey"] = df["naziv"].map(_clean)
     booked_keys = {
         (str(s), ck)
-        for s, ck, ws in manual_old[["sifra_dobavitelja", "naziv_ckey", "wsm_sifra"]].itertuples(index=False)
+        for s, ck, ws in manual_old[
+            ["sifra_dobavitelja", "naziv_ckey", "wsm_sifra"]
+        ].itertuples(index=False)
         if pd.notna(ws) and str(ws).strip()
     }
     df["wsm_sifra"] = df.apply(
@@ -299,6 +328,7 @@ def review_links(
     df["status"] = (
         df["wsm_sifra"].notna().map({True: "POVEZANO", False: pd.NA})
     )
+    df["multiplier"] = Decimal("1")
     log.debug(f"df po inicializaciji: {df.head().to_dict()}")
 
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"]
@@ -341,7 +371,6 @@ def review_links(
         axis=1,
     )
     df["total_net"] = df["vrednost"]
-    net_total = df["total_net"].sum().quantize(Decimal("0.01"))
     df["is_gratis"] = df["rabata_pct"] >= Decimal("99.9")
     df["kolicina_norm"], df["enota_norm"] = zip(
         *[
@@ -376,11 +405,18 @@ def review_links(
     # Keep ``kolicina_norm`` as ``Decimal`` to avoid losing precision in
     # subsequent calculations and when saving the file. Previously the column
     # was cast to ``float`` which could introduce rounding errors.
+    if old_multiplier_dict:
+        for idx, row in df.iterrows():
+            key = (row["sifra_dobavitelja"], row["naziv_ckey"])
+            mult = old_multiplier_dict.get(key, Decimal("1"))
+            if mult != Decimal("1"):
+                _apply_multiplier(df, idx, mult)
     df["warning"] = pd.NA
     log.debug("df po normalizaciji: %s", df.head().to_dict())
 
     # Combine duplicate invoice lines except for gratis items
     df = _merge_same_items(df)
+    net_total = df["total_net"].sum().quantize(Decimal("0.01"))
 
     root = tk.Tk()
     # Window title shows the full supplier name while the on-screen
@@ -488,7 +524,6 @@ def review_links(
 
     # totals_frame and individual total labels have been removed in favor of
     # displaying aggregated totals only within ``total_frame``.
-
 
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
@@ -824,9 +859,7 @@ def review_links(
                 text=f"Neto: {net:,.2f} €"
             )
         if "total_vat" in total_frame.children:
-            total_frame.children["total_vat"].config(
-                text=f"DDV: {vat:,.2f} €"
-            )
+            total_frame.children["total_vat"].config(text=f"DDV: {vat:,.2f} €")
         if "total_gross" in total_frame.children:
             total_frame.children["total_gross"].config(
                 text=f"Skupaj: {gross:,.2f} €"
@@ -840,7 +873,7 @@ def review_links(
                 )
             )
 
-    bottom = None  # backward-compatible placeholder for tests
+    bottom = None  # backward-compatible placeholder for tests  # noqa: F841
     entry_frame = tk.Frame(root)
     entry_frame.pack(fill="x", padx=8)
     entry_frame.columnconfigure(0, weight=1)

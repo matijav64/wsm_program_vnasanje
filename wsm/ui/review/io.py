@@ -196,6 +196,8 @@ def _write_excel_links(
         manual_new = manual_old.set_index(["sifra_dobavitelja", "naziv_ckey"])
         if "enota_norm" not in manual_new.columns:
             manual_new["enota_norm"] = pd.NA
+        if "multiplier" not in manual_new.columns:
+            manual_new["multiplier"] = 1
         log.info(
             "Število prebranih povezav iz manual_old: %s",
             len(manual_old),
@@ -213,14 +215,17 @@ def _write_excel_links(
                 "wsm_sifra",
                 "dobavitelj",
                 "enota_norm",
+                "multiplier",
             ]
         ).set_index(["sifra_dobavitelja", "naziv_ckey"])
         log.info("Manual_old je prazen, ustvarjam nov DataFrame")
 
     df["sifra_dobavitelja"] = df["sifra_dobavitelja"].fillna("").astype(str)
+    if "multiplier" not in df.columns:
+        df["multiplier"] = 1
     df["naziv_ckey"] = df["naziv"].map(_clean)
     df_links = df.set_index(["sifra_dobavitelja", "naziv_ckey"])[
-        ["naziv", "wsm_sifra", "dobavitelj", "enota_norm"]
+        ["naziv", "wsm_sifra", "dobavitelj", "enota_norm", "multiplier"]
     ]
 
     if manual_new.empty:
@@ -234,7 +239,13 @@ def _write_excel_links(
         if not common.empty:
             manual_new.loc[
                 common,
-                ["naziv", "wsm_sifra", "dobavitelj", "enota_norm"],
+                [
+                    "naziv",
+                    "wsm_sifra",
+                    "dobavitelj",
+                    "enota_norm",
+                    "multiplier",
+                ],
             ] = df_links.loc[common]
             log.debug(
                 "Updated existing mappings with new units: %s",
