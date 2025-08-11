@@ -1163,7 +1163,7 @@ def review_links(
         _update_summary()  # Update summary after confirming
         _update_totals()  # Update totals after confirming
         entry.delete(0, "end")
-        lb.pack_forget()
+        lb.grid_remove()
         tree.focus_set()
         next_i = tree.next(sel_i)
         if next_i:
