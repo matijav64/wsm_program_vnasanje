@@ -22,6 +22,7 @@ def test_unbooked_highlight():
             "warning": "",
             "wsm_naziv": "",
             "dobavitelj": "",
+            "multiplier": Decimal("1"),
         },
         {
             "sifra_dobavitelja": "2",
@@ -35,6 +36,21 @@ def test_unbooked_highlight():
             "warning": "",
             "wsm_naziv": "",
             "dobavitelj": "",
+            "multiplier": Decimal("1"),
+        },
+        {
+            "sifra_dobavitelja": "3",
+            "naziv": "Multiplied",
+            "enota_norm": "",
+            "kolicina_norm": Decimal("1"),
+            "cena_pred_rabatom": Decimal("0"),
+            "rabata_pct": Decimal("0"),
+            "cena_po_rabatu": Decimal("0"),
+            "total_net": Decimal("0"),
+            "warning": "",
+            "wsm_naziv": "",
+            "dobavitelj": "",
+            "multiplier": Decimal("10"),
         },
     ])
     df["naziv_ckey"] = df["naziv"].map(_clean)
@@ -87,12 +103,15 @@ def test_unbooked_highlight():
             tree.item(str(i), tags=())
             key = (str(row["sifra_dobavitelja"]), row["naziv_ckey"])
             if key not in booked_keys:
-                current_tags = tree.item(str(i)).get("tags", ())
-                if not isinstance(current_tags, tuple):
-                    current_tags = (current_tags,) if current_tags else ()
-                tree.item(str(i), tags=current_tags + ("unbooked",))
+                multiplier = row.get("multiplier", Decimal("1"))
+                if multiplier <= 1:
+                    current_tags = tree.item(str(i)).get("tags", ())
+                    if not isinstance(current_tags, tuple):
+                        current_tags = (current_tags,) if current_tags else ()
+                    tree.item(str(i), tags=current_tags + ("unbooked",))
 
         assert "unbooked" not in tree.item("0").get("tags", ())
         assert "unbooked" in tree.item("1").get("tags", ())
+        assert "unbooked" not in tree.item("2").get("tags", ())
 
         root.destroy()
