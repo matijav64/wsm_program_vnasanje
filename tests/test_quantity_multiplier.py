@@ -1,4 +1,7 @@
 from decimal import Decimal
+import inspect
+import textwrap
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -13,6 +16,38 @@ pytest.importorskip("openpyxl")
 class DummyRoot:
     def quit(self):
         pass
+
+
+def _extract_multiplier_prompt():
+    src = inspect.getsource(rl.review_links).splitlines()
+    start = next(
+        i
+        for i, line in enumerate(src)
+        if line.strip().startswith("def _apply_multiplier_prompt")
+    )
+    end = next(
+        i
+        for i, line in enumerate(src[start + 1 :], start + 1)  # noqa: E203
+        if line.strip().startswith("def ")
+    )
+    snippet = textwrap.dedent("\n".join(src[start:end]))
+
+    class DummyButton:
+        def __init__(self, *a, **k):
+            pass
+
+        def grid(self, *a, **k):
+            pass
+
+    ns = {
+        "Decimal": Decimal,
+        "_apply_multiplier": rl._apply_multiplier,
+        "simpledialog": SimpleNamespace(askinteger=lambda *a, **k: 10),
+        "tk": SimpleNamespace(Button=DummyButton),
+        "btn_frame": None,
+    }
+    exec(snippet, ns)
+    return ns["_apply_multiplier_prompt"], ns
 
 
 def test_quantity_multiplier_persist(tmp_path, monkeypatch):
@@ -64,7 +99,9 @@ def test_quantity_multiplier_persist(tmp_path, monkeypatch):
 
     monkeypatch.setattr("wsm.utils.log_price_history", lambda *a, **k: None)
     monkeypatch.setattr("tkinter.messagebox.showwarning", lambda *a, **k: None)
-    monkeypatch.setattr("wsm.ui.review.io._write_history_files", lambda *a, **k: False)
+    monkeypatch.setattr(
+        "wsm.ui.review.io._write_history_files", lambda *a, **k: False
+    )
 
     _save_and_close(
         df,
@@ -92,7 +129,9 @@ def test_quantity_multiplier_persist(tmp_path, monkeypatch):
     monkeypatch.setattr(rl, "_apply_multiplier", capture_apply)
     monkeypatch.setattr(rl, "_load_supplier_map", lambda p: {})
     monkeypatch.setattr(rl, "_build_header_totals", lambda *a, **k: {})
-    monkeypatch.setattr(rl.tk, "Tk", lambda: (_ for _ in ()).throw(RuntimeError))
+    monkeypatch.setattr(
+        rl.tk, "Tk", lambda: (_ for _ in ()).throw(RuntimeError)
+    )
 
     with pytest.raises(RuntimeError):
         rl.review_links(
@@ -118,3 +157,49 @@ def test_quantity_multiplier_persist(tmp_path, monkeypatch):
     assert reloaded.at[0, "kolicina_norm"] == Decimal("10")
     assert reloaded.at[0, "cena_po_rabatu"] == Decimal("1")
     assert reloaded.at[0, "total_net"] == Decimal("10")
+
+
+def test_multiplier_button(monkeypatch):
+    apply_prompt, ns = _extract_multiplier_prompt()
+
+    df = pd.DataFrame(
+        {
+            "kolicina_norm": [Decimal("1")],
+            "cena_pred_rabatom": [Decimal("10")],
+            "cena_po_rabatu": [Decimal("10")],
+            "total_net": [Decimal("10")],
+            "multiplier": [Decimal("1")],
+        }
+    )
+
+    class DummyTree:
+        def focus(self):
+            return "0"
+
+        def set(self, *args, **kwargs):
+            pass
+
+    called = {"summary": 0, "totals": 0}
+    ns.update(
+        {
+            "df": df,
+            "tree": DummyTree(),
+            "_update_summary": lambda: called.__setitem__(
+                "summary", called["summary"] + 1
+            ),
+            "_update_totals": lambda: called.__setitem__(
+                "totals", called["totals"] + 1
+            ),
+            "root": object(),
+        }
+    )
+
+    apply_prompt()
+
+    assert df.at[0, "kolicina_norm"] == Decimal("10")
+    assert df.at[0, "cena_pred_rabatom"] == Decimal("1")
+    assert df.at[0, "cena_po_rabatu"] == Decimal("1")
+    assert df.at[0, "total_net"] == Decimal("10")
+    assert df.at[0, "multiplier"] == Decimal("10")
+    assert called["summary"] == 1
+    assert called["totals"] == 1

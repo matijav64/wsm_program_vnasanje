@@ -1191,6 +1191,13 @@ def review_links(
         )
         return "break"
 
+    multiplier_btn = tk.Button(
+        btn_frame,
+        text="Pomnoži količino z 10",
+        command=_apply_multiplier_prompt,
+    )
+    multiplier_btn.grid(row=0, column=2, padx=(6, 0))
+
     def _clear_wsm_connection(_=None):
         sel_i = tree.focus()
         if not sel_i:
