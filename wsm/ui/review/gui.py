@@ -1193,7 +1193,7 @@ def review_links(
 
     multiplier_btn = tk.Button(
         btn_frame,
-        text="Pomnoži količino z 10",
+        text="Pomnoži z koločino X",
         command=_apply_multiplier_prompt,
     )
     multiplier_btn.grid(row=0, column=2, padx=(6, 0))
