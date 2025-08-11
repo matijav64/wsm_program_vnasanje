@@ -628,18 +628,25 @@ def review_links(
         df.at[i, "warning"] = tooltip
         key = (str(row["sifra_dobavitelja"]), row["naziv_ckey"])
         if key not in booked_keys:
-            multiplier = row.get("multiplier", Decimal("1"))
-            if multiplier > 1:
+            if "multiplier" in row:
+                multiplier_raw = row.get("multiplier", 1)
+            else:
+                multiplier_raw = old_multiplier_dict.get(key, 1)
+            try:
+                multiplier = Decimal(str(multiplier_raw))
+            except Exception:
+                multiplier = Decimal("1")
+            if multiplier <= 1:
+                current_tags = tree.item(str(i)).get("tags", ())
+                if not isinstance(current_tags, tuple):
+                    current_tags = (current_tags,) if current_tags else ()
+                tree.item(str(i), tags=current_tags + ("unbooked",))
+            else:
                 logging.debug(
                     "Skipping unbooked tag for row %s due to multiplier %s",
                     i,
                     multiplier,
                 )
-            else:
-                current_tags = tree.item(str(i)).get("tags", ())
-                if not isinstance(current_tags, tuple):
-                    current_tags = (current_tags,) if current_tags else ()
-                tree.item(str(i), tags=current_tags + ("unbooked",))
         if "is_gratis" in row and row["is_gratis"]:
             current_tags = tree.item(str(i)).get("tags", ())
             if not isinstance(current_tags, tuple):
