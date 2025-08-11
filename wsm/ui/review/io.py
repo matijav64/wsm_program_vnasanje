@@ -255,6 +255,18 @@ def _write_excel_links(
     new_items = df_links[~df_links.index.isin(manual_new.index)]
     manual_new = pd.concat([manual_new, new_items])
     manual_new = manual_new.reset_index()
+    manual_new["multiplier"] = manual_new["multiplier"].apply(
+        lambda x: (Decimal(str(x)) if pd.notna(x) else 1)
+    )
+    non_default_mults = manual_new[manual_new["multiplier"] != 1]
+    log.info("Saving multipliers for %s items", len(non_default_mults))
+    if not non_default_mults.empty:
+        log.debug(
+            "Multiplier details: %s",
+            non_default_mults[
+                ["sifra_dobavitelja", "naziv", "multiplier"]
+            ].to_dict(orient="records"),
+        )
 
     log.info(f"Shranjujem {len(manual_new)} povezav v {links_file}")
     log.debug(f"Primer shranjenih povezav: {manual_new.head().to_dict()}")

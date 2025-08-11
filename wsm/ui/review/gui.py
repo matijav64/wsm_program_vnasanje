@@ -61,6 +61,9 @@ def _apply_multiplier(
     if not isinstance(multiplier, Decimal):
         multiplier = Decimal(str(multiplier))
 
+    old_qty = df.at[idx, "kolicina_norm"]
+    old_price = df.at[idx, "cena_po_rabatu"]
+
     if "multiplier" not in df.columns:
         df["multiplier"] = Decimal("1")
     try:
@@ -79,6 +82,16 @@ def _apply_multiplier(
     df.at[idx, "cena_pred_rabatom"] /= multiplier
     df.at[idx, "total_net"] = (
         df.at[idx, "kolicina_norm"] * df.at[idx, "cena_po_rabatu"]
+    )
+
+    log.debug(
+        "Applied multiplier %s to row %s: quantity %s -> %s, price %s -> %s",
+        multiplier,
+        idx,
+        old_qty,
+        df.at[idx, "kolicina_norm"],
+        old_price,
+        df.at[idx, "cena_po_rabatu"],
     )
 
     if tree is not None:
@@ -406,6 +419,12 @@ def review_links(
     # subsequent calculations and when saving the file. Previously the column
     # was cast to ``float`` which could introduce rounding errors.
     if old_multiplier_dict:
+        non_default = {
+            k: v for k, v in old_multiplier_dict.items() if v != Decimal("1")
+        }
+        if non_default:
+            log.info("Applying multipliers for %d rows", len(non_default))
+            log.debug("Multiplier mapping: %s", non_default)
         for idx, row in df.iterrows():
             key = (row["sifra_dobavitelja"], row["naziv_ckey"])
             mult = old_multiplier_dict.get(key, Decimal("1"))
