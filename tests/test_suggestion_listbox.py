@@ -1,11 +1,16 @@
 import inspect
 import textwrap
 from decimal import Decimal
+import shutil
 
 import pandas as pd
 import tkinter as tk
 from tkinter import ttk
 from pyvirtualdisplay import Display
+import pytest
+
+if shutil.which("Xvfb") is None:
+    pytest.skip("Xvfb not installed", allow_module_level=True)
 
 import wsm.ui.review.gui as rl
 
@@ -27,6 +32,7 @@ def _extract_confirm():
         "_fmt": rl._fmt,
         "log": rl.log,
         "price_warn_threshold": Decimal("5"),
+        "_schedule_totals": lambda: None,
     }
     exec(snippet, ns)
     return ns["_confirm"], ns
@@ -90,7 +96,7 @@ def test_listbox_hidden_after_confirm(monkeypatch, tmp_path):
                 "suppliers_file": tmp_path,
                 "cols": cols,
                 "_update_summary": lambda: None,
-                "_update_totals": lambda: None,
+                "_schedule_totals": lambda: None,
             }
         )
         monkeypatch.setattr("wsm.utils.load_last_price", lambda *a, **k: None)

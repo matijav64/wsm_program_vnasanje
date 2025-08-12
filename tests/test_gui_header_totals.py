@@ -5,6 +5,7 @@ import textwrap
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 import wsm.ui.review.gui as rl
 from wsm.parsing.eslog import (
@@ -34,6 +35,9 @@ class DummyWidget:
     def config(self, **kwargs):
         self.kwargs.update(kwargs)
 
+    def winfo_exists(self):
+        return True
+
 
 class DummyMessageBox:
     def showwarning(self, *args, **kwargs):
@@ -42,7 +46,7 @@ class DummyMessageBox:
 
 def _extract_update_totals():
     src = inspect.getsource(rl.review_links).splitlines()
-    start = next(i for i, l in enumerate(src) if "def _update_totals()" in l)
+    start = next(i for i, l in enumerate(src) if "def _safe_update_totals()" in l)
     indent = len(src[start]) - len(src[start].lstrip())
     end = start + 1
     while end < len(src) and (
@@ -53,7 +57,14 @@ def _extract_update_totals():
     return snippet
 
 
-def test_header_totals_display_and_no_autofix(tmp_path):
+def test_header_totals_display_and_no_autofix(monkeypatch, tmp_path):
+    tk = pytest.importorskip("tkinter")
+    try:
+        _r = tk.Tk()
+        _r.destroy()
+    except tk.TclError:
+        pytest.skip("No display available")
+
     xml = (
         "<Invoice xmlns='urn:eslog:2.00'>"
         "  <M_INVOIC>"
@@ -85,35 +96,45 @@ def test_header_totals_display_and_no_autofix(tmp_path):
     xml_path.write_text(xml)
 
     df, ok = parse_eslog_invoice(xml_path)
-    header = {
-        "net": extract_header_net(xml_path),
-        "vat": extract_total_tax(xml_path),
-        "gross": extract_header_gross(xml_path),
-    }
-    assert df[df["sifra_dobavitelja"] == "_DOC_"].empty
-    total_calc = df[df["sifra_dobavitelja"] != "_DOC_"]["vrednost"].sum()
-    step = detect_round_step(header["net"], total_calc)
-    diff = header["net"] - total_calc
-    assert not (abs(diff) <= step and diff != 0)
+    assert ok
 
-    snippet = _extract_update_totals()
-    total_sum = DummyWidget()
-    indicator = DummyWidget()
-    total_frame = SimpleNamespace(children={"total_sum": total_sum})
-    ns = {
-        "df": pd.DataFrame({"total_net": [total_calc]}),
-        "header_totals": header,
-        "total_frame": total_frame,
-        "indicator_label": indicator,
-        "Decimal": Decimal,
-        "messagebox": DummyMessageBox(),
-        "doc_discount": Decimal("0"),
-    }
-    exec(snippet, ns)
-    ns["_update_totals"]()
-    assert total_sum.kwargs["text"] == (
-        "Neto:   10.00 €\nDDV:    2.20 €\nSkupaj: 12.20 €"
+    links_file = tmp_path / "suppliers" / "unknown" / "x.xlsx"
+    links_file.parent.mkdir(parents=True, exist_ok=True)
+
+    wsm_df = pd.DataFrame({"wsm_naziv": ["Item"], "wsm_sifra": ["0001"]})
+
+    monkeypatch.setattr(rl, "_load_supplier_map", lambda p: {})
+    monkeypatch.setattr("tkinter.messagebox.showwarning", lambda *a, **k: None)
+
+    def immediate_after(self, delay, func=None, *args):
+        if func:
+            func(*args)
+        return "after"
+
+    monkeypatch.setattr(tk.Misc, "after", immediate_after)
+    monkeypatch.setattr(tk.Misc, "after_idle", lambda self, func, *a: func(*a))
+    monkeypatch.setattr(tk.Misc, "after_cancel", lambda self, _id: None)
+    monkeypatch.setattr(tk.Tk, "mainloop", lambda self: None)
+
+    res_df = rl.review_links(
+        df,
+        wsm_df,
+        links_file,
+        Decimal("10"),
+        invoice_path=xml_path,
     )
+
+    root = tk._default_root
+    total_frame = next(
+        c for c in root.winfo_children() if "total_sum" in getattr(c, "children", {})
+    )
+    total_sum = total_frame.children["total_sum"]
+    assert (
+        total_sum.cget("text")
+        == "Neto:   10.00 €\nDDV:    2.20 €\nSkupaj: 12.20 €"
+    )
+    assert res_df[res_df["sifra_dobavitelja"] == "_DOC_"].empty
+    root.destroy()
 
 
 def test_totals_indicator_match():
@@ -134,9 +155,11 @@ def test_totals_indicator_match():
         "neto_label": DummyWidget(),
         "ddv_label": DummyWidget(),
         "skupaj_label": DummyWidget(),
+        "root": SimpleNamespace(winfo_exists=lambda: True),
+        "closing": False,
     }
     exec(snippet, ns)
-    ns["_update_totals"]()
+    ns["_safe_update_totals"]()
     assert indicator.kwargs["text"] == "✓"
     assert indicator.kwargs["style"] == "Indicator.Green.TLabel"
 
@@ -159,9 +182,11 @@ def test_totals_indicator_mismatch():
         "neto_label": DummyWidget(),
         "ddv_label": DummyWidget(),
         "skupaj_label": DummyWidget(),
+        "root": SimpleNamespace(winfo_exists=lambda: True),
+        "closing": False,
     }
     exec(snippet, ns)
-    ns["_update_totals"]()
+    ns["_safe_update_totals"]()
     assert indicator.kwargs["text"] == "✗"
     assert indicator.kwargs["style"] == "Indicator.Red.TLabel"
 
@@ -256,9 +281,11 @@ def test_header_totals_display_small_diff(tmp_path):
         "Decimal": Decimal,
         "messagebox": DummyMessageBox(),
         "doc_discount": Decimal("0"),
+        "root": SimpleNamespace(winfo_exists=lambda: True),
+        "closing": False,
     }
     exec(snippet, ns)
-    ns["_update_totals"]()
+    ns["_safe_update_totals"]()
     assert total_sum.kwargs["text"] == (
         f"Neto:   {total_calc:,.2f} €\nDDV:    {header['vat']:,.2f} €\nSkupaj: {(total_calc + header['vat']):,.2f} €"
     )
