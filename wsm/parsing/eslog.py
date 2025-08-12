@@ -856,6 +856,11 @@ def _doc_discount_from_line(sg26: LET._Element) -> Decimal | None:
     lines also include either an explicit ``MOA 204`` or an allowance in
     ``G_SG39``.  When detected the absolute ``MOA 203`` amount is returned,
     otherwise ``None`` is yielded.
+
+    ``_doc_discount_from_line`` also recognises a variant where suppliers
+    provide a line with both net and gross prices set to ``0`` and the discount
+    amount encoded in ``MOA 204`` or as an allowance inside ``G_SG39``.  In this
+    case the ``MOA 204`` value or the calculated line discount is returned.
     """
 
     qty_el = sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS)
@@ -864,7 +869,7 @@ def _doc_discount_from_line(sg26: LET._Element) -> Decimal | None:
     qty = _decimal(qty_el)
 
     moa203 = None
-    moa204_present = False
+    moa204: Decimal | None = None
     has_discount = False
     for moa in sg26.findall(".//e:S_MOA", NS) + sg26.findall(".//S_MOA"):
         code_el = moa.find("./e:C_C516/e:D_5025", NS)
@@ -877,15 +882,37 @@ def _doc_discount_from_line(sg26: LET._Element) -> Decimal | None:
         if code == "203":
             moa203 = _decimal(val_el)
         elif code == "204":
-            moa204_present = True
+            moa204 = _decimal(val_el)
 
     for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(".//G_SG39"):
         if _text(sg39.find("./e:S_ALC/e:D_5463", NS)) == "A":
             has_discount = True
             break
 
-    if qty == 0 and moa203 is not None and (moa204_present or has_discount):
+    price_net = Decimal("0")
+    price_gross = Decimal("0")
+    for pri in sg26.findall(".//e:S_PRI", NS) + sg26.findall(".//S_PRI"):
+        code_el = pri.find("./e:C_C509/e:D_5125", NS)
+        if code_el is None:
+            code_el = pri.find("./C_C509/D_5125")
+        code = _text(code_el)
+        val_el = pri.find("./e:C_C509/e:D_5118", NS)
+        if val_el is None:
+            val_el = pri.find("./C_C509/D_5118")
+        if code == "AAA":
+            price_net = _decimal(val_el)
+        elif code == "AAB":
+            price_gross = _decimal(val_el)
+
+    if qty == 0 and moa203 is not None and (moa204 is not None or has_discount):
         return abs(moa203)
+
+    if price_net == 0 and price_gross == 0 and (moa204 is not None or has_discount):
+        if moa204 is not None and moa204 != 0:
+            return abs(moa204)
+        discount = _line_discount(sg26) + _line_pct_discount(sg26)
+        if discount != 0:
+            return abs(discount)
     return None
 
 
