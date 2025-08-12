@@ -1450,6 +1450,7 @@ def parse_invoice(source: str | Path):
                 "cena_netto": df_items["cena_netto"],
                 "kolicina": df_items["kolicina"],
                 "rabata_pct": df_items["rabata_pct"],
+                "ddv": df_items["ddv"],
                 "izracunana_vrednost": df_items["vrednost"],
             },
             dtype=object,
