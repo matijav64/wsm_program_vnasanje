@@ -39,5 +39,5 @@ def test_line_tax_sums_multiple_entries(tmp_path: Path) -> None:
 
     root = ET.parse(xml_path).getroot()
     sg26 = root.findall(".//e:G_SG26", NS)[0]
-    tax = _line_tax(sg26)
+    tax = _line_tax(sg26)[0]
     assert tax == Decimal("1.20")

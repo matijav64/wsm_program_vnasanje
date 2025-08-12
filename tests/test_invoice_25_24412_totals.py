@@ -11,7 +11,7 @@ def test_invoice_25_24412_totals():
 
     root = ET.parse(xml_path).getroot()
     lines = root.findall(".//e:G_SG26", NS)
-    taxes = [_line_tax(sg) for sg in lines]
+    taxes = [_line_tax(sg)[0] for sg in lines]
     tax_total = sum(taxes)
 
     grand_total = df["vrednost"].sum() + tax_total

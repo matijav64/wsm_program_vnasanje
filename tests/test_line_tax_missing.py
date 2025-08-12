@@ -13,7 +13,7 @@ def test_line_tax_fallback_to_rate():
 
     root = ET.parse(xml_path).getroot()
     lines = root.findall(".//e:G_SG26", NS)
-    taxes = [_line_tax(sg) for sg in lines]
+    taxes = [_line_tax(sg)[0] for sg in lines]
     assert taxes[0] == Decimal("2.20")
     assert taxes[1] == Decimal("1.76")
     assert sum(taxes) == Decimal("3.96")

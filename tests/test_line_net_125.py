@@ -17,6 +17,6 @@ def test_line_net_and_tax_with_moa125():
     assert nets[0] == Decimal("10")
     assert nets[1] == Decimal("8")
 
-    taxes = [_line_tax(sg) for sg in lines]
+    taxes = [_line_tax(sg)[0] for sg in lines]
     assert taxes[0] == Decimal("2.20")
     assert taxes[1] == Decimal("1.76")
