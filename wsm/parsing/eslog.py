@@ -370,7 +370,9 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
                     line_base += _decimal(val_el)
 
         tax_total = Decimal("0")
-        for sg52 in root.findall(".//e:G_SG52", NS) + root.findall(".//G_SG52"):
+        for sg52 in root.findall(".//e:G_SG52", NS) + root.findall(
+            ".//G_SG52"
+        ):
             for moa in sg52.findall("./e:S_MOA", NS) + sg52.findall("./S_MOA"):
                 code_el = moa.find("./e:C_C516/e:D_5025", NS)
                 if code_el is None:
@@ -669,7 +671,10 @@ def sum_moa(
             ancestor = ancestor.getparent()
         if skip:
             continue
-        if sg50.find("./e:S_ALC", NS) is not None or sg50.find("./S_ALC") is not None:
+        if (
+            sg50.find("./e:S_ALC", NS) is not None
+            or sg50.find("./S_ALC") is not None
+        ):
             continue
         for moa in sg50.findall("./e:S_MOA", NS) + sg50.findall("./S_MOA"):
             code_el = moa.find("./e:C_C516/e:D_5025", NS)
@@ -984,8 +989,14 @@ def _line_tax(
             if rate_percent:
                 break
         if rate_percent == 0 and default_rate is not None:
-            rate_percent = (default_rate * 100).quantize(Decimal("0.01"), ROUND_HALF_UP)
-        expected_tax = calculate_vat(net_amount, rate_percent) if rate_percent else tax_amount
+            rate_percent = (default_rate * 100).quantize(
+                Decimal("0.01"), ROUND_HALF_UP
+            )
+        expected_tax = (
+            calculate_vat(net_amount, rate_percent)
+            if rate_percent
+            else tax_amount
+        )
         if net_amount and (rate_percent == 0 or expected_tax != tax_amount):
             rate_percent = (tax_amount / net_amount * 100).quantize(
                 Decimal("0.01"), ROUND_HALF_UP
@@ -994,7 +1005,9 @@ def _line_tax(
 
     # --- MOA 124 ---
     abs_tax = Decimal("0")
-    for moa in sg26.findall(".//e:G_SG34/e:S_MOA", NS) + sg26.findall(".//S_MOA"):
+    for moa in sg26.findall(".//e:G_SG34/e:S_MOA", NS) + sg26.findall(
+        ".//S_MOA"
+    ):
         code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
             moa.find("./C_C516/D_5025")
         )
@@ -1016,7 +1029,9 @@ def _line_tax(
             if rate_percent:
                 break
         if rate_percent == 0 and default_rate is not None:
-            rate_percent = (default_rate * 100).quantize(Decimal("0.01"), ROUND_HALF_UP)
+            rate_percent = (default_rate * 100).quantize(
+                Decimal("0.01"), ROUND_HALF_UP
+            )
         return tax_amount, rate_percent
 
     # --- fallback to rate from S_TAX or default ---
@@ -1030,10 +1045,14 @@ def _line_tax(
         if rate_percent:
             break
     if rate_percent == 0 and default_rate is not None:
-        rate_percent = (default_rate * 100).quantize(Decimal("0.01"), ROUND_HALF_UP)
+        rate_percent = (default_rate * 100).quantize(
+            Decimal("0.01"), ROUND_HALF_UP
+        )
 
     tax_amount = (
-        calculate_vat(net_amount, rate_percent) if rate_percent else Decimal("0.00")
+        calculate_vat(net_amount, rate_percent)
+        if rate_percent
+        else Decimal("0.00")
     )
     return tax_amount, rate_percent
 
@@ -1124,7 +1143,10 @@ def parse_eslog_invoice(
         tax_amount, vat_rate = _line_tax(
             sg26, header_rate if header_rate != 0 else None
         )
-        item["ddv"] = tax_amount if tax_amount is not None else Decimal("0")
+        item["ddv"] = tax_amount
+        if tax_amount is None:
+            vat_mismatch = True
+            tax_amount = Decimal("0")
         if net_amount == 0 and gross_amount != 0:
             net_amount = (gross_amount - rebate - tax_amount).quantize(
                 Decimal("0.01"), ROUND_HALF_UP
@@ -1143,17 +1165,6 @@ def parse_eslog_invoice(
         tax_total = (tax_total + tax_amount).quantize(
             Decimal("0.01"), ROUND_HALF_UP
         )
-
-        expected_tax = calculate_vat(net_amount, vat_rate)
-        if expected_tax != tax_amount:
-            log.error(
-                "Line VAT mismatch: XML %s vs calculated %s (net %s rate %s)",
-                tax_amount,
-                expected_tax,
-                net_amount,
-                vat_rate,
-            )
-            vat_mismatch = True
 
         # rabat na ravni vrstice
         explicit_pct: Decimal | None = None
