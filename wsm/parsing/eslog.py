@@ -37,6 +37,7 @@ XML_PARSER = LET.XMLParser(resolve_entities=False)
 # Use higher precision to avoid premature rounding when summing values.
 decimal.getcontext().prec = 28  # Python's default precision
 DEC2 = Decimal("0.01")
+DOC_CODES = {"204", "260", "131", "128", "176", "500", "25"}
 
 # module logger
 log = logging.getLogger(__name__)
@@ -60,6 +61,20 @@ def _decimal(el: LET._Element | None) -> Decimal:
         return Decimal(txt)
     except Exception:
         return Decimal("0")
+
+
+def _sum_moa(node: LET._Element, codes: set[str]) -> Decimal:
+    total = Decimal("0")
+    for m in node.findall(".//e:S_MOA", NS) + node.findall(".//S_MOA"):
+        q = m.find("e:C_C516/e:D_5025", NS)
+        if q is None:
+            q = m.find("C_C516/D_5025")
+        v = m.find("e:C_C516/e:D_5004", NS)
+        if v is None:
+            v = m.find("C_C516/D_5004")
+        if q is not None and v is not None and (q.text or "").strip() in codes:
+            total += abs(_decimal(v))
+    return total
 
 
 # Namespace za ESLOG (če je prisoten)
@@ -848,72 +863,30 @@ def _line_pct_discount(sg26: LET._Element) -> Decimal:
     return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 
-def _doc_discount_from_line(sg26: LET._Element) -> Decimal | None:
-    """Return document level discount encoded as a line item.
+def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
+    base = _sum_moa(seg, {"203"})
+    if base != 0:
+        return None
 
-    Some suppliers encode the document level allowance as a regular ``G_SG26``
-    line with ``QTY`` set to ``0`` and the discount value in ``MOA 203``.  Such
-    lines also include either an explicit ``MOA 204`` or an allowance in
-    ``G_SG39``.  When detected the absolute ``MOA 203`` amount is returned,
-    otherwise ``None`` is yielded.
+    disc = Decimal("0")
+    for moa in seg.findall("./e:S_MOA", NS) + seg.findall("./S_MOA"):
+        q = moa.find("e:C_C516/e:D_5025", NS)
+        if q is None:
+            q = moa.find("C_C516/D_5025")
+        v = moa.find("e:C_C516/e:D_5004", NS)
+        if v is None:
+            v = moa.find("C_C516/D_5004")
+        if q is not None and v is not None and (q.text or "").strip() in DOC_CODES:
+            disc += abs(_decimal(v))
 
-    ``_doc_discount_from_line`` also recognises a variant where suppliers
-    provide a line with both net and gross prices set to ``0`` and the discount
-    amount encoded in ``MOA 204`` or as an allowance inside ``G_SG39``.  In this
-    case the ``MOA 204`` value or the calculated line discount is returned.
-    """
+    for sg39 in seg.findall(".//e:G_SG39", NS) + seg.findall(".//G_SG39"):
+        alc_type = sg39.find("e:S_ALC/e:D_5463", NS)
+        if alc_type is None:
+            alc_type = sg39.find("S_ALC/D_5463")
+        if alc_type is not None and (alc_type.text or "").strip() == "A":
+            disc += _sum_moa(sg39, DOC_CODES)
 
-    qty_el = sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS)
-    if qty_el is None:
-        qty_el = sg26.find(".//S_QTY/C_C186/D_6060")
-    qty = _decimal(qty_el)
-
-    moa203 = None
-    moa204: Decimal | None = None
-    has_discount = False
-    for moa in sg26.findall(".//e:S_MOA", NS) + sg26.findall(".//S_MOA"):
-        code_el = moa.find("./e:C_C516/e:D_5025", NS)
-        if code_el is None:
-            code_el = moa.find("./C_C516/D_5025")
-        code = _text(code_el)
-        val_el = moa.find("./e:C_C516/e:D_5004", NS)
-        if val_el is None:
-            val_el = moa.find("./C_C516/D_5004")
-        if code == "203":
-            moa203 = _decimal(val_el)
-        elif code == "204":
-            moa204 = _decimal(val_el)
-
-    for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(".//G_SG39"):
-        if _text(sg39.find("./e:S_ALC/e:D_5463", NS)) == "A":
-            has_discount = True
-            break
-
-    price_net = Decimal("0")
-    price_gross = Decimal("0")
-    for pri in sg26.findall(".//e:S_PRI", NS) + sg26.findall(".//S_PRI"):
-        code_el = pri.find("./e:C_C509/e:D_5125", NS)
-        if code_el is None:
-            code_el = pri.find("./C_C509/D_5125")
-        code = _text(code_el)
-        val_el = pri.find("./e:C_C509/e:D_5118", NS)
-        if val_el is None:
-            val_el = pri.find("./C_C509/D_5118")
-        if code == "AAA":
-            price_net = _decimal(val_el)
-        elif code == "AAB":
-            price_gross = _decimal(val_el)
-
-    if qty == 0 and moa203 is not None and (moa204 is not None or has_discount):
-        return abs(moa203)
-
-    if price_net == 0 and price_gross == 0 and (moa204 is not None or has_discount):
-        if moa204 is not None and moa204 != 0:
-            return abs(moa204)
-        discount = _line_discount(sg26) + _line_pct_discount(sg26)
-        if discount != 0:
-            return abs(discount)
-    return None
+    return disc.quantize(DEC2, ROUND_HALF_UP) if disc > 0 else None
 
 
 def _line_gross(sg26: LET._Element) -> Decimal:
@@ -966,6 +939,11 @@ def _line_net(sg26: LET._Element) -> Decimal:
     if _doc_discount_from_line(sg26) is not None:
         return Decimal("0")
 
+    base = _sum_moa(sg26, {"203"})
+    disc = _sum_moa(sg26, DOC_CODES)
+    if base == 0 and disc > 0:
+        return Decimal("0.00")
+
     for moa in sg26.findall(".//e:S_MOA", NS) + sg26.findall(".//S_MOA"):
         code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
             moa.find("./C_C516/D_5025")
@@ -976,7 +954,8 @@ def _line_net(sg26: LET._Element) -> Decimal:
                 val_el = moa.find("./C_C516/D_5004")
             val = _decimal(val_el)
             if val:
-                return val.quantize(DEC2, ROUND_HALF_UP)
+                net = val.quantize(DEC2, ROUND_HALF_UP)
+                return net if net >= 0 else Decimal("0.00")
 
     qty = _decimal(sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
     price_net = Decimal("0")
@@ -1026,7 +1005,7 @@ def _line_net(sg26: LET._Element) -> Decimal:
     amount = (price_net * qty - _line_discount(sg26)).quantize(
         DEC2, ROUND_HALF_UP
     )
-    return amount
+    return amount if amount >= 0 else Decimal("0.00")
 
 
 def _line_net_before_discount(
