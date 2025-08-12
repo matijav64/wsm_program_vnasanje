@@ -441,10 +441,23 @@ def review_links(
     df = _merge_same_items(df)
     net_total = df["total_net"].sum().quantize(Decimal("0.01"))
 
-    root = tk.Tk()
+    base_root = tk._default_root
+    if base_root is not None:
+        root = tk.Toplevel(base_root)
+        is_toplevel = True
+    else:
+        root = tk.Tk()
+        is_toplevel = False
+
     # Window title shows the full supplier name while the on-screen
     # header can be a bit shorter for readability.
     root.title(f"Ročna revizija – {supplier_name}")
+
+    closing = False
+    bindings: list[tuple[tk.Misc, str]] = []
+    header_after_id: str | None = None
+    price_tip: tk.Toplevel | None = None
+    last_warn_item: str | None = None
 
     # Determine how many rows can fit based on the screen height. Roughly
     # 500px is taken by the header, summary and button sections so we convert
@@ -539,7 +552,7 @@ def review_links(
 
     # Refresh header once widgets exist. ``after_idle`` ensures widgets are
     # fully initialized before values are set so the entries show up
-    root.after_idle(_refresh_header)
+    header_after_id = root.after_idle(_refresh_header)
     log.debug(
         f"after_idle scheduled: supplier_var={supplier_var.get()}, "
         f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
@@ -550,6 +563,7 @@ def review_links(
 
     # Allow Escape to restore the original window size
     root.bind("<Escape>", lambda e: root.state("normal"))
+    bindings.append((root, "<Escape>"))
 
     frame = tk.Frame(root)
     frame.pack(fill="both", expand=True)
@@ -835,6 +849,9 @@ def review_links(
     indicator_label.pack(side="left", padx=5)
 
     def _update_totals():
+        if globals().get("closing"):
+            return
+
         net_raw = df["total_net"].sum()
         net_total = (
             Decimal(str(net_raw))
@@ -880,30 +897,31 @@ def review_links(
                     ),
                 )
 
-        indicator_label.config(
-            text="✓" if difference <= tolerance else "✗",
-            style=(
-                "Indicator.Green.TLabel"
-                if difference <= tolerance
-                else "Indicator.Red.TLabel"
-            ),
-        )
+        if getattr(indicator_label, "winfo_exists", lambda: True)():
+            indicator_label.config(
+                text="✓" if difference <= tolerance else "✗",
+                style=(
+                    "Indicator.Green.TLabel"
+                    if difference <= tolerance
+                    else "Indicator.Red.TLabel"
+                ),
+            )
 
         net = net_total
         vat = vat_val
         gross = calc_total
-        if "total_net" in total_frame.children:
-            total_frame.children["total_net"].config(
-                text=f"Neto: {net:,.2f} €"
-            )
-        if "total_vat" in total_frame.children:
-            total_frame.children["total_vat"].config(text=f"DDV: {vat:,.2f} €")
-        if "total_gross" in total_frame.children:
-            total_frame.children["total_gross"].config(
-                text=f"Skupaj: {gross:,.2f} €"
-            )
-        if "total_sum" in total_frame.children:
-            total_frame.children["total_sum"].config(
+        widget = total_frame.children.get("total_net")
+        if widget and getattr(widget, "winfo_exists", lambda: True)():
+            widget.config(text=f"Neto: {net:,.2f} €")
+        widget = total_frame.children.get("total_vat")
+        if widget and getattr(widget, "winfo_exists", lambda: True)():
+            widget.config(text=f"DDV: {vat:,.2f} €")
+        widget = total_frame.children.get("total_gross")
+        if widget and getattr(widget, "winfo_exists", lambda: True)():
+            widget.config(text=f"Skupaj: {gross:,.2f} €")
+        widget = total_frame.children.get("total_sum")
+        if widget and getattr(widget, "winfo_exists", lambda: True)():
+            widget.config(
                 text=(
                     f"Neto:   {net:,.2f} €\n"
                     f"DDV:    {vat:,.2f} €\n"
@@ -928,22 +946,53 @@ def review_links(
     # --- Unit change widgets ---
     unit_options = ["kos", "kg", "L"]
 
+    def _cleanup():
+        nonlocal closing, price_tip, last_warn_item
+        closing = True
+        if header_after_id:
+            try:
+                root.after_cancel(header_after_id)
+            except Exception:
+                pass
+        for widget, seq in bindings:
+            try:
+                widget.unbind(seq)
+            except Exception:
+                pass
+        if price_tip is not None:
+            try:
+                price_tip.destroy()
+            except Exception:
+                pass
+            price_tip = None
+            last_warn_item = None
+
     def _finalize_and_save(_=None):
         _update_summary()
         _update_totals()
-        _save_and_close(
-            df,
-            manual_old,
-            wsm_df,
-            links_file,
-            root,
-            supplier_name,
-            supplier_code,
-            sup_map,
-            suppliers_file,
-            invoice_path=invoice_path,
-            vat=supplier_vat,
-        )
+        _cleanup()
+        if is_toplevel:
+            original_quit = root.quit
+            root.quit = root.destroy
+        else:
+            original_quit = None
+        try:
+            _save_and_close(
+                df,
+                manual_old,
+                wsm_df,
+                links_file,
+                root,
+                supplier_name,
+                supplier_code,
+                sup_map,
+                suppliers_file,
+                invoice_path=invoice_path,
+                vat=supplier_vat,
+            )
+        finally:
+            if original_quit is not None:
+                root.quit = original_quit
 
     save_btn = tk.Button(
         btn_frame,
@@ -953,7 +1002,11 @@ def review_links(
     )
 
     def _exit():
-        root.quit()
+        _cleanup()
+        if is_toplevel:
+            root.destroy()
+        else:
+            root.quit()
 
     exit_btn = tk.Button(
         btn_frame,
@@ -965,6 +1018,8 @@ def review_links(
     exit_btn.grid(row=0, column=1, padx=(6, 0))
 
     root.bind("<F10>", _finalize_and_save)
+    bindings.append((root, "<F10>"))
+    root.protocol("WM_DELETE_WINDOW", _exit)
 
     nazivi = wsm_df["wsm_naziv"].dropna().tolist()
     n2s = dict(zip(wsm_df["wsm_naziv"], wsm_df["wsm_sifra"]))
@@ -1070,9 +1125,6 @@ def review_links(
         cb.bind("<Return>", _apply)
         cb.focus_set()
         return "break"
-
-    price_tip: tk.Toplevel | None = None
-    last_warn_item: str | None = None
 
     def _hide_tooltip(_=None):
         nonlocal price_tip, last_warn_item
@@ -1262,19 +1314,31 @@ def review_links(
     # Dvojni klik na stolpec "Enota" odpre urejanje enote,
     # drugje pa sprozi urejanje vnosa.
     tree.bind("<Return>", _start_edit)
+    bindings.append((tree, "<Return>"))
     tree.bind("<BackSpace>", _clear_wsm_connection)
+    bindings.append((tree, "<BackSpace>"))
     tree.bind("<Control-m>", _apply_multiplier_prompt)
+    bindings.append((tree, "<Control-m>"))
     tree.bind("<Up>", _tree_nav_up)
+    bindings.append((tree, "<Up>"))
     tree.bind("<Down>", _tree_nav_down)
+    bindings.append((tree, "<Down>"))
     tree.bind("<Double-Button-1>", _edit_unit)
+    bindings.append((tree, "<Double-Button-1>"))
     tree.bind("<<TreeviewSelect>>", _on_select)
+    bindings.append((tree, "<<TreeviewSelect>>"))
 
     # Vezave za entry in lb
     entry.bind("<KeyRelease>", _suggest)
+    bindings.append((entry, "<KeyRelease>"))
     entry.bind("<Down>", _init_listbox)
+    bindings.append((entry, "<Down>"))
     entry.bind("<Tab>", _init_listbox)
+    bindings.append((entry, "<Tab>"))
     entry.bind("<Right>", _init_listbox)
+    bindings.append((entry, "<Right>"))
     entry.bind("<Return>", _confirm)
+    bindings.append((entry, "<Return>"))
     entry.bind(
         "<Escape>",
         lambda e: (
@@ -1284,16 +1348,24 @@ def review_links(
             "break",
         ),
     )
+    bindings.append((entry, "<Escape>"))
     lb.bind("<Return>", _confirm)
+    bindings.append((lb, "<Return>"))
     lb.bind("<Double-Button-1>", _confirm)
+    bindings.append((lb, "<Double-Button-1>"))
     lb.bind("<Down>", _nav_list)
+    bindings.append((lb, "<Down>"))
     lb.bind("<Up>", _nav_list)
+    bindings.append((lb, "<Up>"))
 
     # Prvič osveži
     _update_summary()
     _update_totals()
 
-    root.mainloop()
+    if is_toplevel:
+        root.wait_window()
+    else:
+        root.mainloop()
     try:
         root.destroy()
     except Exception:
