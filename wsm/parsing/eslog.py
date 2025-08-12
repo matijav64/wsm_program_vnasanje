@@ -37,7 +37,7 @@ XML_PARSER = LET.XMLParser(resolve_entities=False)
 # Use higher precision to avoid premature rounding when summing values.
 decimal.getcontext().prec = 28  # Python's default precision
 DEC2 = Decimal("0.01")
-DOC_CODES = {"204", "260", "131", "128", "176", "500", "25"}
+DOC_CODES = {"204", "260"}
 
 # module logger
 log = logging.getLogger(__name__)
@@ -63,7 +63,21 @@ def _decimal(el: LET._Element | None) -> Decimal:
         return Decimal("0")
 
 
-def _sum_moa(node: LET._Element, codes: set[str]) -> Decimal:
+def _sum_moa_shallow(node: LET._Element, codes: set[str]) -> Decimal:
+    total = Decimal("0")
+    for m in node.findall("./e:S_MOA", NS) + node.findall("./S_MOA"):
+        q = m.find("e:C_C516/e:D_5025", NS)
+        if q is None:
+            q = m.find("C_C516/D_5025")
+        v = m.find("e:C_C516/e:D_5004", NS)
+        if v is None:
+            v = m.find("C_C516/D_5004")
+        if q is not None and v is not None and (q.text or "").strip() in codes:
+            total += abs(_decimal(v))
+    return total
+
+
+def _sum_moa_deep(node: LET._Element, codes: set[str]) -> Decimal:
     total = Decimal("0")
     for m in node.findall(".//e:S_MOA", NS) + node.findall(".//S_MOA"):
         q = m.find("e:C_C516/e:D_5025", NS)
@@ -75,6 +89,22 @@ def _sum_moa(node: LET._Element, codes: set[str]) -> Decimal:
         if q is not None and v is not None and (q.text or "").strip() in codes:
             total += abs(_decimal(v))
     return total
+
+
+def _first_moa(node: LET._Element, codes: set[str]) -> Decimal:
+    for m in node.findall(".//e:S_MOA", NS) + node.findall(".//S_MOA"):
+        q = m.find("e:C_C516/e:D_5025", NS)
+        if q is None:
+            q = m.find("C_C516/D_5025")
+        if q is not None and (q.text or "").strip() in codes:
+            v = m.find("e:C_C516/e:D_5004", NS)
+            if v is None:
+                v = m.find("C_C516/D_5004")
+            if v is not None:
+                val = _decimal(v)
+                if val:
+                    return val
+    return Decimal("0")
 
 
 # Namespace za ESLOG (če je prisoten)
@@ -864,29 +894,24 @@ def _line_pct_discount(sg26: LET._Element) -> Decimal:
 
 
 def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
-    base = _sum_moa(seg, {"203"})
-    if base != 0:
-        return None
-
-    disc = Decimal("0")
-    for moa in seg.findall("./e:S_MOA", NS) + seg.findall("./S_MOA"):
-        q = moa.find("e:C_C516/e:D_5025", NS)
-        if q is None:
-            q = moa.find("C_C516/D_5025")
-        v = moa.find("e:C_C516/e:D_5004", NS)
-        if v is None:
-            v = moa.find("C_C516/D_5004")
-        if q is not None and v is not None and (q.text or "").strip() in DOC_CODES:
-            disc += abs(_decimal(v))
+    base = _sum_moa_shallow(seg, {"203"})
+    disc = _sum_moa_shallow(seg, DOC_CODES)
 
     for sg39 in seg.findall(".//e:G_SG39", NS) + seg.findall(".//G_SG39"):
         alc_type = sg39.find("e:S_ALC/e:D_5463", NS)
         if alc_type is None:
             alc_type = sg39.find("S_ALC/D_5463")
         if alc_type is not None and (alc_type.text or "").strip() == "A":
-            disc += _sum_moa(sg39, DOC_CODES)
+            disc += _sum_moa_deep(sg39, DOC_CODES)
 
-    return disc.quantize(DEC2, ROUND_HALF_UP) if disc > 0 else None
+    if base == 0 and disc > 0:
+        return disc.quantize(DEC2, ROUND_HALF_UP)
+
+    qty = _decimal(seg.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
+    if qty == 0 and base == disc and disc > 0:
+        return disc.quantize(DEC2, ROUND_HALF_UP)
+
+    return None
 
 
 def _line_gross(sg26: LET._Element) -> Decimal:
@@ -939,23 +964,15 @@ def _line_net(sg26: LET._Element) -> Decimal:
     if _doc_discount_from_line(sg26) is not None:
         return Decimal("0")
 
-    base = _sum_moa(sg26, {"203"})
-    disc = _sum_moa(sg26, DOC_CODES)
+    base = _sum_moa_shallow(sg26, {"203"})
+    disc = _sum_moa_shallow(sg26, DOC_CODES)
     if base == 0 and disc > 0:
         return Decimal("0.00")
 
-    for moa in sg26.findall(".//e:S_MOA", NS) + sg26.findall(".//S_MOA"):
-        code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
-            moa.find("./C_C516/D_5025")
-        )
-        if code in {"203", "125"}:
-            val_el = moa.find("./e:C_C516/e:D_5004", NS)
-            if val_el is None:
-                val_el = moa.find("./C_C516/D_5004")
-            val = _decimal(val_el)
-            if val:
-                net = val.quantize(DEC2, ROUND_HALF_UP)
-                return net if net >= 0 else Decimal("0.00")
+    val = _first_moa(sg26, {"203", "125"})
+    if val != 0:
+        net = val.quantize(DEC2, ROUND_HALF_UP)
+        return net if net >= 0 else Decimal("0.00")
 
     qty = _decimal(sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
     price_net = Decimal("0")
@@ -1468,16 +1485,20 @@ def parse_eslog_invoice(
     grand_total = extract_grand_total(xml_path)
     ok = True
     if grand_total != 0:
-        grand_total = (grand_total - doc_discount + doc_charge).quantize(
-            Decimal("0.01"), ROUND_HALF_UP
-        )
-        ok = abs(calculated_total - grand_total) <= Decimal("0.01")
-        if not ok:
-            log.warning(
-                "Invoice total mismatch: MOA 9 %s vs calculated %s",
-                grand_total,
-                calculated_total,
+        grand_total = grand_total.quantize(DEC2, ROUND_HALF_UP)
+        if abs(calculated_total - grand_total) > DEC2:
+            gt_adj = (grand_total - doc_discount + doc_charge).quantize(
+                DEC2, ROUND_HALF_UP
             )
+            if abs(calculated_total - gt_adj) <= DEC2:
+                grand_total = gt_adj
+            else:
+                ok = False
+                log.warning(
+                    "Invoice total mismatch: MOA 9 %s vs calculated %s",
+                    grand_total,
+                    calculated_total,
+                )
 
     return df, ok
 
