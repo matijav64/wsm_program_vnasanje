@@ -470,14 +470,10 @@ def _invoice_total(
 ) -> Decimal:
     """Return invoice gross total."""
 
-    if header_net != 0:
-        net = header_net
-    else:
-        net = line_net_total - doc_discount
-
-    return (net + doc_charge + tax_total).quantize(
-        DEC2, rounding=ROUND_HALF_UP
-    )
+    net = header_net if header_net != 0 else line_net_total
+    net -= doc_discount
+    net += doc_charge
+    return (net + tax_total).quantize(DEC2, ROUND_HALF_UP)
 
 
 # ───────────────────── vrsta računa ─────────────────────
@@ -1368,8 +1364,9 @@ def parse_eslog_invoice(
             ["sifra_dobavitelja", "naziv"], inplace=True, ignore_index=True
         )
 
+    header_base = header_net + doc_discount - doc_charge
     calculated_total = _invoice_total(
-        header_net, line_net_total, doc_discount, doc_charge, tax_total
+        header_base, line_net_total, doc_discount, doc_charge, tax_total
     )
     grand_total = extract_grand_total(xml_path)
     ok = True
