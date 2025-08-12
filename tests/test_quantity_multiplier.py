@@ -45,6 +45,7 @@ def _extract_multiplier_prompt():
         "simpledialog": SimpleNamespace(askinteger=lambda *a, **k: 10),
         "tk": SimpleNamespace(Button=DummyButton),
         "btn_frame": None,
+        "_schedule_totals": lambda: None,
     }
     exec(snippet, ns)
     return ns["_apply_multiplier_prompt"], ns
@@ -187,7 +188,7 @@ def test_multiplier_button(monkeypatch):
             "_update_summary": lambda: called.__setitem__(
                 "summary", called["summary"] + 1
             ),
-            "_update_totals": lambda: called.__setitem__(
+            "_schedule_totals": lambda: called.__setitem__(
                 "totals", called["totals"] + 1
             ),
             "root": object(),

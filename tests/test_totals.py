@@ -1,8 +1,9 @@
+import logging
 import inspect
 import textwrap
 from decimal import Decimal
+from types import SimpleNamespace
 
-import logging
 import pandas as pd
 
 import wsm.ui.review.gui as rl
@@ -18,6 +19,9 @@ class DummyLabel:
         if "text" in kwargs:
             self.text = kwargs["text"]
 
+    def winfo_exists(self):
+        return True
+
 
 class DummyMsgBox:
     @staticmethod
@@ -32,12 +36,13 @@ class DummyFrame:
 
 def _extract_update_func():
     src = inspect.getsource(rl.review_links).splitlines()
-    start = next(i for i, l in enumerate(src) if "def _update_totals" in l)
-    end = next(
-        i
-        for i in range(start + 1, len(src))
-        if src[i].lstrip().startswith("bottom =")
-    )
+    start = next(i for i, l in enumerate(src) if "def _safe_update_totals()" in l)
+    indent = len(src[start]) - len(src[start].lstrip())
+    end = start + 1
+    while end < len(src) and (
+        len(src[end]) - len(src[end].lstrip()) > indent or not src[end].strip()
+    ):
+        end += 1
     return textwrap.dedent("\n".join(src[start:end]))
 
 
@@ -72,9 +77,11 @@ def test_totals_label_contains_terms():
         "ddv_label": DummyLabel(),
         "skupaj_label": DummyLabel(),
         "log": logging.getLogger("test"),
+        "root": SimpleNamespace(winfo_exists=lambda: True),
+        "closing": False,
     }
     exec(snippet, ns)
-    ns["_update_totals"]()
+    ns["_safe_update_totals"]()
     assert "DDV:" in lbl.text
     assert "Skupaj:" in lbl.text
 

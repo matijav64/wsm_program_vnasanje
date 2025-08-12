@@ -1380,7 +1380,7 @@ def review_links(
 
     # Prvič osveži
     _update_summary()
-    _safe_update_totals()
+    _schedule_totals()
 
     if is_toplevel:
         root.protocol("WM_DELETE_WINDOW", _on_close)

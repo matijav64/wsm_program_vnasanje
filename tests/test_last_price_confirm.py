@@ -120,6 +120,7 @@ def _extract_confirm(threshold=Decimal("5")):
         "_fmt": rl._fmt,
         "log": rl.log,
         "price_warn_threshold": threshold,
+        "_schedule_totals": lambda: None,
     }
     exec(snippet, ns)
     return ns["_confirm"], ns
@@ -164,7 +165,7 @@ def test_confirm_applies_price_warning(monkeypatch, tmp_path):
                 "dobavitelj",
             ],
             "_update_summary": lambda: None,
-            "_update_totals": lambda: None,
+            "_schedule_totals": lambda: None,
         }
     )
     monkeypatch.setattr(
@@ -213,7 +214,7 @@ def test_confirm_respects_threshold(monkeypatch, tmp_path):
                 "dobavitelj",
             ],
             "_update_summary": lambda: None,
-            "_update_totals": lambda: None,
+            "_schedule_totals": lambda: None,
         }
     )
     monkeypatch.setattr(
