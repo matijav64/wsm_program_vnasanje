@@ -1485,9 +1485,13 @@ def parse_eslog_invoice(
     calculated_total = _invoice_total(
         header_base, line_net_total, doc_discount, doc_charge, tax_total
     )
+
     grand_total = extract_grand_total(xml_path)
     ok = True
     if grand_total != 0:
+        grand_total = (grand_total - doc_discount + doc_charge).quantize(
+            Decimal("0.01"), ROUND_HALF_UP
+        )
         ok = abs(calculated_total - grand_total) <= Decimal("0.01")
         if not ok:
             log.warning(
@@ -1553,6 +1557,11 @@ def parse_invoice(source: str | Path):
         else:
             discount_total = sum_moa(
                 root, DEFAULT_DOC_DISCOUNT_CODES, negative_only=True
+            )
+
+        if gross_total != 0:
+            gross_total = (gross_total - discount_total).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
             )
 
         # Če želimo posebej slediti tudi pribitkom:
