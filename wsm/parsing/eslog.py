@@ -360,40 +360,20 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
         line_base = Decimal("0")
         line_doc_discount = Decimal("0")
         for seg in root.findall(".//e:G_SG26", NS) + root.findall(".//G_SG26"):
-            qty_el = seg.find(".//e:S_QTY/e:C_C186/e:D_6060", NS)
-            if qty_el is None:
-                qty_el = seg.find(".//S_QTY/C_C186/D_6060")
-            qty = _decimal(qty_el)
-            moa203_val = None
-            moa204_present = False
-            has_discount = False
+            doc_disc = _doc_discount_from_line(seg)
+            if doc_disc is not None:
+                line_doc_discount += doc_disc
+                continue
             for moa in seg.findall(".//e:S_MOA", NS) + seg.findall(".//S_MOA"):
                 code_el = moa.find("./e:C_C516/e:D_5025", NS)
                 if code_el is None:
                     code_el = moa.find("./C_C516/D_5025")
-                code = _text(code_el)
-                val_el = moa.find("./e:C_C516/e:D_5004", NS)
-                if val_el is None:
-                    val_el = moa.find("./C_C516/D_5004")
-                if code == "203":
-                    moa203_val = _decimal(val_el)
-                elif code == "204":
-                    moa204_present = True
-            for sg39 in seg.findall(".//e:G_SG39", NS) + seg.findall(
-                ".//G_SG39"
-            ):
-                if _text(sg39.find("./e:S_ALC/e:D_5463", NS)) == "A":
-                    has_discount = True
+                if _text(code_el) == "203":
+                    val_el = moa.find("./e:C_C516/e:D_5004", NS)
+                    if val_el is None:
+                        val_el = moa.find("./C_C516/D_5004")
+                    line_base += _decimal(val_el)
                     break
-            if (
-                qty == 0
-                and moa203_val is not None
-                and (moa204_present or has_discount)
-            ):
-                line_doc_discount += abs(moa203_val)
-                continue
-            if moa203_val is not None:
-                line_base += moa203_val
 
         tax_total = Decimal("0")
         for sg52 in root.findall(".//e:G_SG52", NS) + root.findall(
@@ -868,6 +848,47 @@ def _line_pct_discount(sg26: LET._Element) -> Decimal:
     return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 
+def _doc_discount_from_line(sg26: LET._Element) -> Decimal | None:
+    """Return document level discount encoded as a line item.
+
+    Some suppliers encode the document level allowance as a regular ``G_SG26``
+    line with ``QTY`` set to ``0`` and the discount value in ``MOA 203``.  Such
+    lines also include either an explicit ``MOA 204`` or an allowance in
+    ``G_SG39``.  When detected the absolute ``MOA 203`` amount is returned,
+    otherwise ``None`` is yielded.
+    """
+
+    qty_el = sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS)
+    if qty_el is None:
+        qty_el = sg26.find(".//S_QTY/C_C186/D_6060")
+    qty = _decimal(qty_el)
+
+    moa203 = None
+    moa204_present = False
+    has_discount = False
+    for moa in sg26.findall(".//e:S_MOA", NS) + sg26.findall(".//S_MOA"):
+        code_el = moa.find("./e:C_C516/e:D_5025", NS)
+        if code_el is None:
+            code_el = moa.find("./C_C516/D_5025")
+        code = _text(code_el)
+        val_el = moa.find("./e:C_C516/e:D_5004", NS)
+        if val_el is None:
+            val_el = moa.find("./C_C516/D_5004")
+        if code == "203":
+            moa203 = _decimal(val_el)
+        elif code == "204":
+            moa204_present = True
+
+    for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(".//G_SG39"):
+        if _text(sg39.find("./e:S_ALC/e:D_5463", NS)) == "A":
+            has_discount = True
+            break
+
+    if qty == 0 and moa203 is not None and (moa204_present or has_discount):
+        return abs(moa203)
+    return None
+
+
 def _line_gross(sg26: LET._Element) -> Decimal:
     """Return gross line amount including VAT.
 
@@ -915,6 +936,8 @@ def _line_gross(sg26: LET._Element) -> Decimal:
 
 def _line_net(sg26: LET._Element) -> Decimal:
     """Return net line amount excluding VAT with line discounts applied."""
+    if _doc_discount_from_line(sg26) is not None:
+        return Decimal("0")
 
     for moa in sg26.findall(".//e:S_MOA", NS) + sg26.findall(".//S_MOA"):
         code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
@@ -1151,33 +1174,12 @@ def parse_eslog_invoice(
 
     # ───────────── LINE ITEMS ─────────────
     for sg26 in root.findall(".//e:G_SG26", NS):
-        qty = _decimal(sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
-
-        # Detect document level discounts encoded as line items (qty 0)
-        moa203_val = Decimal("0")
-        moa204_present = False
-        has_discount = False
-        for moa in sg26.findall(".//e:S_MOA", NS) + sg26.findall(".//S_MOA"):
-            code_el = moa.find("./e:C_C516/e:D_5025", NS)
-            if code_el is None:
-                code_el = moa.find("./C_C516/D_5025")
-            code = _text(code_el)
-            val_el = moa.find("./e:C_C516/e:D_5004", NS)
-            if val_el is None:
-                val_el = moa.find("./C_C516/D_5004")
-            if code == "203":
-                moa203_val = _decimal(val_el)
-            elif code == "204":
-                moa204_present = True
-        for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(
-            ".//G_SG39"
-        ):
-            if _text(sg39.find("./e:S_ALC/e:D_5463", NS)) == "A":
-                has_discount = True
-                break
-        if qty == 0 and moa203_val != 0 and (moa204_present or has_discount):
-            line_doc_discount += abs(moa203_val)
+        doc_disc = _doc_discount_from_line(sg26)
+        if doc_disc is not None:
+            line_doc_discount += doc_disc
             continue
+
+        qty = _decimal(sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
         if qty == 0:
             continue
         unit = _text(sg26.find(".//e:S_QTY/e:C_C186/e:D_6411", NS))
