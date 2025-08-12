@@ -18,7 +18,7 @@ def test_header_vat_rate():
 
     root = ET.parse(xml_path).getroot()
     lines = root.findall(".//e:G_SG26", NS)
-    taxes = [_line_tax(sg) for sg in lines]
+    taxes = [_line_tax(sg)[0] for sg in lines]
     assert sum(taxes) == Decimal("0")
 
     net_total = df["vrednost"].sum()

@@ -19,7 +19,7 @@ def test_tax_total_fallback_from_header(tmp_path):
 
     root = ET.parse(xml_path).getroot()
     lines = root.findall(".//e:G_SG26", NS)
-    assert _line_tax(lines[0]) == Decimal("0")
+    assert _line_tax(lines[0])[0] == Decimal("0")
 
     grand_total = extract_grand_total(xml_path)
     assert grand_total - df["vrednost"].sum() == Decimal("2.20")

@@ -949,12 +949,56 @@ def _line_net(sg26: LET._Element) -> Decimal:
 
 def _line_tax(
     sg26: LET._Element, default_rate: Decimal | None = None
-) -> Decimal:
-    """Return VAT amount for a line."""
+) -> tuple[Decimal, Decimal]:
+    """Return VAT amount and rate for a line.
+
+    ``default_rate`` should be provided as a fraction (e.g. ``0.22`` for
+    22 %).  The function prefers explicit ``TaxAmount`` elements inside
+    ``G_SG34`` or ``G_SG52`` groups.  When a rate is missing or does not
+    match the provided tax amount, it is inferred from ``tax_amount /
+    net_amount``.
+    """
+
+    net_amount = _line_net(sg26)
+
+    # --- explicit TaxAmount (cbc or e namespace) ---
+    tax_el = None
+    paths_tax = (
+        ".//e:G_SG34//cbc:TaxAmount",
+        ".//e:G_SG34//e:TaxAmount",
+        ".//e:G_SG34//TaxAmount",
+        ".//e:G_SG52//cbc:TaxAmount",
+        ".//e:G_SG52//e:TaxAmount",
+        ".//e:G_SG52//TaxAmount",
+    )
+    for path in paths_tax:
+        tax_el = sg26.find(path, {**NS, **UBL_NS})
+        if tax_el is not None and _text(tax_el):
+            break
+
+    if tax_el is not None and _text(tax_el):
+        tax_amount = _decimal(tax_el).quantize(DEC2, ROUND_HALF_UP)
+        rate_percent = Decimal("0")
+        for path in (".//e:G_SG34/e:S_TAX", ".//e:G_SG52/e:S_TAX"):
+            for tax in sg26.findall(path, NS):
+                r = _decimal(tax.find("./e:C_C243/e:D_5278", NS))
+                if r:
+                    rate_percent = r
+                    break
+            if rate_percent:
+                break
+        if rate_percent == 0 and default_rate is not None:
+            rate_percent = (default_rate * 100).quantize(Decimal("0.01"), ROUND_HALF_UP)
+        expected_tax = calculate_vat(net_amount, rate_percent) if rate_percent else tax_amount
+        if net_amount and (rate_percent == 0 or expected_tax != tax_amount):
+            rate_percent = (tax_amount / net_amount * 100).quantize(
+                Decimal("0.01"), ROUND_HALF_UP
+            )
+        return tax_amount, rate_percent
+
+    # --- MOA 124 ---
     abs_tax = Decimal("0")
-    for moa in sg26.findall(".//e:G_SG34/e:S_MOA", NS) + sg26.findall(
-        ".//S_MOA"
-    ):
+    for moa in sg26.findall(".//e:G_SG34/e:S_MOA", NS) + sg26.findall(".//S_MOA"):
         code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
             moa.find("./C_C516/D_5025")
         )
@@ -965,24 +1009,37 @@ def _line_tax(
             abs_tax += _decimal(val_el)
 
     if abs_tax:
-        return abs_tax.quantize(DEC2, ROUND_HALF_UP)
+        tax_amount = abs_tax.quantize(DEC2, ROUND_HALF_UP)
+        rate_percent = Decimal("0")
+        for path in (".//e:G_SG34/e:S_TAX", ".//e:G_SG52/e:S_TAX"):
+            for tax in sg26.findall(path, NS):
+                r = _decimal(tax.find("./e:C_C243/e:D_5278", NS))
+                if r:
+                    rate_percent = r
+                    break
+            if rate_percent:
+                break
+        if rate_percent == 0 and default_rate is not None:
+            rate_percent = (default_rate * 100).quantize(Decimal("0.01"), ROUND_HALF_UP)
+        return tax_amount, rate_percent
 
-    rate = None
+    # --- fallback to rate from S_TAX or default ---
+    rate_percent = Decimal("0")
     for path in (".//e:G_SG34/e:S_TAX", ".//e:G_SG52/e:S_TAX"):
         for tax in sg26.findall(path, NS):
             r = _decimal(tax.find("./e:C_C243/e:D_5278", NS))
             if r:
-                rate = r / Decimal("100")
+                rate_percent = r
                 break
-        if rate is not None:
+        if rate_percent:
             break
-    if rate is None and default_rate:
-        rate = default_rate
+    if rate_percent == 0 and default_rate is not None:
+        rate_percent = (default_rate * 100).quantize(Decimal("0.01"), ROUND_HALF_UP)
 
-    if rate:
-        return (_line_net(sg26) * rate).quantize(DEC2, ROUND_HALF_UP)
-
-    return Decimal("0.00")
+    tax_amount = (
+        calculate_vat(net_amount, rate_percent) if rate_percent else Decimal("0.00")
+    )
+    return tax_amount, rate_percent
 
 
 # ──────────────────── glavni parser za ESLOG INVOIC ────────────────────
@@ -1068,7 +1125,9 @@ def parse_eslog_invoice(
         rebate = rebate_moa + pct_rebate
 
         net_amount = _line_net(sg26)
-        tax_amount = _line_tax(sg26, header_rate if header_rate != 0 else None)
+        tax_amount, vat_rate = _line_tax(
+            sg26, header_rate if header_rate != 0 else None
+        )
         item["ddv"] = tax_amount if tax_amount is not None else Decimal("0")
         if net_amount == 0 and gross_amount != 0:
             net_amount = (gross_amount - rebate - tax_amount).quantize(
@@ -1088,14 +1147,6 @@ def parse_eslog_invoice(
         tax_total = (tax_total + tax_amount).quantize(
             Decimal("0.01"), ROUND_HALF_UP
         )
-
-        # stopnja DDV (npr. 9.5 ali 22)
-        vat_rate = Decimal("0")
-        for tax in sg26.findall(".//e:G_SG34/e:S_TAX", NS):
-            rate = _decimal(tax.find("./e:C_C243/e:D_5278", NS))
-            if rate != 0:
-                vat_rate = rate
-                break
 
         expected_tax = calculate_vat(net_amount, vat_rate)
         if expected_tax != tax_amount:
