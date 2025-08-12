@@ -379,7 +379,9 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
                     moa203_val = _decimal(val_el)
                 elif code == "204":
                     moa204_present = True
-            for sg39 in seg.findall(".//e:G_SG39", NS) + seg.findall(".//G_SG39"):
+            for sg39 in seg.findall(".//e:G_SG39", NS) + seg.findall(
+                ".//G_SG39"
+            ):
                 if _text(sg39.find("./e:S_ALC/e:D_5463", NS)) == "A":
                     has_discount = True
                     break
@@ -416,7 +418,9 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
         )
         doc_charge = sum_moa(root, DEFAULT_DOC_CHARGE_CODES)
         doc_discount = (
-            doc_discount_header if doc_discount_header != 0 else line_doc_discount
+            doc_discount_header
+            if doc_discount_header != 0
+            else line_doc_discount
         ).quantize(DEC2, ROUND_HALF_UP)
 
         if line_base != 0:
@@ -910,7 +914,7 @@ def _line_gross(sg26: LET._Element) -> Decimal:
 
 
 def _line_net(sg26: LET._Element) -> Decimal:
-    """Return net line amount without VAT or discounts."""
+    """Return net line amount excluding VAT with line discounts applied."""
 
     for moa in sg26.findall(".//e:S_MOA", NS) + sg26.findall(".//S_MOA"):
         code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
@@ -973,6 +977,17 @@ def _line_net(sg26: LET._Element) -> Decimal:
         DEC2, ROUND_HALF_UP
     )
     return amount
+
+
+def _line_net_before_discount(
+    sg26: LET._Element, net_after: Decimal | None = None
+) -> Decimal:
+    """Return net line amount excluding VAT before applying discounts."""
+
+    if net_after is None:
+        net_after = _line_net(sg26)
+    discount = _line_discount(sg26) + _line_pct_discount(sg26)
+    return (net_after + discount).quantize(DEC2, ROUND_HALF_UP)
 
 
 def _line_tax(
@@ -1154,7 +1169,9 @@ def parse_eslog_invoice(
                 moa203_val = _decimal(val_el)
             elif code == "204":
                 moa204_present = True
-        for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(".//G_SG39"):
+        for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(
+            ".//G_SG39"
+        ):
             if _text(sg39.find("./e:S_ALC/e:D_5463", NS)) == "A":
                 has_discount = True
                 break
@@ -1187,11 +1204,12 @@ def parse_eslog_invoice(
                 ).quantize(Decimal("0.01"), ROUND_HALF_UP)
                 break
 
+        net_amount = _line_net(sg26)
+        net_before = _line_net_before_discount(sg26, net_amount)
         rebate_moa = _line_discount(sg26)
         pct_rebate = _line_pct_discount(sg26)
         rebate = rebate_moa + pct_rebate
 
-        net_amount = _line_net(sg26)
         tax_amount, vat_rate = _line_tax(
             sg26, header_rate if header_rate != 0 else None
         )
@@ -1201,6 +1219,9 @@ def parse_eslog_invoice(
             tax_amount = Decimal("0")
         if net_amount == 0 and gross_amount != 0:
             net_amount = (gross_amount - rebate - tax_amount).quantize(
+                Decimal("0.01"), ROUND_HALF_UP
+            )
+            net_before = (net_amount + rebate).quantize(
                 Decimal("0.01"), ROUND_HALF_UP
             )
 
@@ -1231,7 +1252,7 @@ def parse_eslog_invoice(
 
         # izračun cen pred in po rabatu
         if qty:
-            cena_pred = ((net_amount + rebate) / qty).quantize(
+            cena_pred = (net_before / qty).quantize(
                 Decimal("0.0001"), rounding=ROUND_HALF_UP
             )
             cena_post = (net_amount / qty).quantize(
