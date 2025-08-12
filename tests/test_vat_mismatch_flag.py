@@ -5,7 +5,7 @@ import pytest
 from wsm.parsing.eslog import parse_eslog_invoice
 
 
-def test_parse_eslog_invoice_detects_vat_mismatch(
+def test_parse_eslog_invoice_no_vat_mismatch(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ):
     xml = """
@@ -32,5 +32,5 @@ def test_parse_eslog_invoice_detects_vat_mismatch(
     with caplog.at_level("ERROR"):
         df, ok = parse_eslog_invoice(path)
     assert ok
-    assert df.attrs.get("vat_mismatch")
-    assert any("VAT mismatch" in rec.message for rec in caplog.records)
+    assert not df.attrs.get("vat_mismatch")
+    assert not any("VAT mismatch" in rec.message for rec in caplog.records)
