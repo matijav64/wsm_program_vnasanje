@@ -369,8 +369,24 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
                         val_el = moa.find("./C_C516/D_5004")
                     line_base += _decimal(val_el)
 
+        tax_total = Decimal("0")
+        for sg52 in root.findall(".//e:G_SG52", NS) + root.findall(".//G_SG52"):
+            for moa in sg52.findall("./e:S_MOA", NS) + sg52.findall("./S_MOA"):
+                code_el = moa.find("./e:C_C516/e:D_5025", NS)
+                if code_el is None:
+                    code_el = moa.find("./C_C516/D_5025")
+                if _text(code_el) == "124":
+                    val_el = moa.find("./e:C_C516/e:D_5004", NS)
+                    if val_el is None:
+                        val_el = moa.find("./C_C516/D_5004")
+                    tax_total += _decimal(val_el)
+        tax_total = tax_total.quantize(DEC2, ROUND_HALF_UP)
+
         doc_discount = sum_moa(
-            root, DEFAULT_DOC_DISCOUNT_CODES, negative_only=True
+            root,
+            DEFAULT_DOC_DISCOUNT_CODES,
+            negative_only=True,
+            tax_amount=tax_total,
         )
         doc_charge = sum_moa(root, DEFAULT_DOC_CHARGE_CODES)
 
@@ -609,6 +625,7 @@ def sum_moa(
 
     wanted = set(codes)
     total = Decimal("0")
+
     # Locate all allowance/charge segments and evaluate sibling MOA values
     alcs = root.findall(".//e:S_ALC", NS) + root.findall(".//S_ALC")
     for alc in alcs:
@@ -631,6 +648,39 @@ def sum_moa(
             if code_el is None or _text(code_el) not in wanted:
                 continue
 
+            val_el = moa.find("./e:C_C516/e:D_5004", NS)
+            if val_el is None:
+                val_el = moa.find("./C_C516/D_5004")
+            val = _decimal(val_el)
+
+            if negative_only:
+                if val >= 0:
+                    continue
+                if tax_amount is not None and abs(val) == abs(tax_amount):
+                    continue
+                total += -val
+            else:
+                total += val
+
+    # Scan header MOA segments (G_SG50) without S_ALC
+    for sg50 in root.findall(".//e:G_SG50", NS) + root.findall(".//G_SG50"):
+        ancestor = sg50.getparent()
+        skip = False
+        while ancestor is not None:
+            if ancestor.tag.split("}")[-1] == "G_SG52":
+                skip = True
+                break
+            ancestor = ancestor.getparent()
+        if skip:
+            continue
+        if sg50.find("./e:S_ALC", NS) is not None or sg50.find("./S_ALC") is not None:
+            continue
+        for moa in sg50.findall("./e:S_MOA", NS) + sg50.findall("./S_MOA"):
+            code_el = moa.find("./e:C_C516/e:D_5025", NS)
+            if code_el is None:
+                code_el = moa.find("./C_C516/D_5025")
+            if code_el is None or _text(code_el) not in wanted:
+                continue
             val_el = moa.find("./e:C_C516/e:D_5004", NS)
             if val_el is None:
                 val_el = moa.find("./C_C516/D_5004")
@@ -1206,6 +1256,7 @@ def parse_eslog_invoice(
                 )
 
     # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
+    line_net_total = net_total
     doc_discount = sum_moa(
         root,
         discount_codes or DEFAULT_DOC_DISCOUNT_CODES,
@@ -1248,7 +1299,7 @@ def parse_eslog_invoice(
             }
         )
 
-    net_total = (net_total - doc_discount + doc_charge).quantize(
+    net_total = (line_net_total - doc_discount + doc_charge).quantize(
         Decimal("0.01"), ROUND_HALF_UP
     )
 
@@ -1267,7 +1318,7 @@ def parse_eslog_invoice(
         )
 
     calculated_total = _invoice_total(
-        header_net, net_total, Decimal("0"), Decimal("0"), tax_total
+        header_net, line_net_total, doc_discount, doc_charge, tax_total
     )
     grand_total = extract_grand_total(xml_path)
     ok = True

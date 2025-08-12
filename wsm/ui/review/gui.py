@@ -11,6 +11,10 @@ from pathlib import Path
 import pandas as pd
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
+import builtins
+
+builtins.tk = tk
+builtins.simpledialog = simpledialog
 from lxml import etree as LET
 
 from wsm.utils import short_supplier_name, _clean, _build_header_totals
@@ -1178,7 +1182,7 @@ def review_links(
         _update_summary()  # Update summary after confirming
         _update_totals()  # Update totals after confirming
         entry.delete(0, "end")
-        lb.grid_remove()
+        lb.pack_forget()
         tree.focus_set()
         next_i = tree.next(sel_i)
         if next_i:
@@ -1206,13 +1210,6 @@ def review_links(
         )
         return "break"
 
-    multiplier_btn = tk.Button(
-        btn_frame,
-        text="Pomnoži z koločino X",
-        command=_apply_multiplier_prompt,
-    )
-    multiplier_btn.grid(row=0, column=2, padx=(6, 0))
-
     def _clear_wsm_connection(_=None):
         sel_i = tree.focus()
         if not sel_i:
@@ -1237,6 +1234,13 @@ def review_links(
         _update_totals()  # Update totals after clearing
         tree.focus_set()
         return "break"
+
+    multiplier_btn = tk.Button(
+        btn_frame,
+        text="Pomnoži z koločino X",
+        command=_apply_multiplier_prompt,
+    )
+    multiplier_btn.grid(row=0, column=2, padx=(6, 0))
 
     def _tree_nav_up(_=None):
         """Select previous row and ensure it is visible."""
