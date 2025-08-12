@@ -32,6 +32,12 @@ from .io import _save_and_close, _load_supplier_map
 log = logging.getLogger(__name__)
 
 
+closing = False
+_after_totals_id: str | None = None
+price_tip: tk.Toplevel | None = None
+last_warn_item: str | None = None
+
+
 def _apply_multiplier(
     df: pd.DataFrame,
     idx: int,
@@ -453,11 +459,14 @@ def review_links(
     # header can be a bit shorter for readability.
     root.title(f"Ročna revizija – {supplier_name}")
 
+    global closing, _after_totals_id
     closing = False
+    _after_totals_id = None
     bindings: list[tuple[tk.Misc, str]] = []
     header_after_id: str | None = None
-    price_tip: tk.Toplevel | None = None
-    last_warn_item: str | None = None
+    global price_tip, last_warn_item
+    price_tip = None
+    last_warn_item = None
 
     # Determine how many rows can fit based on the screen height. Roughly
     # 500px is taken by the header, summary and button sections so we convert
@@ -849,7 +858,8 @@ def review_links(
     indicator_label.pack(side="left", padx=5)
 
     def _update_totals():
-        if globals().get("closing"):
+        root_obj = globals().get("root")
+        if root_obj and (globals().get("closing") or not root_obj.winfo_exists()):
             return
 
         net_raw = df["total_net"].sum()
@@ -897,7 +907,11 @@ def review_links(
                     ),
                 )
 
-        if getattr(indicator_label, "winfo_exists", lambda: True)():
+        try:
+            if indicator_label is None or not getattr(
+                indicator_label, "winfo_exists", lambda: True
+            )():
+                return
             indicator_label.config(
                 text="✓" if difference <= tolerance else "✗",
                 style=(
@@ -906,6 +920,8 @@ def review_links(
                     else "Indicator.Red.TLabel"
                 ),
             )
+        except tk.TclError:
+            return
 
         net = net_total
         vat = vat_val
@@ -929,6 +945,26 @@ def review_links(
                 )
             )
 
+    def _schedule_totals():
+        global closing, _after_totals_id
+        if closing or not root.winfo_exists():
+            return
+        _after_totals_id = root.after(250, _update_totals)
+
+    def _on_close(_=None):
+        global closing, _after_totals_id
+        closing = True
+        try:
+            if _after_totals_id:
+                root.after_cancel(_after_totals_id)
+        except Exception:
+            pass
+        _cleanup()
+        try:
+            root.destroy()
+        except tk.TclError:
+            pass
+
     bottom = None  # backward-compatible placeholder for tests  # noqa: F841
     entry_frame = tk.Frame(root)
     entry_frame.pack(fill="x", padx=8)
@@ -947,7 +983,7 @@ def review_links(
     unit_options = ["kos", "kg", "L"]
 
     def _cleanup():
-        nonlocal closing, price_tip, last_warn_item
+        global closing, price_tip, last_warn_item
         closing = True
         if header_after_id:
             try:
@@ -1002,11 +1038,7 @@ def review_links(
     )
 
     def _exit():
-        _cleanup()
-        if is_toplevel:
-            root.destroy()
-        else:
-            root.quit()
+        _on_close()
 
     exit_btn = tk.Button(
         btn_frame,
@@ -1019,7 +1051,6 @@ def review_links(
 
     root.bind("<F10>", _finalize_and_save)
     bindings.append((root, "<F10>"))
-    root.protocol("WM_DELETE_WINDOW", _exit)
 
     nazivi = wsm_df["wsm_naziv"].dropna().tolist()
     n2s = dict(zip(wsm_df["wsm_naziv"], wsm_df["wsm_sifra"]))
@@ -1118,7 +1149,10 @@ def review_links(
             log.debug("Combobox in edit dialog value: %s", cb.get())
 
             _update_summary()
-            _update_totals()
+            try:
+                _schedule_totals()
+            except NameError:
+                _update_totals()
             top.destroy()
 
         tk.Button(top, text="OK", command=_apply).pack(pady=(0, 10))
@@ -1127,7 +1161,7 @@ def review_links(
         return "break"
 
     def _hide_tooltip(_=None):
-        nonlocal price_tip, last_warn_item
+        global price_tip, last_warn_item
         if price_tip is not None:
             price_tip.destroy()
             price_tip = None
@@ -1140,7 +1174,7 @@ def review_links(
             last_warn_item = None
 
     def _show_tooltip(item_id: str, text: str | None) -> None:
-        nonlocal price_tip, last_warn_item
+        global price_tip, last_warn_item
         _hide_tooltip()
         if not text:
             return
@@ -1232,7 +1266,10 @@ def review_links(
             df.at[idx, "sifra_dobavitelja"],
         )
         _update_summary()  # Update summary after confirming
-        _update_totals()  # Update totals after confirming
+        try:
+            _schedule_totals()  # Update totals after confirming
+        except NameError:
+            _update_totals()
         entry.delete(0, "end")
         lb.pack_forget()
         tree.focus_set()
@@ -1252,13 +1289,17 @@ def review_links(
         )
         if not multiplier_val:
             return "break"
+        try:
+            update_cb = _schedule_totals
+        except NameError:
+            update_cb = _update_totals
         _apply_multiplier(
             df,
             int(sel_i),
             Decimal(multiplier_val),
             tree,
             _update_summary,
-            _update_totals,
+            update_cb,
         )
         return "break"
 
@@ -1283,7 +1324,10 @@ def review_links(
             f"Povezava odstranjena: idx={idx}, wsm_naziv=NaN, wsm_sifra=NaN"
         )
         _update_summary()  # Update summary after clearing
-        _update_totals()  # Update totals after clearing
+        try:
+            _schedule_totals()  # Update totals after clearing
+        except NameError:
+            _update_totals()
         tree.focus_set()
         return "break"
 
@@ -1363,8 +1407,10 @@ def review_links(
     _update_totals()
 
     if is_toplevel:
+        root.protocol("WM_DELETE_WINDOW", _on_close)
         root.wait_window()
     else:
+        root.protocol("WM_DELETE_WINDOW", _on_close)
         root.mainloop()
     try:
         root.destroy()
