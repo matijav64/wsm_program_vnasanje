@@ -1509,9 +1509,69 @@ def parse_eslog_invoice(
                     }
                 )
 
+    # ───────── RECONCILIATION MODE ─────────
+    sum203 = Decimal("0")
+    for seg in root.findall(".//e:G_SG26", NS) + root.findall(".//G_SG26"):
+        sum203 += _sum_moa_shallow(seg, {"203"})
+    sum203 = sum203.quantize(DEC2, ROUND_HALF_UP)
+
+    sum_line_net_std = net_total
+
+    hdr125 = _first_moa(root, {"125"})
+    hdr125 = hdr125 if hdr125 != 0 else None
+    hdr9 = _first_moa(root, {"9", "38", "388"})
+    hdr9 = hdr9 if hdr9 != 0 else None
+
+    hdr260_present = False
+    for moa in root.findall(".//e:S_MOA", NS) + root.findall(".//S_MOA"):
+        code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
+            moa.find("./C_C516/D_5025")
+        )
+        if code == "260":
+            hdr260_present = True
+            break
+
+    TOL = Decimal("0.01")
+
+    info = (hdr125 is not None and abs(hdr125 - sum203) <= TOL) and (
+        not hdr260_present
+    )
+    real = (hdr125 is not None and abs(hdr125 - sum_line_net_std) <= TOL) or hdr260_present
+
+    def _calc_gross(base_net: Decimal, line_disc: Decimal) -> Decimal:
+        net_after, allow_header, charge_total = _apply_doc_allowances_sequential(
+            base_net, root
+        )
+        allow_total = allow_header + line_disc
+        net_val = net_after - line_disc
+        vat_val = _vat_total_after_doc(
+            tax_total if tax_total != 0 else None, lines_by_rate, allow_total
+        )
+        return (net_val + vat_val).quantize(DEC2, ROUND_HALF_UP)
+
+    if info and not real:
+        mode = "info"
+    elif real and not info:
+        mode = "real"
+    else:
+        gross_info = _calc_gross(sum203, Decimal("0"))
+        gross_real = _calc_gross(sum_line_net_std, line_doc_discount)
+        mode = (
+            "info"
+            if abs(gross_info - (hdr9 or gross_info))
+            <= abs(gross_real - (hdr9 or gross_real))
+            else "real"
+        )
+
+    if mode == "info":
+        sum_line_net = sum203
+        line_doc_discount = Decimal("0")
+    else:
+        sum_line_net = sum_line_net_std
+
     # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
     net_after_doc, doc_allow_header, doc_charge_total = (
-        _apply_doc_allowances_sequential(net_total, root)
+        _apply_doc_allowances_sequential(sum_line_net, root)
     )
     doc_allow_total = doc_allow_header + line_doc_discount
     net_total = net_after_doc - line_doc_discount
