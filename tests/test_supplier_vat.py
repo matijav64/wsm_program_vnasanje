@@ -139,3 +139,42 @@ def test_review_links_falls_back_to_gln(monkeypatch, tmp_path, caplog):
                 invoice,
             )
     assert "Resolved supplier code: 9876543210987" in caplog.text
+
+
+def test_review_links_normalizes_vat(monkeypatch, tmp_path, caplog):
+    xml_content = """
+    <Invoice xmlns='urn:eslog:2.00'>
+      <M_INVOIC>
+        <G_SG2>
+          <S_NAD>
+            <D_3035>SU</D_3035>
+            <C_C082>
+              <D_3039>SI-12345678</D_3039>
+            </C_C082>
+          </S_NAD>
+        </G_SG2>
+      </M_INVOIC>
+    </Invoice>
+    """
+    invoice = tmp_path / "invoice.xml"
+    invoice.write_text(xml_content)
+    links_file = tmp_path / "sup" / "code" / "links.xlsx"
+    links_file.parent.mkdir(parents=True)
+    monkeypatch.setattr(
+        rl, "_load_supplier_map", lambda p: {"SI12345678": {"ime": "Normalized d.o.o.", "vat": "SI12345678"}}
+    )
+    monkeypatch.setattr(rl, "_build_header_totals", lambda *a, **k: {})
+    monkeypatch.setattr(
+        rl.tk, "Tk", lambda: (_ for _ in ()).throw(RuntimeError)
+    )
+    with caplog.at_level("INFO"):
+        with pytest.raises(RuntimeError):
+            rl.review_links(
+                _dummy_df(),
+                pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"]),
+                links_file,
+                Decimal("1"),
+                invoice,
+            )
+    assert "Resolved supplier code: SI12345678" in caplog.text
+    assert "Default name retrieved: Normalized d.o.o." in caplog.text
