@@ -166,7 +166,7 @@ UBL_NS = {
 # Common document discount codes.  Extend this list or pass a custom
 # sequence to ``parse_eslog_invoice`` if your suppliers use different
 # identifiers.
-DEFAULT_DOC_DISCOUNT_CODES = ["204", "260", "131", "128", "176", "500", "25"]
+DEFAULT_DOC_DISCOUNT_CODES = ["204", "260", "131", "128", "176", "500"]
 
 # Common document charge codes.  These represent additional amounts
 # that increase the invoice total.
@@ -947,7 +947,7 @@ def _line_discount(sg26: LET._Element) -> Decimal:
 
 
 def _line_amount_discount(sg26: LET._Element) -> Decimal:
-    """Return sum of MOA 204 and 25 allowance amounts for a line."""
+    """Return sum of MOA 204 allowance amounts for a line."""
 
     total = Decimal("0")
     seen: set[tuple[int, str, Decimal]] = set()
@@ -956,7 +956,7 @@ def _line_amount_discount(sg26: LET._Element) -> Decimal:
             code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
                 moa.find("./C_C516/D_5025")
             )
-            if code in {Moa.DISCOUNT.value, "25"}:
+            if code == Moa.DISCOUNT.value:
                 amount_el = moa.find("./e:C_C516/e:D_5004", NS)
                 if amount_el is None:
                     amount_el = moa.find("./C_C516/D_5004")
@@ -1043,18 +1043,23 @@ def _line_amount_after_allowances(seg: LET._Element) -> Decimal:
 
 def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
     base = _sum_moa_shallow(seg, {"203"})
-    disc_local = _sum_moa_shallow(seg, DOC_CODES)
-    for kind, pcds, moa_allow, _ in _iter_sg39(seg):
-        if kind != "A":
+    disc_local = _sum_moa_shallow(seg, {"204"})
+    sg39_total = Decimal("0")
+    for sg39 in seg.findall("./e:G_SG39", NS) + seg.findall("./G_SG39"):
+        alc = sg39.find("./e:S_ALC/e:D_5463", NS)
+        if alc is None:
+            alc = sg39.find("./S_ALC/D_5463")
+        if (alc.text or "").strip() != "A":
             continue
+        pcds = _get_pcd_shallow(sg39)
         for pct in pcds:
             amt = _dec2(base * pct / Decimal("100"))
             disc_local += amt
+            sg39_total += amt
+        moa_allow = _sum_moa_deep(sg39, {"204"})
         disc_local += moa_allow
-    if base == 0 and disc_local > 0:
-        return _dec2(disc_local)
-    qty = _decimal(seg.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
-    if qty == 0 and base == disc_local and disc_local > 0:
+        sg39_total += moa_allow
+    if base == 0 and sg39_total > 0:
         return _dec2(disc_local)
     return None
 
@@ -1108,14 +1113,12 @@ def _line_net(sg26: LET._Element) -> Decimal:
     """Return net line amount excluding VAT with line discounts applied."""
 
     base = _sum_moa_shallow(sg26, {"203"})
-    local_moa_disc = _sum_moa_shallow(sg26, DOC_CODES)
-    if base == 0 and local_moa_disc > 0:
+    if base == 0 and _doc_discount_from_line(sg26):
         return Decimal("0.00")
 
     val = _first_moa(sg26, {"125"})
     if val != 0:
-        net = _dec2(val)
-        return net if net >= 0 else Decimal("0.00")
+        return _dec2(val)
 
     return _line_amount_after_allowances(sg26)
 
@@ -1548,16 +1551,20 @@ def parse_eslog_invoice(
     info = (hdr125 is not None and abs(hdr125 - sum203) <= TOL) and (
         not hdr260_present
     )
-    real = (hdr125 is not None and abs(hdr125 - sum_line_net_std) <= TOL) or hdr260_present
+    real = (
+        hdr125 is not None and abs(hdr125 - sum_line_net_std) <= TOL
+    ) or hdr260_present
 
-    def build_invoice_model(tree_obj, override_sum_line_net: Decimal) -> SimpleNamespace:
+    def build_invoice_model(
+        tree_obj, override_sum_line_net: Decimal
+    ) -> SimpleNamespace:
         line_disc = (
             doc_discount_from_lines
             if override_sum_line_net == sum_line_net_std
             else Decimal("0")
         )
-        net_after, allow_header, charge_total = _apply_doc_allowances_sequential(
-            override_sum_line_net, root
+        net_after, allow_header, charge_total = (
+            _apply_doc_allowances_sequential(override_sum_line_net, root)
         )
         allow_total = allow_header + line_disc
         net_val = net_after - line_disc
@@ -1591,7 +1598,10 @@ def parse_eslog_invoice(
         doc_discount_from_lines = Decimal("0.00")
 
     log.info(
-        "hdr125=%s, sum203=%s, sum_line_net_std=%s, hdr260_present=%s, mode=%s",
+        (
+            "hdr125=%s, sum203=%s, sum_line_net_std=%s, "
+            "hdr260_present=%s, mode=%s"
+        ),
         _dec2(hdr125) if hdr125 is not None else None,
         sum203,
         sum_line_net_std,
@@ -1602,7 +1612,10 @@ def parse_eslog_invoice(
         net_used = ln["moa203"] if mode == "info" else ln["net_std"]
         added = Decimal("0.00") if mode == "info" else ln["doc_added"]
         log.info(
-            "line_idx=%s, line_moa203=%s, line_net_used=%s, added_to_doc_discount=%s",
+            (
+                "line_idx=%s, line_moa203=%s, line_net_used=%s, "
+                "added_to_doc_discount=%s"
+            ),
             ln["idx"],
             ln["moa203"],
             net_used,
@@ -1700,7 +1713,9 @@ def parse_eslog_invoice(
     return df, ok
 
 
-def build_invoice_model(tree: LET._Element | LET._ElementTree) -> SimpleNamespace:
+def build_invoice_model(
+    tree: LET._Element | LET._ElementTree,
+) -> SimpleNamespace:
     """Construct and return basic invoice totals model.
 
     The helper serializes ``tree`` and feeds it through
@@ -1716,7 +1731,9 @@ def build_invoice_model(tree: LET._Element | LET._ElementTree) -> SimpleNamespac
     buf = io.BytesIO(LET.tostring(root))
     df, ok = parse_eslog_invoice(buf)
 
-    net_total = df["vrednost"].sum() if "vrednost" in df.columns else Decimal("0")
+    net_total = (
+        df["vrednost"].sum() if "vrednost" in df.columns else Decimal("0")
+    )
     vat_total = df["ddv"].sum() if "ddv" in df.columns else Decimal("0")
     gross_total = net_total + vat_total
     mismatch = (not ok) or bool(df.attrs.get("vat_mismatch", False))
@@ -1729,7 +1746,9 @@ def build_invoice_model(tree: LET._Element | LET._ElementTree) -> SimpleNamespac
     )
 
 
-def parse_invoice_totals(tree: LET._Element | LET._ElementTree) -> dict[str, Decimal | bool]:
+def parse_invoice_totals(
+    tree: LET._Element | LET._ElementTree,
+) -> dict[str, Decimal | bool]:
     inv = build_invoice_model(tree)
     return {
         "net": _dec2(inv.net_total),
