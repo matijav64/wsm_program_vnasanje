@@ -44,6 +44,11 @@ log = logging.getLogger(__name__)
 
 
 # ────────────────────────── pomožne funkcije ──────────────────────────
+def _dec2(x: Decimal) -> Decimal:
+    """Quantize value to two decimal places using ``ROUND_HALF_UP``."""
+    return x.quantize(DEC2, rounding=ROUND_HALF_UP)
+
+
 def _text(el: LET._Element | None) -> str:
     return el.text.strip() if el is not None and el.text else ""
 
@@ -89,6 +94,40 @@ def _sum_moa_deep(node: LET._Element, codes: set[str]) -> Decimal:
         if q is not None and v is not None and (q.text or "").strip() in codes:
             total += abs(_decimal(v))
     return total
+
+
+def _get_pcd_shallow(node: LET._Element) -> list[Decimal]:
+    """Return list of percentages from direct ``S_PCD`` children."""
+    out: list[Decimal] = []
+    for p in node.findall("./e:S_PCD", NS) + node.findall("./S_PCD"):
+        val = p.find("./e:C_C501/e:D_5482", NS)
+        if val is None:
+            val = p.find("./C_C501/D_5482")
+        if val is not None and (val.text or "").strip():
+            try:
+                out.append(Decimal(val.text.strip()))
+            except Exception:
+                pass
+    return out
+
+
+def _iter_sg39(node: LET._Element):
+    """Yield SG39 segments: (kind, pcd_list, moa_allow, moa_charge)."""
+    for sg39 in node.findall("./e:G_SG39", NS) + node.findall("./G_SG39"):
+        alc = sg39.find("./e:S_ALC/e:D_5463", NS)
+        if alc is None:
+            alc = sg39.find("./S_ALC/D_5463")
+        kind = (alc.text or "").strip() if alc is not None else ""
+        if kind not in {"A", "C"}:
+            continue
+        pcds = _get_pcd_shallow(sg39)
+        if kind == "A":
+            moa_allow = _sum_moa_shallow(sg39, DOC_CODES)
+            moa_charge = Decimal("0")
+        else:
+            moa_allow = Decimal("0")
+            moa_charge = _sum_moa_shallow(sg39, DOC_CODES)
+        yield kind, pcds, moa_allow, moa_charge
 
 
 def _first_moa(node: LET._Element, codes: set[str]) -> Decimal:
@@ -534,6 +573,82 @@ def _invoice_total(
     return (net + tax_total).quantize(DEC2, ROUND_HALF_UP)
 
 
+def _apply_doc_allowances_sequential(
+    sum_line_net: Decimal, header_node: LET._Element
+) -> tuple[Decimal, Decimal, Decimal]:
+    """Apply document-level allowances/charges sequentially."""
+    run = sum_line_net
+    allow_total = Decimal("0")
+    charge_total = Decimal("0")
+    for sg in header_node.findall(".//e:G_SG50", NS) + header_node.findall(
+        ".//G_SG50"
+    ):
+        if sg.find("./e:S_ALC", NS) is None and sg.find("./S_ALC") is None:
+            continue
+        ancestor = sg.getparent()
+        skip = False
+        while ancestor is not None:
+            if ancestor.tag.split("}")[-1] == "G_SG52":
+                skip = True
+                break
+            ancestor = ancestor.getparent()
+        if skip:
+            continue
+        alc = sg.find("./e:S_ALC/e:D_5463", NS)
+        if alc is None:
+            alc = sg.find("./S_ALC/D_5463")
+        kind = (alc.text or "").strip() if alc is not None else ""
+        if kind not in {"A", "C"}:
+            continue
+        for pct in _get_pcd_shallow(sg):
+            amt = _dec2(run * pct / Decimal("100"))
+            if kind == "A":
+                run -= amt
+                allow_total += amt
+            else:
+                run += amt
+                charge_total += amt
+        moa = _sum_moa_shallow(sg, DOC_CODES)
+        if moa > 0:
+            if kind == "A":
+                run -= moa
+                allow_total += moa
+            else:
+                run += moa
+                charge_total += moa
+    if run < 0:
+        run = Decimal("0")
+    return _dec2(run), _dec2(allow_total), _dec2(charge_total)
+
+
+def _vat_total_after_doc(
+    sum_line_tax_124: Decimal | None,
+    lines_by_rate: dict[Decimal, Decimal],
+    doc_allow_total: Decimal,
+) -> Decimal:
+    """Compute VAT total after document allowance allocation."""
+    if sum_line_tax_124 is not None and sum_line_tax_124 != 0:
+        return _dec2(sum_line_tax_124)
+    if not lines_by_rate:
+        return Decimal("0.00")
+    base_total = sum(lines_by_rate.values())
+    alloc = {
+        rate: (
+            _dec2((val / base_total) * doc_allow_total)
+            if base_total
+            else Decimal("0")
+        )
+        for rate, val in lines_by_rate.items()
+    }
+    vat = Decimal("0")
+    for rate, base in lines_by_rate.items():
+        eff_base = base - alloc.get(rate, Decimal("0"))
+        if eff_base < 0:
+            eff_base = Decimal("0")
+        vat += _dec2(eff_base * rate / Decimal("100"))
+    return _dec2(vat)
+
+
 # ───────────────────── vrsta računa ─────────────────────
 def extract_invoice_type(source: Path | str | Any) -> str:
     """Return the invoice type code if available.
@@ -893,24 +1008,37 @@ def _line_pct_discount(sg26: LET._Element) -> Decimal:
     return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
 
+def _line_amount_after_allowances(seg: LET._Element) -> Decimal:
+    """Return line amount after sequential SG39 allowances/charges."""
+    run = _sum_moa_shallow(seg, {"203"})
+    for kind, pcds, moa_allow, moa_charge in _iter_sg39(seg):
+        for pct in pcds:
+            amt = _dec2(run * pct / Decimal("100"))
+            run = run - amt if kind == "A" else run + amt
+        if kind == "A" and moa_allow > 0:
+            run -= moa_allow
+        elif kind == "C" and moa_charge > 0:
+            run += moa_charge
+        if run < 0:
+            run = Decimal("0")
+    return _dec2(run)
+
+
 def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
     base = _sum_moa_shallow(seg, {"203"})
-    disc = _sum_moa_shallow(seg, DOC_CODES)
-
-    for sg39 in seg.findall(".//e:G_SG39", NS) + seg.findall(".//G_SG39"):
-        alc_type = sg39.find("e:S_ALC/e:D_5463", NS)
-        if alc_type is None:
-            alc_type = sg39.find("S_ALC/D_5463")
-        if alc_type is not None and (alc_type.text or "").strip() == "A":
-            disc += _sum_moa_deep(sg39, DOC_CODES)
-
-    if base == 0 and disc > 0:
-        return disc.quantize(DEC2, ROUND_HALF_UP)
-
+    disc_local = _sum_moa_shallow(seg, DOC_CODES)
+    for kind, pcds, moa_allow, _ in _iter_sg39(seg):
+        if kind != "A":
+            continue
+        for pct in pcds:
+            amt = _dec2(base * pct / Decimal("100"))
+            disc_local += amt
+        disc_local += moa_allow
+    if base == 0 and disc_local > 0:
+        return _dec2(disc_local)
     qty = _decimal(seg.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
-    if qty == 0 and base == disc and disc > 0:
-        return disc.quantize(DEC2, ROUND_HALF_UP)
-
+    if qty == 0 and base == disc_local and disc_local > 0:
+        return _dec2(disc_local)
     return None
 
 
@@ -965,64 +1093,16 @@ def _line_net(sg26: LET._Element) -> Decimal:
         return Decimal("0")
 
     base = _sum_moa_shallow(sg26, {"203"})
-    disc = _sum_moa_shallow(sg26, DOC_CODES)
-    if base == 0 and disc > 0:
+    local_moa_disc = _sum_moa_shallow(sg26, DOC_CODES)
+    if base == 0 and local_moa_disc > 0:
         return Decimal("0.00")
 
-    val = _first_moa(sg26, {"203", "125"})
+    val = _first_moa(sg26, {"125"})
     if val != 0:
-        net = val.quantize(DEC2, ROUND_HALF_UP)
+        net = _dec2(val)
         return net if net >= 0 else Decimal("0.00")
 
-    qty = _decimal(sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
-    price_net = Decimal("0")
-    price_gross = Decimal("0")
-    for pri in sg26.findall(".//e:S_PRI", NS) + sg26.findall(".//S_PRI"):
-        code = _text(pri.find("./e:C_C509/e:D_5125", NS)) or _text(
-            pri.find("./C_C509/D_5125")
-        )
-        if code == "AAA":
-            val_el = pri.find("./e:C_C509/e:D_5118", NS)
-            if val_el is None:
-                val_el = pri.find("./C_C509/D_5118")
-            price_net = _decimal(val_el)
-            break
-        if code == "AAB" and price_gross == 0:
-            val_el = pri.find("./e:C_C509/e:D_5118", NS)
-            if val_el is None:
-                val_el = pri.find("./C_C509/D_5118")
-            price_gross = _decimal(val_el)
-
-    if price_net == 0 and price_gross != 0:
-        pct = Decimal("0")
-        for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(
-            ".//G_SG39"
-        ):
-            qualifier = _text(
-                sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5249", NS)
-            ) or _text(sg39.find("./G_SG41/S_PCD/C_C501/D_5249"))
-            if qualifier != "1":
-                continue
-            pct_el = sg39.find("./e:G_SG41/e:S_PCD/e:C_C501/e:D_5482", NS)
-            if pct_el is None:
-                pct_el = sg39.find("./G_SG41/S_PCD/C_C501/D_5482")
-            pct = _decimal(pct_el)
-            if pct != 0:
-                break
-
-        if pct != 0:
-            price_net = (
-                price_gross * (Decimal("1") - pct / Decimal("100"))
-            ).quantize(Decimal("0.0001"), ROUND_HALF_UP)
-        else:
-            price_net = price_gross
-    elif price_net == 0:
-        price_net = price_gross
-
-    amount = (price_net * qty - _line_discount(sg26)).quantize(
-        DEC2, ROUND_HALF_UP
-    )
-    return amount if amount >= 0 else Decimal("0.00")
+    return _line_amount_after_allowances(sg26)
 
 
 def _line_net_before_discount(
@@ -1188,10 +1268,10 @@ def parse_eslog_invoice(
     root = tree.getroot()
     supplier_code = get_supplier_info(tree)
     header_rate = _tax_rate_from_header(root)
-    header_net = extract_header_net(root)
     items: List[Dict] = []
     net_total = Decimal("0")
     tax_total = Decimal("0")
+    lines_by_rate: Dict[Decimal, Decimal] = {}
     vat_mismatch = False
     line_doc_discount = Decimal("0")
 
@@ -1263,6 +1343,10 @@ def parse_eslog_invoice(
         tax_total = (tax_total + tax_amount).quantize(
             Decimal("0.01"), ROUND_HALF_UP
         )
+        if vat_rate:
+            lines_by_rate[vat_rate] = (
+                lines_by_rate.get(vat_rate, Decimal("0")) + net_amount
+            )
 
         # rabat na ravni vrstice
         explicit_pct: Decimal | None = None
@@ -1412,61 +1496,59 @@ def parse_eslog_invoice(
                 )
 
     # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
-    line_net_total = net_total
-    doc_discount_header = sum_moa(
-        root,
-        discount_codes or DEFAULT_DOC_DISCOUNT_CODES,
-        negative_only=True,
-        tax_amount=tax_total,
+    net_after_doc, doc_allow_header, doc_charge_total = (
+        _apply_doc_allowances_sequential(net_total, root)
     )
-    doc_charge = sum_moa(root, DEFAULT_DOC_CHARGE_CODES)
+    doc_allow_total = doc_allow_header + line_doc_discount
+    net_total = net_after_doc - line_doc_discount
 
-    doc_discount = (
-        doc_discount_header if doc_discount_header != 0 else line_doc_discount
-    ).quantize(Decimal("0.01"), ROUND_HALF_UP)
-
-    if doc_discount != 0:
+    if doc_allow_total != 0:
         items.append(
             {
                 "sifra_dobavitelja": "_DOC_",
                 "naziv": "Popust na ravni računa",
                 "kolicina": Decimal("1"),
                 "enota": "",
-                "cena_bruto": -doc_discount,
-                "cena_netto": -doc_discount,
-                "rabata": doc_discount,
+                "cena_bruto": -doc_allow_total,
+                "cena_netto": -doc_allow_total,
+                "rabata": doc_allow_total,
                 "rabata_pct": Decimal("100.00"),
-                "vrednost": -doc_discount,
+                "vrednost": -doc_allow_total,
                 "ddv": Decimal("0"),
                 "is_gratis": False,
             }
         )
 
-    if doc_charge != 0:
+    if doc_charge_total != 0:
         items.append(
             {
                 "sifra_dobavitelja": "DOC_CHG",
                 "naziv": "Strošek na ravni računa",
                 "kolicina": Decimal("1"),
                 "enota": "",
-                "cena_bruto": doc_charge,
-                "cena_netto": doc_charge,
+                "cena_bruto": doc_charge_total,
+                "cena_netto": doc_charge_total,
                 "rabata": Decimal("0"),
                 "rabata_pct": Decimal("0.00"),
-                "vrednost": doc_charge,
+                "vrednost": doc_charge_total,
                 "ddv": Decimal("0"),
                 "is_gratis": False,
             }
         )
 
-    net_total = (line_net_total - doc_discount + doc_charge).quantize(
-        Decimal("0.01"), ROUND_HALF_UP
+    header_vat = extract_total_tax(xml_path)
+    vat_total = (
+        header_vat
+        if header_vat != 0
+        else _vat_total_after_doc(
+            tax_total if tax_total != 0 else None,
+            lines_by_rate,
+            doc_allow_total,
+        )
     )
 
-    if tax_total == 0 and header_rate != 0:
-        tax_total = (net_total * header_rate).quantize(
-            Decimal("0.01"), ROUND_HALF_UP
-        )
+    net_total = _dec2(net_total)
+    gross_calc = (net_total + vat_total).quantize(DEC2, ROUND_HALF_UP)
 
     df = pd.DataFrame(items)
     df.attrs["vat_mismatch"] = vat_mismatch
@@ -1477,28 +1559,17 @@ def parse_eslog_invoice(
             ["sifra_dobavitelja", "naziv"], inplace=True, ignore_index=True
         )
 
-    header_base = header_net + doc_discount - doc_charge
-    calculated_total = _invoice_total(
-        header_base, line_net_total, doc_discount, doc_charge, tax_total
-    )
-
-    grand_total = extract_grand_total(xml_path)
+    header_gross = extract_grand_total(xml_path)
     ok = True
-    if grand_total != 0:
-        grand_total = grand_total.quantize(DEC2, ROUND_HALF_UP)
-        if abs(calculated_total - grand_total) > DEC2:
-            gt_adj = (grand_total - doc_discount + doc_charge).quantize(
-                DEC2, ROUND_HALF_UP
+    if header_gross != 0:
+        header_gross = header_gross.quantize(DEC2, ROUND_HALF_UP)
+        if abs(gross_calc - header_gross) > DEC2:
+            ok = False
+            log.warning(
+                "Invoice total mismatch: MOA 9/38/388 %s vs calculated %s",
+                header_gross,
+                gross_calc,
             )
-            if abs(calculated_total - gt_adj) <= DEC2:
-                grand_total = gt_adj
-            else:
-                ok = False
-                log.warning(
-                    "Invoice total mismatch: MOA 9 %s vs calculated %s",
-                    grand_total,
-                    calculated_total,
-                )
 
     return df, ok
 
