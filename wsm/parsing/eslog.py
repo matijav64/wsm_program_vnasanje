@@ -1657,28 +1657,12 @@ def parse_eslog_invoice(
     return df, ok
 
 
-def parse_invoice_totals(tree: LET._Element | LET._ElementTree) -> dict[str, Decimal | bool]:
-    """Return invoice totals from a parsed eSLOG tree.
+def build_invoice_model(tree: LET._Element | LET._ElementTree) -> SimpleNamespace:
+    """Construct and return basic invoice totals model.
 
-    The function mirrors the workflow used by :func:`parse_eslog_invoice` and
-    the GUI/CLI helpers.  ``tree`` must be a parsed ``lxml`` element or
-    element tree representing an ESLOG invoice.  Internally the invoice is
-    serialized and fed through :func:`parse_eslog_invoice` which performs all
-    document allowance and VAT aggregation logic.  The resulting line model is
-    then summed to produce the net, VAT and gross totals.  ``mismatch`` is set
-    when either the computed totals do not match the header grand total or when
-    line level VAT inconsistencies are detected.
-
-    Parameters
-    ----------
-    tree:
-        Parsed ``lxml`` invoice tree (root element or ``ElementTree``).
-
-    Returns
-    -------
-    dict
-        ``{"net": Decimal, "vat": Decimal, "gross": Decimal, "mismatch": bool}``
-        with values quantized to two decimal places.
+    The helper serializes ``tree`` and feeds it through
+    :func:`parse_eslog_invoice` which performs all allowance and VAT
+    aggregation.  Totals are computed by summing the resulting line model.
     """
 
     if hasattr(tree, "getroot"):
@@ -1692,14 +1676,23 @@ def parse_invoice_totals(tree: LET._Element | LET._ElementTree) -> dict[str, Dec
     net_total = df["vrednost"].sum() if "vrednost" in df.columns else Decimal("0")
     vat_total = df["ddv"].sum() if "ddv" in df.columns else Decimal("0")
     gross_total = net_total + vat_total
-
     mismatch = (not ok) or bool(df.attrs.get("vat_mismatch", False))
 
+    return SimpleNamespace(
+        net_total=net_total,
+        vat_total=vat_total,
+        gross_total=gross_total,
+        mismatch=mismatch,
+    )
+
+
+def parse_invoice_totals(tree: LET._Element | LET._ElementTree) -> dict[str, Decimal | bool]:
+    inv = build_invoice_model(tree)
     return {
-        "net": _dec2(net_total),
-        "vat": _dec2(vat_total),
-        "gross": _dec2(gross_total),
-        "mismatch": mismatch,
+        "net": _dec2(inv.net_total),
+        "vat": _dec2(inv.vat_total),
+        "gross": _dec2(inv.gross_total),
+        "mismatch": bool(getattr(inv, "mismatch", False)),
     }
 
 
