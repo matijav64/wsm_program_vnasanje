@@ -20,17 +20,47 @@ def test_get_supplier_info_vat_uses_se_when_su_missing():
 
 
 def test_get_supplier_info_prefers_vat_over_gln():
-    xml = Path("tests/PR5690-Slika1.XML")
+    xml = Path("tests/vat_with_gln.xml")
     tree = LET.parse(xml)
     code = get_supplier_info(tree)
-    assert code == "1121499"
+    assert code == "SI33333333"
 
 
 def test_get_supplier_info_uses_vat_when_no_gln():
     xml = Path("tests/vat_ahp_before_va.xml")
     tree = LET.parse(xml)
     code = get_supplier_info(tree)
-    assert code == "si 22222222"
+    assert code == "SI22222222"
+
+
+def test_get_supplier_info_ignores_invalid_vat(tmp_path):
+    xml_content = """
+    <Invoice xmlns='urn:eslog:2.00'>
+      <M_INVOIC>
+        <G_SG2>
+          <S_NAD>
+            <S_GLN><D_7402>1234567890123</D_7402></S_GLN>
+            <D_3035>SE</D_3035>
+          </S_NAD>
+          <G_SG3>
+            <S_RFF>
+              <C_C506>
+                <D_1153>VA</D_1153>
+                <D_1154>SI123</D_1154>
+              </C_C506>
+            </S_RFF>
+          </G_SG3>
+        </G_SG2>
+      </M_INVOIC>
+    </Invoice>
+    """
+    xml_file = tmp_path / "invalid.xml"
+    xml_file.write_text(xml_content)
+    tree = LET.parse(xml_file)
+    code = get_supplier_info(tree)
+    assert code == "1234567890123"
+    _, _, vat = get_supplier_info_vat(xml_file)
+    assert vat is None
 
 
 def test_get_supplier_info_vat_handles_plain_rff():
