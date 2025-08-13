@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 
 
 def _norm_vat(s: str) -> str:
-    """Return VAT number with ``SI`` prefix and digits only."""
+    """Return VAT number with ``SI`` prefix and exactly eight digits."""
     if not isinstance(s, str):
         return ""
     s = s.strip()
@@ -23,7 +23,11 @@ def _norm_vat(s: str) -> str:
         digits = "".join(ch for ch in s[2:] if ch.isdigit())
     else:
         digits = "".join(ch for ch in s if ch.isdigit())
-    return f"SI{digits}" if digits else ""
+    if len(digits) > 8:
+        digits = digits[:8]
+    if len(digits) != 8:
+        return ""
+    return f"SI{digits}"
 
 
 def choose_supplier_key(vat: str | None, code: str | None = None) -> str:
