@@ -1,0 +1,24 @@
+<Invoice xmlns='urn:eslog:2.00'>
+  <M_INVOIC>
+    <G_SG2>
+      <S_NAD>
+        <S_GLN><D_7402>3830045969997</D_7402></S_GLN>
+        <D_3035>SE</D_3035>
+      </S_NAD>
+      <G_SG3>
+        <S_RFF>
+          <C_C506>
+            <D_1153>VA</D_1153>
+            <D_1154>3830045969997</D_1154>
+          </C_C506>
+        </S_RFF>
+        <S_RFF>
+          <C_C506>
+            <D_1153>VA</D_1153>
+            <D_1154>SI12345678</D_1154>
+          </C_C506>
+        </S_RFF>
+      </G_SG3>
+    </G_SG2>
+  </M_INVOIC>
+</Invoice>
