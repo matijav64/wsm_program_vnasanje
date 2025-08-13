@@ -173,6 +173,14 @@ DEFAULT_DOC_CHARGE_CODES = ["504"]
 # Qualifiers used for seller VAT identification in ``S_RFF`` segments.
 VAT_QUALIFIERS = {"VA", "0199", "AHP"}
 
+# VAT pattern for Slovenian numbers and normalizer
+VAT_ID_RE = re.compile(r"^SI\d{8}$")
+
+
+def _normalize_vat_id(val: str) -> str:
+    """Return VAT ID without spaces and uppercased."""
+    return re.sub(r"\s+", "", val or "").upper()
+
 
 # helper functions -----------------------------------------------------
 def _find_gln(nad: LET._Element) -> str:
@@ -256,8 +264,10 @@ def _find_vat(grp: LET._Element) -> str:
         if vat_nodes:
             vat = _text(vat_nodes[0])
             if vat:
-                log.debug("Found VAT in UBL element %s: %s", path, vat)
-                return vat
+                vat = _normalize_vat_id(vat)
+                if VAT_ID_RE.match(vat):
+                    log.debug("Found VAT in UBL element %s: %s", path, vat)
+                    return vat
 
     # --- Custom <VA> element without schemeID ---
     for vat in [
@@ -265,8 +275,10 @@ def _find_vat(grp: LET._Element) -> str:
         for v in grp.xpath(".//*[local-name()='VA']/text()")
         if v.strip()
     ]:
-        log.debug("Found VAT in VA element: %s", vat)
-        return vat
+        vat = _normalize_vat_id(vat)
+        if VAT_ID_RE.match(vat):
+            log.debug("Found VAT in VA element: %s", vat)
+            return vat
 
     # --- ESLOG RFF qualifiers ---
     vat_ahp = ""
@@ -281,12 +293,14 @@ def _find_vat(grp: LET._Element) -> str:
         code = _text(code_el)
         val = _text(val_el)
         if code in VAT_QUALIFIERS and val:
-            log.debug("Found VAT in RFF %s: %s", code, val)
-            if code == "AHP":
-                if not vat_ahp:
-                    vat_ahp = val
-            else:
-                return val
+            val = _normalize_vat_id(val)
+            if VAT_ID_RE.match(val):
+                log.debug("Found VAT in RFF %s: %s", code, val)
+                if code == "AHP":
+                    if not vat_ahp:
+                        vat_ahp = val
+                else:
+                    return val
 
     if vat_ahp:
         log.debug("Found VAT in RFF AHP: %s", vat_ahp)
