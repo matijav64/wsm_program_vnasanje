@@ -460,8 +460,9 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
         line_base = Decimal("0")
         line_doc_discount = Decimal("0")
         for seg in root.findall(".//e:G_SG26", NS) + root.findall(".//G_SG26"):
+            base203 = _sum_moa_shallow(seg, {"203"})
             doc_disc = _doc_discount_from_line(seg)
-            if doc_disc is not None:
+            if doc_disc is not None and base203 == 0:
                 line_doc_discount += doc_disc
                 continue
             for moa in seg.findall(".//e:S_MOA", NS) + seg.findall(".//S_MOA"):
@@ -1105,8 +1106,6 @@ def _line_gross(sg26: LET._Element) -> Decimal:
 
 def _line_net(sg26: LET._Element) -> Decimal:
     """Return net line amount excluding VAT with line discounts applied."""
-    if _doc_discount_from_line(sg26) is not None:
-        return Decimal("0")
 
     base = _sum_moa_shallow(sg26, {"203"})
     local_moa_disc = _sum_moa_shallow(sg26, DOC_CODES)
@@ -1290,19 +1289,22 @@ def parse_eslog_invoice(
     lines_by_rate: Dict[Decimal, Decimal] = {}
     vat_mismatch = False
     doc_discount_from_lines = Decimal("0")
+    line_logs: list[dict[str, Any]] = []
 
     # ───────────── LINE ITEMS ─────────────
-    for sg26 in root.findall(".//e:G_SG26", NS):
-        doc_disc = _doc_discount_from_line(sg26)
-        if doc_disc is not None:
-            doc_discount_from_lines += doc_disc
-            continue
+    for idx, sg26 in enumerate(root.findall(".//e:G_SG26", NS)):
+        base203 = _sum_moa_shallow(sg26, {"203"})
+        doc_disc_raw = _doc_discount_from_line(sg26)
+        add_doc = Decimal("0.00")
+        if doc_disc_raw is not None and base203 == 0:
+            add_doc = doc_disc_raw
+            doc_discount_from_lines += add_doc
 
         qty = _decimal(sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
         if qty == 0:
             continue
         unit = _text(sg26.find(".//e:S_QTY/e:C_C186/e:D_6411", NS))
-        item: Dict[str, Any] = {}
+        item: Dict[str, Any] = {"_idx": idx, "_base203": base203}
 
         # poiščemo šifro artikla
         art_code = ""
@@ -1326,6 +1328,7 @@ def parse_eslog_invoice(
                 break
 
         net_amount = _line_net(sg26)
+        item["_net_std"] = net_amount
         net_before = _line_net_before_discount(sg26, net_amount)
         rebate_moa = _line_discount(sg26) + _line_amount_discount(sg26)
         pct_rebate = _line_pct_discount(sg26)
@@ -1363,6 +1366,15 @@ def parse_eslog_invoice(
             lines_by_rate[vat_rate] = (
                 lines_by_rate.get(vat_rate, Decimal("0")) + net_amount
             )
+
+        line_logs.append(
+            {
+                "idx": idx,
+                "moa203": base203,
+                "net_std": net_amount,
+                "doc_added": add_doc,
+            }
+        )
 
         # rabat na ravni vrstice
         explicit_pct: Decimal | None = None
@@ -1577,6 +1589,37 @@ def parse_eslog_invoice(
     sum_line_net = sum203 if mode == "info" else sum_line_net_std
     if mode == "info":
         doc_discount_from_lines = Decimal("0.00")
+
+    log.info(
+        "hdr125=%s, sum203=%s, sum_line_net_std=%s, hdr260_present=%s, mode=%s",
+        _dec2(hdr125) if hdr125 is not None else None,
+        sum203,
+        sum_line_net_std,
+        hdr260_present,
+        mode,
+    )
+    for ln in line_logs:
+        net_used = ln["moa203"] if mode == "info" else ln["net_std"]
+        added = Decimal("0.00") if mode == "info" else ln["doc_added"]
+        log.info(
+            "line_idx=%s, line_moa203=%s, line_net_used=%s, added_to_doc_discount=%s",
+            ln["idx"],
+            ln["moa203"],
+            net_used,
+            added,
+        )
+
+    if mode == "info":
+        for it in items:
+            if "_idx" in it:
+                it["cena_netto"] = it["_base203"]
+                it["vrednost"] = it["_base203"]
+                it["rabata"] = Decimal("0")
+                it["rabata_pct"] = Decimal("0.00")
+    for it in items:
+        it.pop("_idx", None)
+        it.pop("_base203", None)
+        it.pop("_net_std", None)
 
     # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
     net_after_doc, doc_allow_header, doc_charge_total = (
