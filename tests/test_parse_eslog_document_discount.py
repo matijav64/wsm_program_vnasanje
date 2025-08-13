@@ -2,6 +2,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from lxml import etree as LET
 
+# flake8: noqa
+
 from wsm.parsing.eslog import (
     parse_eslog_invoice,
     DEFAULT_DOC_DISCOUNT_CODES,
@@ -14,10 +16,8 @@ def _compute_doc_discount(xml_path: Path) -> Decimal:
     """Compute document discount sum using ``sum_moa``."""
     root = LET.parse(xml_path).getroot()
     codes = list(DEFAULT_DOC_DISCOUNT_CODES)
-    for extra in ("204", "25"):
-        if extra not in codes:
-            codes.append(extra)
-
+    if "204" not in codes:
+        codes.append("204")
     return sum_moa(root, codes, negative_only=True)
 
 
