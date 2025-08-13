@@ -70,7 +70,9 @@ def _decimal(el: LET._Element | None) -> Decimal:
         return Decimal("0")
 
 
-def _sum_moa_shallow(node: LET._Element, codes: set[str]) -> Decimal:
+def _sum_moa_shallow(
+    node: LET._Element, codes: set[str], *, signed: bool = False
+) -> Decimal:
     total = Decimal("0")
     for m in node.findall("./e:S_MOA", NS) + node.findall("./S_MOA"):
         q = m.find("e:C_C516/e:D_5025", NS)
@@ -80,11 +82,14 @@ def _sum_moa_shallow(node: LET._Element, codes: set[str]) -> Decimal:
         if v is None:
             v = m.find("C_C516/D_5004")
         if q is not None and v is not None and (q.text or "").strip() in codes:
-            total += abs(_decimal(v))
+            val = _decimal(v)
+            total += val if signed else abs(val)
     return total
 
 
-def _sum_moa_deep(node: LET._Element, codes: set[str]) -> Decimal:
+def _sum_moa_deep(
+    node: LET._Element, codes: set[str], *, signed: bool = False
+) -> Decimal:
     total = Decimal("0")
     for m in node.findall(".//e:S_MOA", NS) + node.findall(".//S_MOA"):
         q = m.find("e:C_C516/e:D_5025", NS)
@@ -94,7 +99,8 @@ def _sum_moa_deep(node: LET._Element, codes: set[str]) -> Decimal:
         if v is None:
             v = m.find("C_C516/D_5004")
         if q is not None and v is not None and (q.text or "").strip() in codes:
-            total += abs(_decimal(v))
+            val = _decimal(v)
+            total += val if signed else abs(val)
     return total
 
 
@@ -132,8 +138,20 @@ def _iter_sg39(node: LET._Element):
         yield kind, pcds, moa_allow, moa_charge
 
 
-def _first_moa(node: LET._Element, codes: set[str]) -> Decimal:
+def _first_moa(
+    node: LET._Element, codes: set[str], *, ignore_sg26: bool = False
+) -> Decimal:
     for m in node.findall(".//e:S_MOA", NS) + node.findall(".//S_MOA"):
+        if ignore_sg26:
+            anc = m.getparent()
+            skip = False
+            while anc is not None:
+                if anc.tag.split("}")[-1] == "G_SG26":
+                    skip = True
+                    break
+                anc = anc.getparent()
+            if skip:
+                continue
         q = m.find("e:C_C516/e:D_5025", NS)
         if q is None:
             q = m.find("C_C516/D_5025")
@@ -1043,7 +1061,7 @@ def _line_amount_after_allowances(seg: LET._Element) -> Decimal:
 
 def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
     base = _sum_moa_shallow(seg, {"203"})
-    disc_local = _sum_moa_shallow(seg, {"204"})
+    disc_local = _sum_moa_shallow(seg, {"204", "260"})
     sg39_total = Decimal("0")
     for sg39 in seg.findall("./e:G_SG39", NS) + seg.findall("./G_SG39"):
         alc = sg39.find("./e:S_ALC/e:D_5463", NS)
@@ -1056,10 +1074,10 @@ def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
             amt = _dec2(base * pct / Decimal("100"))
             disc_local += amt
             sg39_total += amt
-        moa_allow = _sum_moa_deep(sg39, {"204"})
+        moa_allow = _sum_moa_deep(sg39, {"204", "260"})
         disc_local += moa_allow
         sg39_total += moa_allow
-    if base == 0 and sg39_total > 0:
+    if base == 0 and (disc_local > 0 or sg39_total > 0):
         return _dec2(disc_local)
     return None
 
@@ -1113,7 +1131,7 @@ def _line_net(sg26: LET._Element) -> Decimal:
     """Return net line amount excluding VAT with line discounts applied."""
 
     base = _sum_moa_shallow(sg26, {"203"})
-    if base == 0 and _doc_discount_from_line(sg26):
+    if base == 0:
         return Decimal("0.00")
 
     val = _first_moa(sg26, {"125"})
@@ -1296,7 +1314,7 @@ def parse_eslog_invoice(
 
     # ───────────── LINE ITEMS ─────────────
     for idx, sg26 in enumerate(root.findall(".//e:G_SG26", NS)):
-        base203 = _sum_moa_shallow(sg26, {"203"})
+        base203 = _sum_moa_shallow(sg26, {"203"}, signed=True)
         doc_disc_raw = _doc_discount_from_line(sg26)
         add_doc = Decimal("0.00")
         if doc_disc_raw is not None and base203 == 0:
@@ -1304,7 +1322,7 @@ def parse_eslog_invoice(
             doc_discount_from_lines += add_doc
 
         qty = _decimal(sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
-        if qty == 0:
+        if qty == 0 and base203 <= 0:
             continue
         unit = _text(sg26.find(".//e:S_QTY/e:C_C186/e:D_6411", NS))
         item: Dict[str, Any] = {"_idx": idx, "_base203": base203}
@@ -1529,12 +1547,12 @@ def parse_eslog_invoice(
     # ───────── RECONCILIATION MODE ─────────
     sum203 = Decimal("0")
     for seg in root.findall(".//e:G_SG26", NS) + root.findall(".//G_SG26"):
-        sum203 += _sum_moa_shallow(seg, {"203"})
+        sum203 += _sum_moa_shallow(seg, {"203"}, signed=True)
     sum203 = _dec2(sum203)
 
     sum_line_net_std = net_total
 
-    hdr125 = _first_moa(root, {"125"})
+    hdr125 = _first_moa(root, {"125"}, ignore_sg26=True)
     hdr125 = hdr125 if hdr125 != 0 else None
     hdr9 = _first_moa(root, {"9", "38", "388"})
     hdr9 = hdr9 if hdr9 != 0 else None
@@ -1623,12 +1641,21 @@ def parse_eslog_invoice(
         )
 
     if mode == "info":
+        tax_total = Decimal("0")
+        lines_by_rate = {}
         for it in items:
             if "_idx" in it:
-                it["cena_netto"] = it["_base203"]
-                it["vrednost"] = it["_base203"]
+                base = it["_base203"]
+                rate = it.get("ddv_stopnja", Decimal("0"))
+                it["cena_netto"] = base
+                it["vrednost"] = base
                 it["rabata"] = Decimal("0")
                 it["rabata_pct"] = Decimal("0.00")
+                it["ddv"] = calculate_vat(base, rate)
+                tax_total += it["ddv"]
+                if rate:
+                    lines_by_rate[rate] = lines_by_rate.get(rate, Decimal("0")) + base
+        tax_total = tax_total.quantize(DEC2, ROUND_HALF_UP)
     for it in items:
         it.pop("_idx", None)
         it.pop("_base203", None)
