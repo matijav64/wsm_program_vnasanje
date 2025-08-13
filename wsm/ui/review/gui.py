@@ -20,6 +20,7 @@ from lxml import etree as LET
 from wsm.utils import short_supplier_name, _clean, _build_header_totals
 from wsm.constants import PRICE_DIFF_THRESHOLD
 from wsm.parsing.eslog import get_supplier_info, XML_PARSER
+from wsm.supplier_store import _norm_vat
 from .helpers import (
     _fmt,
     _norm_unit,
@@ -171,7 +172,12 @@ def review_links(
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
             tree = LET.parse(invoice_path, parser=XML_PARSER)
-            supplier_code = get_supplier_info(tree)
+            supplier_code_raw = get_supplier_info(tree)
+            supplier_code_norm = _norm_vat(supplier_code_raw)
+            if supplier_code_norm and supplier_code_raw.upper().startswith("SI"):
+                supplier_code = supplier_code_norm
+            else:
+                supplier_code = supplier_code_raw
             log.info("Supplier code extracted: %s", supplier_code)
         except Exception as exc:
             log.debug("Supplier code lookup failed: %s", exc)
