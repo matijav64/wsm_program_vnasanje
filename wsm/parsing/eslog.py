@@ -19,6 +19,7 @@ import re
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from types import SimpleNamespace
 
 import pandas as pd
 from defusedxml.common import EntitiesForbidden
@@ -37,6 +38,7 @@ XML_PARSER = LET.XMLParser(resolve_entities=False)
 # Use higher precision to avoid premature rounding when summing values.
 decimal.getcontext().prec = 28  # Python's default precision
 DEC2 = Decimal("0.01")
+TOL = Decimal("0.01")
 DOC_CODES = {"204", "260"}
 
 # module logger
@@ -46,7 +48,7 @@ log = logging.getLogger(__name__)
 # ────────────────────────── pomožne funkcije ──────────────────────────
 def _dec2(x: Decimal) -> Decimal:
     """Quantize value to two decimal places using ``ROUND_HALF_UP``."""
-    return x.quantize(DEC2, rounding=ROUND_HALF_UP)
+    return x.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _text(el: LET._Element | None) -> str:
@@ -122,11 +124,11 @@ def _iter_sg39(node: LET._Element):
             continue
         pcds = _get_pcd_shallow(sg39)
         if kind == "A":
-            moa_allow = _sum_moa_shallow(sg39, DOC_CODES)
+            moa_allow = _sum_moa_deep(sg39, DOC_CODES)
             moa_charge = Decimal("0")
         else:
             moa_allow = Decimal("0")
-            moa_charge = _sum_moa_shallow(sg39, DOC_CODES)
+            moa_charge = _sum_moa_deep(sg39, DOC_CODES)
         yield kind, pcds, moa_allow, moa_charge
 
 
@@ -920,10 +922,10 @@ def _get_document_discount(xml_root: LET._Element) -> Decimal:
 
 
 def _line_discount(sg26: LET._Element) -> Decimal:
-    """Return discount amount for a line (sum of MOA 204 values)."""
+    """Return discount amount for a line (sum of direct MOA 204 values)."""
     total = Decimal("0")
     seen: set[tuple[int, str, Decimal]] = set()
-    for moa in sg26.findall(".//e:S_MOA", NS) + sg26.findall(".//S_MOA"):
+    for moa in sg26.findall("./e:S_MOA", NS) + sg26.findall("./S_MOA"):
         code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
             moa.find("./C_C516/D_5025")
         )
@@ -949,7 +951,7 @@ def _line_amount_discount(sg26: LET._Element) -> Decimal:
     total = Decimal("0")
     seen: set[tuple[int, str, Decimal]] = set()
     for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(".//G_SG39"):
-        for moa in sg39.findall(".//e:S_MOA", NS) + sg39.findall(".//S_MOA"):
+        for moa in sg39.findall("./e:S_MOA", NS) + sg39.findall("./S_MOA"):
             code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
                 moa.find("./C_C516/D_5025")
             )
@@ -1287,13 +1289,13 @@ def parse_eslog_invoice(
     tax_total = Decimal("0")
     lines_by_rate: Dict[Decimal, Decimal] = {}
     vat_mismatch = False
-    line_doc_discount = Decimal("0")
+    doc_discount_from_lines = Decimal("0")
 
     # ───────────── LINE ITEMS ─────────────
     for sg26 in root.findall(".//e:G_SG26", NS):
         doc_disc = _doc_discount_from_line(sg26)
         if doc_disc is not None:
-            line_doc_discount += doc_disc
+            doc_discount_from_lines += doc_disc
             continue
 
         qty = _decimal(sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
@@ -1325,7 +1327,7 @@ def parse_eslog_invoice(
 
         net_amount = _line_net(sg26)
         net_before = _line_net_before_discount(sg26, net_amount)
-        rebate_moa = _line_discount(sg26)
+        rebate_moa = _line_discount(sg26) + _line_amount_discount(sg26)
         pct_rebate = _line_pct_discount(sg26)
         rebate = rebate_moa + pct_rebate
 
@@ -1513,7 +1515,7 @@ def parse_eslog_invoice(
     sum203 = Decimal("0")
     for seg in root.findall(".//e:G_SG26", NS) + root.findall(".//G_SG26"):
         sum203 += _sum_moa_shallow(seg, {"203"})
-    sum203 = sum203.quantize(DEC2, ROUND_HALF_UP)
+    sum203 = _dec2(sum203)
 
     sum_line_net_std = net_total
 
@@ -1531,50 +1533,57 @@ def parse_eslog_invoice(
             hdr260_present = True
             break
 
-    TOL = Decimal("0.01")
-
     info = (hdr125 is not None and abs(hdr125 - sum203) <= TOL) and (
         not hdr260_present
     )
     real = (hdr125 is not None and abs(hdr125 - sum_line_net_std) <= TOL) or hdr260_present
 
-    def _calc_gross(base_net: Decimal, line_disc: Decimal) -> Decimal:
+    def build_invoice_model(tree_obj, override_sum_line_net: Decimal) -> SimpleNamespace:
+        line_disc = (
+            doc_discount_from_lines
+            if override_sum_line_net == sum_line_net_std
+            else Decimal("0")
+        )
         net_after, allow_header, charge_total = _apply_doc_allowances_sequential(
-            base_net, root
+            override_sum_line_net, root
         )
         allow_total = allow_header + line_disc
         net_val = net_after - line_disc
         vat_val = _vat_total_after_doc(
             tax_total if tax_total != 0 else None, lines_by_rate, allow_total
         )
-        return (net_val + vat_val).quantize(DEC2, ROUND_HALF_UP)
+        gross_total = net_val + vat_val
+        return SimpleNamespace(gross_total=gross_total)
+
+    def calc_gross(sum_line_net: Decimal) -> Decimal:
+        inv = build_invoice_model(tree, override_sum_line_net=sum_line_net)
+        return _dec2(inv.gross_total)
 
     if info and not real:
         mode = "info"
     elif real and not info:
         mode = "real"
     else:
-        gross_info = _calc_gross(sum203, Decimal("0"))
-        gross_real = _calc_gross(sum_line_net_std, line_doc_discount)
         mode = (
             "info"
-            if abs(gross_info - (hdr9 or gross_info))
-            <= abs(gross_real - (hdr9 or gross_real))
+            if abs(calc_gross(sum203) - (hdr9 or calc_gross(sum203)))
+            <= abs(
+                calc_gross(sum_line_net_std)
+                - (hdr9 or calc_gross(sum_line_net_std))
+            )
             else "real"
         )
 
+    sum_line_net = sum203 if mode == "info" else sum_line_net_std
     if mode == "info":
-        sum_line_net = sum203
-        line_doc_discount = Decimal("0")
-    else:
-        sum_line_net = sum_line_net_std
+        doc_discount_from_lines = Decimal("0.00")
 
     # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
     net_after_doc, doc_allow_header, doc_charge_total = (
         _apply_doc_allowances_sequential(sum_line_net, root)
     )
-    doc_allow_total = doc_allow_header + line_doc_discount
-    net_total = net_after_doc - line_doc_discount
+    doc_allow_total = doc_allow_header + doc_discount_from_lines
+    net_total = net_after_doc - doc_discount_from_lines
 
     if doc_allow_total != 0:
         items.append(
