@@ -39,7 +39,10 @@ XML_PARSER = LET.XMLParser(resolve_entities=False)
 decimal.getcontext().prec = 28  # Python's default precision
 DEC2 = Decimal("0.01")
 TOL = Decimal("0.01")
-DOC_CODES = {"204", "260"}
+
+# MOA qualifiers used for discounts
+DISCOUNT_MOA_LINE = {"204"}
+DISCOUNT_MOA_DOC = {"260"}
 
 # module logger
 log = logging.getLogger(__name__)
@@ -103,7 +106,12 @@ def _sum_moa_deep(node: LET._Element, codes: set[str]) -> Decimal:
 def _get_pcd_shallow(node: LET._Element) -> list[Decimal]:
     """Return list of percentages from direct ``S_PCD`` children."""
     out: list[Decimal] = []
-    for p in node.findall("./e:S_PCD", NS) + node.findall("./S_PCD"):
+    for p in (
+        node.findall("./e:S_PCD", NS)
+        + node.findall("./S_PCD")
+        + node.findall("./e:G_SG41/e:S_PCD", NS)
+        + node.findall("./G_SG41/S_PCD")
+    ):
         val = p.find("./e:C_C501/e:D_5482", NS)
         if val is None:
             val = p.find("./C_C501/D_5482")
@@ -116,7 +124,7 @@ def _get_pcd_shallow(node: LET._Element) -> list[Decimal]:
 
 
 def _iter_sg39(node: LET._Element):
-    """Yield SG39 segments: (kind, pcd_list, moa_allow, moa_charge)."""
+    """Yield SG39 segments: (sg39_node, kind, pcd_list, moa_allow, moa_charge)."""
     for sg39 in node.findall("./e:G_SG39", NS) + node.findall("./G_SG39"):
         alc = sg39.find("./e:S_ALC/e:D_5463", NS)
         if alc is None:
@@ -126,12 +134,12 @@ def _iter_sg39(node: LET._Element):
             continue
         pcds = _get_pcd_shallow(sg39)
         if kind == "A":
-            moa_allow = _sum_moa_deep(sg39, DOC_CODES)
+            moa_allow = _sum_moa_deep(sg39, DISCOUNT_MOA_LINE)
             moa_charge = Decimal("0")
         else:
             moa_allow = Decimal("0")
-            moa_charge = _sum_moa_deep(sg39, DOC_CODES)
-        yield kind, pcds, moa_allow, moa_charge
+            moa_charge = _sum_moa_deep(sg39, DISCOUNT_MOA_LINE)
+        yield sg39, kind, pcds, moa_allow, moa_charge
 
 
 def _first_moa(
@@ -640,7 +648,7 @@ def _apply_doc_allowances_sequential(
             else:
                 run += amt
                 charge_total += abs(amt)
-        moa = _sum_moa_shallow(sg, DOC_CODES)
+        moa = _sum_moa_shallow(sg, DISCOUNT_MOA_DOC)
         if kind == "A":
             run -= abs(moa)
             allow_total += abs(moa)
@@ -968,7 +976,7 @@ def _line_amount_discount(sg26: LET._Element) -> Decimal:
     total = Decimal("0")
     seen: set[tuple[int, str, Decimal]] = set()
     for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(".//G_SG39"):
-        for moa in sg39.findall("./e:S_MOA", NS) + sg39.findall("./S_MOA"):
+        for moa in sg39.findall(".//e:S_MOA", NS) + sg39.findall(".//S_MOA"):
             code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
                 moa.find("./C_C516/D_5025")
             )
@@ -986,32 +994,39 @@ def _line_amount_discount(sg26: LET._Element) -> Decimal:
     return total.quantize(DEC2, ROUND_HALF_UP)
 
 
-def _line_pct_discount(sg26: LET._Element) -> Decimal:
-    """Return discount amount calculated from ``G_SG39`` percentage values."""
-    total = Decimal("0")
+def _pct_base(sg39: LET._Element, sg26: LET._Element) -> Decimal:
+    """Return base amount for percentage discounts."""
+
+    base = _first_moa(sg39, {"25"})
+    if base != 0:
+        return base
+
+    base = _sum_moa_shallow(sg26, {"203"})
+    if base != 0:
+        return base
+
     qty = _decimal(sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
-    price_gross = Decimal("0")
+    if qty == 0:
+        return Decimal("0")
+
+    price = Decimal("0")
     for pri in sg26.findall(".//e:S_PRI", NS) + sg26.findall(".//S_PRI"):
         code_el = pri.find("./e:C_C509/e:D_5125", NS)
         if code_el is None:
             code_el = pri.find("./C_C509/D_5125")
-        if _text(code_el) == "AAB":
+        if _text(code_el) == "AAA":
             val_el = pri.find("./e:C_C509/e:D_5118", NS)
             if val_el is None:
                 val_el = pri.find("./C_C509/D_5118")
-            price_gross = _decimal(val_el)
+            price = _decimal(val_el)
             break
-    if price_gross == 0:
-        for pri in sg26.findall(".//e:S_PRI", NS) + sg26.findall(".//S_PRI"):
-            code_el = pri.find("./e:C_C509/e:D_5125", NS)
-            if code_el is None:
-                code_el = pri.find("./C_C509/D_5125")
-            if _text(code_el) == "AAA":
-                val_el = pri.find("./e:C_C509/e:D_5118", NS)
-                if val_el is None:
-                    val_el = pri.find("./C_C509/D_5118")
-                price_gross = _decimal(val_el)
-                break
+
+    return price * qty
+
+
+def _line_pct_discount(sg26: LET._Element) -> Decimal:
+    """Return discount amount calculated from ``G_SG39`` percentage values."""
+    total = Decimal("0")
 
     for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(".//G_SG39"):
         code_el = sg39.find("./e:S_ALC/e:C_C552/e:D_5189", NS)
@@ -1029,12 +1044,15 @@ def _line_pct_discount(sg26: LET._Element) -> Decimal:
         if pct_el is None:
             pct_el = sg39.find("./G_SG41/S_PCD/C_C501/D_5482")
         pct = _decimal(pct_el)
-        if pct == 0 or qty == 0:
+        if pct == 0:
+            continue
+        base = _pct_base(sg39, sg26)
+        if base == 0:
             continue
         if qualifier == "1":
-            total += price_gross * qty * pct / Decimal("100")
+            total += base * pct / Decimal("100")
         elif qualifier == "2":
-            total += price_gross * qty * (Decimal("1") - pct)
+            total += base * (Decimal("1") - pct)
         else:  # qualifier == "3"
             total += pct
 
@@ -1045,9 +1063,10 @@ def _line_amount_after_allowances(seg: LET._Element) -> Decimal:
     """Return line amount after sequential SG39 allowances/charges."""
     base = _sum_moa_shallow(seg, {"203"})
     run = base
-    for kind, pcds, moa_allow, moa_charge in _iter_sg39(seg):
+    for sg39, kind, pcds, moa_allow, moa_charge in _iter_sg39(seg):
+        pct_base = _pct_base(sg39, seg)
         for pct in pcds:
-            amt = _dec2(run * pct / Decimal("100"))
+            amt = _dec2(pct_base * pct / Decimal("100"))
             run = run - amt if kind == "A" else run + amt
         if kind == "A":
             run -= abs(moa_allow)
@@ -1062,7 +1081,11 @@ def _line_amount_after_allowances(seg: LET._Element) -> Decimal:
 
 def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
     base = _sum_moa_shallow(seg, {"203"})
-    disc_local = abs(_sum_moa_shallow(seg, {"204", "260"}))
+    if base == 0:
+        base = _first_moa(seg, {"125"})
+    disc_local = abs(
+        _sum_moa_shallow(seg, DISCOUNT_MOA_LINE | DISCOUNT_MOA_DOC)
+    )
     sg39_total = Decimal("0")
     for sg39 in seg.findall("./e:G_SG39", NS) + seg.findall("./G_SG39"):
         alc = sg39.find("./e:S_ALC/e:D_5463", NS)
@@ -1071,11 +1094,14 @@ def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
         if (alc.text or "").strip() != "A":
             continue
         pcds = _get_pcd_shallow(sg39)
+        pct_base = _pct_base(sg39, seg)
         for pct in pcds:
-            amt = _dec2(base * pct / Decimal("100"))
+            amt = _dec2(pct_base * pct / Decimal("100"))
             disc_local += abs(amt)
             sg39_total += abs(amt)
-        moa_allow = abs(_sum_moa_deep(sg39, {"204", "260"}))
+        moa_allow = abs(
+            _sum_moa_deep(sg39, DISCOUNT_MOA_LINE | DISCOUNT_MOA_DOC)
+        )
         disc_local += moa_allow
         sg39_total += moa_allow
     if base == 0 and (disc_local > 0 or sg39_total > 0):
@@ -1133,7 +1159,8 @@ def _line_net(sg26: LET._Element) -> Decimal:
 
     base = _sum_moa_shallow(sg26, {"203"})
     if base == 0:
-        return Decimal("0.00")
+        val = _first_moa(sg26, {"125"})
+        return _dec2(val) if val != 0 else Decimal("0.00")
 
     val = _first_moa(sg26, {"125"})
     if val != 0:
@@ -1149,7 +1176,11 @@ def _line_net_before_discount(
 
     if net_after is None:
         net_after = _line_net(sg26)
-    discount = _line_discount(sg26) + _line_pct_discount(sg26)
+    discount = (
+        _line_discount(sg26)
+        + _line_amount_discount(sg26)
+        + _line_pct_discount(sg26)
+    )
     return (net_after + discount).quantize(DEC2, ROUND_HALF_UP)
 
 
