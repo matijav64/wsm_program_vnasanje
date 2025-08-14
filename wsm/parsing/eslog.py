@@ -40,9 +40,10 @@ decimal.getcontext().prec = 28  # Python's default precision
 DEC2 = Decimal("0.01")
 TOL = Decimal("0.01")
 
-# MOA qualifiers used for discounts
+# MOA qualifiers used for discounts and base amounts
 DISCOUNT_MOA_LINE = {"204"}
-DISCOUNT_MOA_DOC = {"260"}
+DOC_DISCOUNT_MOA = {"260"}
+BASE_MOA_LINE = {"25"}
 
 # Global flag indicating that SG26 discounts are informational only.
 _INFO_DISCOUNTS = False
@@ -84,25 +85,19 @@ def _moa_value(m: LET._Element) -> Decimal:
     return _decimal(val_el)
 
 
-def _sum_moa_shallow(node: LET._Element, codes: set[str]) -> Decimal:
+def _sum_moa(node: LET._Element, codes: set[str], *, deep: bool) -> Decimal:
     total = Decimal("0")
-    for m in node.findall("./e:S_MOA", NS) + node.findall("./S_MOA"):
+    path = ".//e:S_MOA" if deep else "./e:S_MOA"
+    path_alt = ".//S_MOA" if deep else "./S_MOA"
+    for m in node.findall(path, NS) + node.findall(path_alt):
         q = m.find("e:C_C516/e:D_5025", NS)
         if q is None:
             q = m.find("C_C516/D_5025")
         if q is not None and (q.text or "").strip() in codes:
-            total += _moa_value(m)
-    return total
-
-
-def _sum_moa_deep(node: LET._Element, codes: set[str]) -> Decimal:
-    total = Decimal("0")
-    for m in node.findall(".//e:S_MOA", NS) + node.findall(".//S_MOA"):
-        q = m.find("e:C_C516/e:D_5025", NS)
-        if q is None:
-            q = m.find("C_C516/D_5025")
-        if q is not None and (q.text or "").strip() in codes:
-            total += _moa_value(m)
+            val_el = m.find("e:C_C516/e:D_5004", NS)
+            if val_el is None:
+                val_el = m.find("C_C516/D_5004")
+            total += _decimal(val_el)
     return total
 
 
@@ -160,11 +155,11 @@ def _iter_sg39(node: LET._Element):
             continue
         pcds = _get_pcd_shallow(sg39)
         if kind == "A":
-            moa_allow = _sum_moa_deep(sg39, DISCOUNT_MOA_LINE)
+            moa_allow = _sum_moa(sg39, DISCOUNT_MOA_LINE, deep=True)
             moa_charge = Decimal("0")
         else:
             moa_allow = Decimal("0")
-            moa_charge = _sum_moa_deep(sg39, DISCOUNT_MOA_LINE)
+            moa_charge = _sum_moa(sg39, DISCOUNT_MOA_LINE, deep=True)
         yield sg39, kind, pcds, moa_allow, moa_charge
 
 
@@ -504,7 +499,7 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
         line_base = Decimal("0")
         line_doc_discount = Decimal("0")
         for seg in root.findall(".//e:G_SG26", NS) + root.findall(".//G_SG26"):
-            base203 = _sum_moa_shallow(seg, {"203"})
+            base203 = _sum_moa(seg, {"203"}, deep=False)
             doc_disc = _doc_discount_from_line(seg)
             if doc_disc is not None and base203 == 0:
                 line_doc_discount += doc_disc
@@ -669,7 +664,7 @@ def _apply_doc_allowances_sequential(
             else:
                 charge_total += amt
             run += amt
-        moa = _sum_moa_shallow(sg, DISCOUNT_MOA_DOC)
+        moa = _sum_moa(sg, DOC_DISCOUNT_MOA, deep=False)
         run += moa
         if kind == "A":
             allow_total += moa
@@ -1025,7 +1020,7 @@ def _line_amount_discount(sg26: LET._Element) -> Decimal:
 def _pct_base(sg39: LET._Element, sg26: LET._Element) -> Decimal:
     """Return base amount for percentage discounts."""
 
-    base = _first_moa(sg39, {"25"})
+    base = _first_moa(sg39, BASE_MOA_LINE)
     if base != 0:
         return base
 
@@ -1091,7 +1086,7 @@ def _line_pct_discount(sg26: LET._Element) -> Decimal:
 
 def _line_amount_after_allowances(seg: LET._Element) -> Decimal:
     """Return line amount after sequential SG39 allowances/charges."""
-    base = _sum_moa_shallow(seg, {"203"})
+    base = _sum_moa(seg, {"203"}, deep=False)
     run = base
     for sg39, kind, pcds, moa_allow, moa_charge in _iter_sg39(seg):
         pct_base = _pct_base(sg39, seg)
@@ -1110,10 +1105,10 @@ def _line_amount_after_allowances(seg: LET._Element) -> Decimal:
 
 
 def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
-    base = _sum_moa_shallow(seg, {"203"})
+    base = _sum_moa(seg, {"203"}, deep=False)
     if base == 0:
         base = _first_moa(seg, {"125"})
-    disc_local = -_sum_moa_shallow(seg, DISCOUNT_MOA_LINE | DISCOUNT_MOA_DOC)
+    disc_local = -_sum_moa(seg, DISCOUNT_MOA_LINE | DOC_DISCOUNT_MOA, deep=False)
     sg39_total = Decimal("0")
     for sg39 in seg.findall("./e:G_SG39", NS) + seg.findall("./G_SG39"):
         alc = sg39.find("./e:S_ALC/e:D_5463", NS)
@@ -1127,7 +1122,7 @@ def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
             amt = _dec2(pct_base * pct / Decimal("100"))
             disc_local -= amt
             sg39_total -= amt
-        moa_allow = _sum_moa_deep(sg39, DISCOUNT_MOA_LINE | DISCOUNT_MOA_DOC)
+        moa_allow = _sum_moa(sg39, DISCOUNT_MOA_LINE | DOC_DISCOUNT_MOA, deep=True)
         disc_local -= moa_allow
         sg39_total -= moa_allow
     if base == 0 and (disc_local != 0 or sg39_total != 0):
@@ -1605,7 +1600,7 @@ def parse_eslog_invoice(
     # ───────── POST LINE CHECK ─────────
     sum203 = Decimal("0")
     for seg in root.findall(".//e:G_SG26", NS) + root.findall(".//G_SG26"):
-        sum203 += _sum_moa_shallow(seg, {"203"})
+        sum203 += _sum_moa(seg, {"203"}, deep=False)
     sum203 = _dec2(sum203)
 
     sum_line_net_std = net_total
