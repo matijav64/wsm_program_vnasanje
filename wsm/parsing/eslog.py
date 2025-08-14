@@ -496,13 +496,18 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
         for seg in root.findall(".//e:G_SG26", NS) + root.findall(".//G_SG26"):
             base203 = sum(
                 _sum_moa(sg27, {"203"}, deep=False)
-                for sg27 in seg.findall("./e:G_SG27", NS) + seg.findall("./G_SG27")
+                for sg27 in seg.findall("./e:G_SG27", NS)
+                + seg.findall("./G_SG27")
             )
             doc_disc = _doc_discount_from_line(seg)
             if doc_disc is not None and base203 == 0:
                 line_doc_discount += doc_disc
-            for sg27 in seg.findall("./e:G_SG27", NS) + seg.findall("./G_SG27"):
-                for moa in sg27.findall("./e:S_MOA", NS) + sg27.findall("./S_MOA"):
+            for sg27 in seg.findall("./e:G_SG27", NS) + seg.findall(
+                "./G_SG27"
+            ):
+                for moa in sg27.findall("./e:S_MOA", NS) + sg27.findall(
+                    "./S_MOA"
+                ):
                     code_el = moa.find("./e:C_C516/e:D_5025", NS)
                     if code_el is None:
                         code_el = moa.find("./C_C516/D_5025")
@@ -1112,7 +1117,9 @@ def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
     )
     if base == 0:
         base = _first_moa(seg, {"125"})
-    disc_local = -_sum_moa(seg, DISCOUNT_MOA_LINE | DOC_DISCOUNT_MOA, deep=False)
+    disc_local = -_sum_moa(
+        seg, DISCOUNT_MOA_LINE | DOC_DISCOUNT_MOA, deep=False
+    )
     sg39_total = Decimal("0")
     for sg39 in seg.findall("./e:G_SG39", NS) + seg.findall("./G_SG39"):
         alc = sg39.find("./e:S_ALC/e:D_5463", NS)
@@ -1671,24 +1678,37 @@ def parse_eslog_invoice(
         vat_t = _vat_total_after_doc(None, by_rate, doc_allow_total)
         return (net_t + vat_t).quantize(DEC2, ROUND_HALF_UP)
 
+    gross_info = _gross_total(sum203, Decimal("0"), lines_by_rate_info)
+    gross_real = _gross_total(
+        sum_line_net_std, doc_discount_from_lines, lines_by_rate_std
+    )
+
     if hdr125 is None:
-        diff = sum203 - sum_line_net_std
-        mode = "real" if diff > TOL or diff < -TOL else "info"
-    elif -TOL <= (hdr125 - sum203) <= TOL and not hdr260_present:
-        mode = "info"
-    elif -TOL <= (hdr125 - sum_line_net_std) <= TOL or hdr260_present:
-        mode = "real"
+        info_plausible = False
+        real_plausible = True
     else:
-        gross_info = _gross_total(sum203, Decimal("0"), lines_by_rate_info)
-        gross_real = _gross_total(
-            sum_line_net_std, doc_discount_from_lines, lines_by_rate_std
+        info_plausible = (
+            -TOL <= (hdr125 - sum203) <= TOL and not hdr260_present
         )
-        if hdr9 is not None and (hdr9 - gross_info) * (hdr9 - gross_info) <= (
-            hdr9 - gross_real
-        ) * (hdr9 - gross_real):
+        real_plausible = (
+            -TOL <= (hdr125 - sum_line_net_std) <= TOL or not info_plausible
+        )
+
+    if info_plausible and real_plausible:
+        if hdr9 is None or abs(hdr9 - gross_info) <= abs(hdr9 - gross_real):
             mode = "info"
         else:
             mode = "real"
+    elif info_plausible:
+        mode = "info"
+    else:
+        mode = "real"
+
+    gross_selected = gross_info if mode == "info" else gross_real
+    if hdr9 is not None and abs(gross_selected - hdr9) > TOL:
+        other_gross = gross_real if mode == "info" else gross_info
+        if abs(hdr9 - other_gross) < abs(gross_selected - hdr9):
+            mode = "real" if mode == "info" else "info"
 
     if mode == "info":
         doc_discount_from_lines = Decimal("0.00")
