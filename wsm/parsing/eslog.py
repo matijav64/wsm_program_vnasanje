@@ -107,7 +107,8 @@ def _sum_moa(node: LET._Element, codes: set[str], *, deep: bool) -> Decimal:
 
 
 def _line_moa203(sg26: LET._Element) -> Decimal:
-    """Return MOA 203 value for a line from direct ``G_SG27/S_MOA`` children."""
+    """Return MOA 203 value for a line from direct ``G_SG27/S_MOA``
+    children."""
     for sg27 in sg26.findall("./e:G_SG27", NS) + sg26.findall("./G_SG27"):
         for cand in sg27.findall("./e:S_MOA", NS) + sg27.findall("./S_MOA"):
             q = cand.find("e:C_C516/e:D_5025", NS)
@@ -1348,6 +1349,7 @@ def _line_tax(
 def parse_eslog_invoice(
     xml_path: str | Path,
     discount_codes: List[str] | None = None,
+    _mode_override: str | None = None,
 ) -> tuple[pd.DataFrame, bool]:
     """
     Parsira ESLOG INVOIC XML in vrne DataFrame vseh postavk:
@@ -1373,6 +1375,8 @@ def parse_eslog_invoice(
     discount_codes : list[str] | None, optional
         Seznam kod za dokumentarni popust.  Privzeto je
         ``DEFAULT_DOC_DISCOUNT_CODES``.
+    _mode_override : str | None, optional
+        Internal override for calculation mode ("info" or "real").
     Če nobena vrstica ne vsebuje zneska DDV (MOA 124), se skupni DDV izračuna
     iz vsote neto postavk in stopnje DDV iz glave (če obstaja).
     Vrne tudi ``bool`` flag, ki označuje ali vsota ``net_total + tax_total``
@@ -1697,22 +1701,26 @@ def parse_eslog_invoice(
         real_plausible = (
             -TOL <= (hdr125 - sum_line_net_std) <= TOL or not info_plausible
         )
-
-    if info_plausible and real_plausible:
-        if hdr9 is None or abs(hdr9 - gross_info) <= abs(hdr9 - gross_real):
+    if _mode_override is not None:
+        mode = _mode_override
+    else:
+        if info_plausible and real_plausible:
+            if hdr9 is None or abs(hdr9 - gross_info) <= abs(
+                hdr9 - gross_real
+            ):
+                mode = "info"
+            else:
+                mode = "real"
+        elif info_plausible:
             mode = "info"
         else:
             mode = "real"
-    elif info_plausible:
-        mode = "info"
-    else:
-        mode = "real"
 
-    gross_selected = gross_info if mode == "info" else gross_real
-    if hdr9 is not None and abs(gross_selected - hdr9) > TOL:
-        other_gross = gross_real if mode == "info" else gross_info
-        if abs(hdr9 - other_gross) < abs(gross_selected - hdr9):
-            mode = "real" if mode == "info" else "info"
+        gross_selected = gross_info if mode == "info" else gross_real
+        if hdr9 is not None and abs(gross_selected - hdr9) > TOL:
+            other_gross = gross_real if mode == "info" else gross_info
+            if abs(hdr9 - other_gross) < abs(gross_selected - hdr9):
+                mode = "real" if mode == "info" else "info"
 
     if mode == "info":
         doc_discount_from_lines = Decimal("0.00")
@@ -1826,14 +1834,24 @@ def parse_eslog_invoice(
 
     net_total = _dec2(net_total)
     gross_calc = (net_total + vat_total).quantize(DEC2, ROUND_HALF_UP)
-
     header_gross = _first_moa(root, {"9", "388"}, ignore_sg26=True)
+    diff_gross = Decimal("0")
     ok = True
     if header_gross != 0:
         header_gross = header_gross.quantize(DEC2, ROUND_HALF_UP)
-        diff_gross = gross_calc - header_gross
-        if diff_gross > DEC2 or diff_gross < -DEC2:
-            ok = False
+        diff_gross = abs(gross_calc - header_gross)
+        if diff_gross > DEC2 and _mode_override is None:
+            buf = io.BytesIO(LET.tostring(root))
+            alt_mode = "real" if _INFO_DISCOUNTS else "info"
+            df_alt, ok_alt = parse_eslog_invoice(
+                buf, discount_codes, _mode_override=alt_mode
+            )
+            gross_alt = df_alt.attrs.get("gross_calc", header_gross)
+            diff_alt = abs(gross_alt - header_gross)
+            if diff_alt < diff_gross:
+                return df_alt, ok_alt
+        ok = diff_gross <= DEC2
+        if not ok:
             log.warning(
                 "Invoice total mismatch: MOA 9/38/388 %s vs calculated %s",
                 header_gross,
@@ -1850,6 +1868,8 @@ def parse_eslog_invoice(
     df = pd.DataFrame(items)
     df.attrs["vat_mismatch"] = vat_mismatch
     df.attrs["info_discounts"] = _INFO_DISCOUNTS
+    df.attrs["gross_calc"] = gross_calc
+    df.attrs["gross_mismatch"] = header_gross != 0 and diff_gross > DEC2
     if "sifra_dobavitelja" in df.columns and not df["sifra_dobavitelja"].any():
         df["sifra_dobavitelja"] = supplier_code
     if not df.empty:
