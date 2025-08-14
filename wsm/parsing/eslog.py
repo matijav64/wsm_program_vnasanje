@@ -538,7 +538,6 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
         doc_discount_header = sum_moa(
             root,
             DEFAULT_DOC_DISCOUNT_CODES,
-            negative_only=True,
             tax_amount=tax_total,
         )
         doc_charge = sum_moa(root, DEFAULT_DOC_CHARGE_CODES)
@@ -550,13 +549,13 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
 
         if line_base != 0:
             base = line_base
-            line_adjusted = line_base - doc_discount + doc_charge
+            line_adjusted = line_base + doc_discount + doc_charge
             if header_base != 0 and abs(header_base - line_adjusted) > DEC2:
                 base = header_base
         else:
             base = header_base
 
-        net = base - doc_discount + doc_charge
+        net = base + doc_discount + doc_charge
         if net < 0 and header_base > 0:
             net = header_base
         return net.quantize(DEC2, ROUND_HALF_UP)
@@ -665,18 +664,17 @@ def _apply_doc_allowances_sequential(
         for pct in _get_pcd_shallow(sg):
             amt = _dec2(run * pct / Decimal("100"))
             if kind == "A":
-                run -= amt
-                allow_total += abs(amt)
+                amt = -amt
+                allow_total += amt
             else:
-                run += amt
-                charge_total += abs(amt)
+                charge_total += amt
+            run += amt
         moa = _sum_moa_shallow(sg, DISCOUNT_MOA_DOC)
+        run += moa
         if kind == "A":
-            run -= abs(moa)
-            allow_total += abs(moa)
+            allow_total += moa
         else:
-            run += abs(moa)
-            charge_total += abs(moa)
+            charge_total += moa
         if base >= 0 and run < 0:
             run = Decimal("0")
         elif base < 0 and run > 0:
@@ -845,17 +843,14 @@ def sum_moa(
     root: LET._Element,
     codes: List[str],
     *,
-    negative_only: bool = False,
     tax_amount: Decimal | None = None,
 ) -> Decimal:
     """Return the sum of MOA amounts for the given codes.
 
     Only ``S_MOA`` elements that appear within allowance/charge segments
     (``S_ALC``) are considered.  Segments nested inside tax summary
-    groups (``G_SG52``) are ignored.  When ``negative_only`` is ``True``
-    only negative amounts are summed and their absolute values returned.
-    Amounts matching ``tax_amount`` are skipped to avoid mistaking VAT
-    totals for discounts.
+    groups (``G_SG52``) are ignored.  Amounts matching ``tax_amount`` are
+    skipped to avoid mistaking VAT totals for discounts.
     """
 
     wanted = set(codes)
@@ -888,14 +883,9 @@ def sum_moa(
                 val_el = moa.find("./C_C516/D_5004")
             val = _decimal(val_el)
 
-            if negative_only:
-                if val >= 0:
-                    continue
-                if tax_amount is not None and abs(val) == abs(tax_amount):
-                    continue
-                total += -val
-            else:
-                total += val
+            if tax_amount is not None and val == tax_amount:
+                continue
+            total += val
 
     # Scan header MOA segments (G_SG50) without S_ALC
     for sg50 in root.findall(".//e:G_SG50", NS) + root.findall(".//G_SG50"):
@@ -924,14 +914,9 @@ def sum_moa(
                 val_el = moa.find("./C_C516/D_5004")
             val = _decimal(val_el)
 
-            if negative_only:
-                if val >= 0:
-                    continue
-                if tax_amount is not None and abs(val) == abs(tax_amount):
-                    continue
-                total += -val
-            else:
-                total += val
+            if tax_amount is not None and val == tax_amount:
+                continue
+            total += val
 
     return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
@@ -1112,11 +1097,11 @@ def _line_amount_after_allowances(seg: LET._Element) -> Decimal:
         pct_base = _pct_base(sg39, seg)
         for pct in pcds:
             amt = _dec2(pct_base * pct / Decimal("100"))
-            run = run - amt if kind == "A" else run + amt
-        if kind == "A":
-            run -= abs(moa_allow)
-        else:
-            run += abs(moa_charge)
+            if kind == "A":
+                amt = -amt
+            run += amt
+        run -= moa_allow
+        run += moa_charge
         if base >= 0 and run < 0:
             run = Decimal("0")
         elif base < 0 and run > 0:
@@ -1128,9 +1113,7 @@ def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
     base = _sum_moa_shallow(seg, {"203"})
     if base == 0:
         base = _first_moa(seg, {"125"})
-    disc_local = abs(
-        _sum_moa_shallow(seg, DISCOUNT_MOA_LINE | DISCOUNT_MOA_DOC)
-    )
+    disc_local = -_sum_moa_shallow(seg, DISCOUNT_MOA_LINE | DISCOUNT_MOA_DOC)
     sg39_total = Decimal("0")
     for sg39 in seg.findall("./e:G_SG39", NS) + seg.findall("./G_SG39"):
         alc = sg39.find("./e:S_ALC/e:D_5463", NS)
@@ -1142,14 +1125,12 @@ def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
         pct_base = _pct_base(sg39, seg)
         for pct in pcds:
             amt = _dec2(pct_base * pct / Decimal("100"))
-            disc_local += abs(amt)
-            sg39_total += abs(amt)
-        moa_allow = abs(
-            _sum_moa_deep(sg39, DISCOUNT_MOA_LINE | DISCOUNT_MOA_DOC)
-        )
-        disc_local += moa_allow
-        sg39_total += moa_allow
-    if base == 0 and (disc_local > 0 or sg39_total > 0):
+            disc_local -= amt
+            sg39_total -= amt
+        moa_allow = _sum_moa_deep(sg39, DISCOUNT_MOA_LINE | DISCOUNT_MOA_DOC)
+        disc_local -= moa_allow
+        sg39_total -= moa_allow
+    if base == 0 and (disc_local != 0 or sg39_total != 0):
         return _dec2(disc_local)
     return None
 
@@ -1719,7 +1700,7 @@ def parse_eslog_invoice(
         _apply_doc_allowances_sequential(sum_line_net, root)
     )
     doc_allow_total = doc_allow_header + doc_discount_from_lines
-    net_total = net_after_doc - doc_discount_from_lines
+    net_total = net_after_doc + doc_discount_from_lines
 
     if doc_allow_total != 0:
         items.append(
@@ -1728,11 +1709,11 @@ def parse_eslog_invoice(
                 "naziv": "Popust na ravni računa",
                 "kolicina": Decimal("1"),
                 "enota": "",
-                "cena_bruto": -doc_allow_total,
-                "cena_netto": -doc_allow_total,
-                "rabata": doc_allow_total,
+                "cena_bruto": doc_allow_total,
+                "cena_netto": doc_allow_total,
+                "rabata": -doc_allow_total,
                 "rabata_pct": Decimal("100.00"),
-                "vrednost": -doc_allow_total,
+                "vrednost": doc_allow_total,
                 "ddv": Decimal("0"),
                 "is_gratis": False,
             }
@@ -1929,10 +1910,8 @@ def parse_invoice(source: str | Path):
             discount_total = (
                 Decimal("0")
                 if df_items.attrs.get("info_discounts")
-                else sum_moa(
-                    root, DEFAULT_DOC_DISCOUNT_CODES, negative_only=True
+                else -sum_moa(root, DEFAULT_DOC_DISCOUNT_CODES)
                 )
-            )
 
         gross_total = (
             _dec2((df_items["vrednost"] + df_items["ddv"]).sum())

@@ -18,7 +18,7 @@ def _compute_doc_discount(xml_path: Path) -> Decimal:
     codes = list(DEFAULT_DOC_DISCOUNT_CODES)
     if "204" not in codes:
         codes.append("204")
-    return sum_moa(root, codes, negative_only=True)
+    return sum_moa(root, codes)
 
 
 def test_parse_eslog_invoice_returns_doc_discount_row():
@@ -27,7 +27,7 @@ def test_parse_eslog_invoice_returns_doc_discount_row():
     df, ok = parse_eslog_invoice(xml_path)
     doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
 
-    assert doc_row["vrednost"] == -expected_discount
+    assert doc_row["vrednost"] == expected_discount
     assert doc_row["rabata_pct"] == Decimal("100.00")
     assert ok
 
@@ -134,7 +134,7 @@ def test_parse_eslog_invoice_handles_moa_176(tmp_path):
     df, _ = parse_eslog_invoice(xml_path)
     doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
 
-    assert doc_row["vrednost"] == -expected_discount
+    assert doc_row["vrednost"] == expected_discount
     assert doc_row["rabata_pct"] == Decimal("100.00")
 
 
@@ -205,7 +205,7 @@ def test_parse_eslog_invoice_handles_sg16_level_discount(tmp_path):
     df, _ = parse_eslog_invoice(xml_path)
     doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
 
-    assert doc_row["vrednost"] == -expected
+    assert doc_row["vrednost"] == expected
     assert doc_row["rabata_pct"] == Decimal("100.00")
 
 
@@ -215,7 +215,7 @@ def test_parse_eslog_invoice_handles_sg20_level_discount(tmp_path):
     df, _ = parse_eslog_invoice(xml_path)
     doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
 
-    assert doc_row["vrednost"] == -expected
+    assert doc_row["vrednost"] == expected
     assert doc_row["rabata_pct"] == Decimal("100.00")
 
 
