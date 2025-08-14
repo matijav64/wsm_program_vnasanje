@@ -106,3 +106,14 @@ def test_line_discount_without_namespace():
     assert line["vrednost"] == Decimal("18.00")
     assert line["cena_bruto"] == Decimal("10")
     assert line["cena_netto"] == Decimal("9.0000")
+
+
+def test_line_discount_direct_pcd():
+    xml = Path("tests/discount_line_sg26_pcd.xml")
+    df, ok = eslog.parse_eslog_invoice(xml)
+    assert ok
+    line = df.iloc[0]
+    assert line["rabata"] == Decimal("2.00")
+    assert line["vrednost"] == Decimal("18.00")
+    assert line["cena_bruto"] == Decimal("10")
+    assert line["cena_netto"] == Decimal("9.0000")
