@@ -12,9 +12,6 @@ import pandas as pd
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import builtins
-
-builtins.tk = tk
-builtins.simpledialog = simpledialog
 from lxml import etree as LET
 
 from wsm.utils import short_supplier_name, _clean, _build_header_totals
@@ -28,6 +25,9 @@ from .helpers import (
     _apply_price_warning,
 )
 from .io import _save_and_close, _load_supplier_map
+
+builtins.tk = tk
+builtins.simpledialog = simpledialog
 
 # Logger setup
 log = logging.getLogger(__name__)
@@ -174,7 +174,9 @@ def review_links(
             tree = LET.parse(invoice_path, parser=XML_PARSER)
             supplier_code_raw = get_supplier_info(tree)
             supplier_code_norm = _norm_vat(supplier_code_raw)
-            if supplier_code_norm and supplier_code_raw.upper().startswith("SI"):
+            if supplier_code_norm and supplier_code_raw.upper().startswith(
+                "SI"
+            ):
                 supplier_code = supplier_code_norm
             else:
                 supplier_code = supplier_code_raw
@@ -1069,6 +1071,8 @@ def review_links(
             "Left",
         }:
             return
+        if lb.winfo_ismapped() and not lb.curselection():
+            _close_suggestions()
         txt = entry.get().strip().lower()
         lb.delete(0, "end")
         if not txt:
@@ -1129,6 +1133,10 @@ def review_links(
         if entry.focus_get() is lb:
             return
         entry.after(10, _close_suggestions)
+
+    def _on_entry_escape(evt):
+        _close_suggestions()
+        return "break"
 
     def _nav_list(evt):
         cur = lb.curselection()[0] if lb.curselection() else -1
@@ -1399,21 +1407,19 @@ def review_links(
     bindings.append((entry, "<Right>"))
     entry.bind("<Return>", _on_return_accept)
     bindings.append((entry, "<Return>"))
+    entry.bind("<KP_Enter>", _on_return_accept)
+    bindings.append((entry, "<KP_Enter>"))
     entry.bind("<FocusOut>", _on_entry_focus_out)
     bindings.append((entry, "<FocusOut>"))
-    entry.bind(
-        "<Escape>",
-        lambda e: (
-            _close_suggestions(),
-            entry.delete(0, "end"),
-            tree.focus_set(),
-            "break",
-        ),
-    )
+    entry.bind("<Escape>", _on_entry_escape)
     bindings.append((entry, "<Escape>"))
-    lb.bind("<Return>", _confirm)
+    lb.bind("<Return>", _on_return_accept)
     bindings.append((lb, "<Return>"))
-    lb.bind("<Double-Button-1>", _confirm)
+    lb.bind("<KP_Enter>", _on_return_accept)
+    bindings.append((lb, "<KP_Enter>"))
+    lb.bind("<Button-1>", lambda e: lb.after(0, _accept_current_suggestion))
+    bindings.append((lb, "<Button-1>"))
+    lb.bind("<Double-Button-1>", _accept_current_suggestion)
     bindings.append((lb, "<Double-Button-1>"))
     lb.bind("<Down>", _nav_list)
     bindings.append((lb, "<Down>"))
