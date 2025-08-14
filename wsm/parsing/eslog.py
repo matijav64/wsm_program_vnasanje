@@ -557,8 +557,6 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
             base = header_base
 
         net = base + doc_discount + doc_charge
-        if net < 0 and header_base > 0:
-            net = header_base
         return net.quantize(DEC2, ROUND_HALF_UP)
     except Exception:
         pass
@@ -1448,7 +1446,6 @@ def parse_eslog_invoice(
         tax_amount, vat_rate = _line_tax(
             sg26, header_rate if header_rate != 0 else None
         )
-        item["ddv"] = tax_amount
         if tax_amount is None:
             vat_mismatch = True
             tax_amount = Decimal("0")
@@ -1459,6 +1456,13 @@ def parse_eslog_invoice(
             net_before = (net_amount + rebate).quantize(
                 Decimal("0.01"), ROUND_HALF_UP
             )
+
+        if net_amount == 0 and net_before > 0:
+            doc_discount_from_lines += net_before
+            add_doc += net_before
+            tax_amount = Decimal("0")
+
+        item["ddv"] = tax_amount
 
         if net_amount_moa is not None and net_amount != net_amount_moa:
             log.warning(
