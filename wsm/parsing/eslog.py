@@ -145,7 +145,8 @@ def _get_pcd_shallow(node: LET._Element) -> list[Decimal]:
 
 
 def _iter_sg39(node: LET._Element):
-    """Yield SG39 segments: (sg39_node, kind, pcd_list, moa_allow, moa_charge)."""
+    """Yield SG39 segments: (sg39_node, kind, pcd_list,
+    moa_allow, moa_charge)."""
     for sg39 in node.findall("./e:G_SG39", NS) + node.findall("./G_SG39"):
         alc = sg39.find("./e:S_ALC/e:D_5463", NS)
         if alc is None:
@@ -955,13 +956,10 @@ def _line_discount(sg26: LET._Element) -> Decimal:
     if _INFO_DISCOUNTS:
         return Decimal("0")
     total = Decimal("0")
-    for amt_el in (
-        sg26.xpath(
-            "./e:S_MOA[e:C_C516/e:D_5025='204']/e:C_C516/e:D_5004",
-            namespaces=NS,
-        )
-        + sg26.xpath("./S_MOA[C_C516/D_5025='204']/C_C516/D_5004")
-    ):
+    for amt_el in sg26.xpath(
+        "./e:S_MOA[e:C_C516/e:D_5025='204']/e:C_C516/e:D_5004",
+        namespaces=NS,
+    ) + sg26.xpath("./S_MOA[C_C516/D_5025='204']/C_C516/D_5004"):
         total += _decimal(amt_el).quantize(DEC2, ROUND_HALF_UP)
 
     pct_nodes = sg26.xpath(
@@ -982,7 +980,9 @@ def _line_discount(sg26: LET._Element) -> Decimal:
         qty_el = sg26.find("./e:S_QTY/e:C_C186/e:D_6060", NS) or sg26.find(
             "./S_QTY/C_C186/D_6060"
         )
-        base = _decimal(base_nodes[0] if base_nodes else None) * _decimal(qty_el)
+        base = _decimal(base_nodes[0] if base_nodes else None) * _decimal(
+            qty_el
+        )
         if base == 0:
             base_nodes = sg26.xpath(
                 "./e:S_MOA[e:C_C516/e:D_5025='38']/e:C_C516/e:D_5004",
@@ -1004,10 +1004,10 @@ def _line_amount_discount(sg26: LET._Element) -> Decimal:
         return Decimal("0")
     total = Decimal("0")
     paths = (
-        "./e:G_SG39/e:S_MOA[e:C_C516/e:D_5025='204']/e:C_C516/e:D_5004",
-        "./e:G_SG39/e:G_SG42/e:S_MOA[e:C_C516/e:D_5025='204']/e:C_C516/e:D_5004",
-        "./G_SG39/S_MOA[C_C516/D_5025='204']/C_C516/D_5004",
-        "./G_SG39/G_SG42/S_MOA[C_C516/D_5025='204']/C_C516/D_5004",
+        "./e:G_SG39/e:S_MOA[e:C_C516/e:D_5025='204']/e:C_C516/e:D_5004",  # noqa: E501
+        "./e:G_SG39/e:G_SG42/e:S_MOA[e:C_C516/e:D_5025='204']/e:C_C516/e:D_5004",  # noqa: E501
+        "./G_SG39/S_MOA[C_C516/D_5025='204']/C_C516/D_5004",  # noqa: E501
+        "./G_SG39/G_SG42/S_MOA[C_C516/D_5025='204']/C_C516/D_5004",  # noqa: E501
     )
     for path in paths:
         for amt_el in sg26.xpath(path, namespaces=NS):
@@ -1107,7 +1107,9 @@ def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
     base = _sum_moa(seg, {"203"}, deep=False)
     if base == 0:
         base = _first_moa(seg, {"125"})
-    disc_local = -_sum_moa(seg, DISCOUNT_MOA_LINE | DOC_DISCOUNT_MOA, deep=False)
+    disc_local = -_sum_moa(
+        seg, DISCOUNT_MOA_LINE | DOC_DISCOUNT_MOA, deep=False
+    )
     sg39_total = Decimal("0")
     for sg39 in seg.findall("./e:G_SG39", NS) + seg.findall("./G_SG39"):
         alc = sg39.find("./e:S_ALC/e:D_5463", NS)
@@ -1121,7 +1123,9 @@ def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
             amt = _dec2(pct_base * pct / Decimal("100"))
             disc_local -= amt
             sg39_total -= amt
-        moa_allow = _sum_moa(sg39, DISCOUNT_MOA_LINE | DOC_DISCOUNT_MOA, deep=True)
+        moa_allow = _sum_moa(
+            sg39, DISCOUNT_MOA_LINE | DOC_DISCOUNT_MOA, deep=True
+        )
         disc_local -= moa_allow
         sg39_total -= moa_allow
     if base == 0 and (disc_local != 0 or sg39_total != 0):
@@ -1204,7 +1208,9 @@ def _line_net_before_discount(
     return (net_after + discount).quantize(DEC2, ROUND_HALF_UP)
 
 
-def _line_net_standard(sg26: LET._Element, base203: Decimal | None = None) -> Decimal:
+def _line_net_standard(
+    sg26: LET._Element, base203: Decimal | None = None
+) -> Decimal:
     """Return net amount minus only MOA 204 and PCD-based discounts."""
 
     if base203 is None:
@@ -1649,7 +1655,9 @@ def parse_eslog_invoice(
             hdr260_present = True
             break
 
-    def _gross_total(base_net: Decimal, doc_disc: Decimal, by_rate: dict[Decimal, Decimal]) -> Decimal:
+    def _gross_total(
+        base_net: Decimal, doc_disc: Decimal, by_rate: dict[Decimal, Decimal]
+    ) -> Decimal:
         net_after_doc, doc_allow_header, _ = _apply_doc_allowances_sequential(
             base_net, root
         )
@@ -1669,7 +1677,9 @@ def parse_eslog_invoice(
         gross_real = _gross_total(
             sum_line_net_std, doc_discount_from_lines, lines_by_rate_std
         )
-        if hdr9 is not None and abs(hdr9 - gross_info) <= abs(hdr9 - gross_real):
+        if hdr9 is not None and abs(hdr9 - gross_info) <= abs(
+            hdr9 - gross_real
+        ):
             mode = "info"
         else:
             mode = "real"
@@ -1695,32 +1705,37 @@ def parse_eslog_invoice(
 
     global _INFO_DISCOUNTS
     _INFO_DISCOUNTS = mode == "info"
-
+    # Debug: remove once sanity checks pass
     log.info(
-        (
-            "hdr125=%s, sum203=%s, sum_line_net_std=%s, "
-            "hdr9=%s, hdr260_present=%s, mode=%s"
-        ),
+        "hdr125=%s, sum203=%s, sum_line_net_std=%s, hdr260_present=%s, "
+        "mode=%s",
         _dec2(hdr125) if hdr125 is not None else None,
         sum203,
         sum_line_net_std,
-        _dec2(hdr9) if hdr9 is not None else None,
         hdr260_present,
         mode,
     )
+
     for ln in line_logs:
         net_used = ln["moa203"] if _INFO_DISCOUNTS else ln["net_std"]
-        added = Decimal("0.00") if _INFO_DISCOUNTS else ln["doc_added"]
-        log.info(
-            (
-                "line_idx=%s, line_moa203=%s, line_net_used=%s, "
-                "added_to_doc_discount=%s"
-            ),
-            ln["idx"],
-            ln["moa203"],
-            net_used,
-            added,
-        )
+        if _INFO_DISCOUNTS:
+            # Debug: remove once sanity checks pass
+            log.info(
+                "line_idx=%s, base203=%s, line_net_used=%s",
+                ln["idx"],
+                ln["moa203"],
+                net_used,
+            )
+        else:
+            # Debug: remove once sanity checks pass
+            log.info(
+                "line_idx=%s, base203=%s, line_net_used=%s, "
+                "added_to_doc_discount=%s",
+                ln["idx"],
+                ln["moa203"],
+                net_used,
+                ln["doc_added"],
+            )
 
     for it in items:
         it.pop("_idx", None)
@@ -1854,13 +1869,15 @@ def parse_invoice_totals(
     df, _ = parse_eslog_invoice(buf)
 
     net_total = (
-        _dec2(df["vrednost"].sum()) if "vrednost" in df.columns else Decimal("0")
+        _dec2(df["vrednost"].sum())
+        if "vrednost" in df.columns
+        else Decimal("0")
     )
-    vat_total = (
-        _dec2(df["ddv"].sum()) if "ddv" in df.columns else Decimal("0")
-    )
+    vat_total = _dec2(df["ddv"].sum()) if "ddv" in df.columns else Decimal("0")
     gross_total = (
-        _dec2((df["vrednost"] + df["ddv"]).sum()) if not df.empty else Decimal("0")
+        _dec2((df["vrednost"] + df["ddv"]).sum())
+        if not df.empty
+        else Decimal("0")
     )
 
     header_net = extract_header_net(root)
@@ -1943,7 +1960,7 @@ def parse_invoice(source: str | Path):
                 Decimal("0")
                 if df_items.attrs.get("info_discounts")
                 else -sum_moa(root, DEFAULT_DOC_DISCOUNT_CODES)
-                )
+            )
 
         gross_total = (
             _dec2((df_items["vrednost"] + df_items["ddv"]).sum())
