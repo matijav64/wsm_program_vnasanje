@@ -1419,7 +1419,7 @@ def review_links(
     bindings.append((lb, "<KP_Enter>"))
     lb.bind("<Button-1>", lambda e: lb.after(0, _accept_current_suggestion))
     bindings.append((lb, "<Button-1>"))
-    lb.bind("<Double-Button-1>", _accept_current_suggestion)
+    lb.bind("<Double-Button-1>", lambda e: _accept_current_suggestion())
     bindings.append((lb, "<Double-Button-1>"))
     lb.bind("<Down>", _nav_list)
     bindings.append((lb, "<Down>"))
