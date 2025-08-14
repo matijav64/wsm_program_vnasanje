@@ -1294,6 +1294,7 @@ def review_links(
         _schedule_totals()  # Update totals after confirming
         entry.delete(0, "end")
         _close_suggestions()
+        lb.selection_clear(0, "end")
         tree.focus_set()
         next_i = tree.next(sel_i)
         if next_i:

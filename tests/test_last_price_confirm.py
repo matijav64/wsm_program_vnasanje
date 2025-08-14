@@ -102,6 +102,9 @@ class DummyListbox:
     def pack_forget(self):
         pass
 
+    def selection_clear(self, start, end):
+        pass
+
 
 def _extract_confirm(threshold=Decimal("5")):
     src = inspect.getsource(rl.review_links).splitlines()
@@ -121,6 +124,7 @@ def _extract_confirm(threshold=Decimal("5")):
         "log": rl.log,
         "price_warn_threshold": threshold,
         "_schedule_totals": lambda: None,
+        "_close_suggestions": lambda: None,
     }
     exec(snippet, ns)
     return ns["_confirm"], ns

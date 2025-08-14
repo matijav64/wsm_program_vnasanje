@@ -33,6 +33,7 @@ def _extract_confirm():
         "log": rl.log,
         "price_warn_threshold": Decimal("5"),
         "_schedule_totals": lambda: None,
+        "_close_suggestions": lambda: None,
     }
     exec(snippet, ns)
     return ns["_confirm"], ns
@@ -63,6 +64,7 @@ def test_listbox_hidden_after_confirm(monkeypatch, tmp_path):
         entry = ttk.Entry(root)
         entry.grid(row=0, column=0)
 
+        root.deiconify()
         lb = tk.Listbox(root)
         lb.grid(row=1, column=0)
         lb.insert(0, "Foo")
@@ -85,6 +87,15 @@ def test_listbox_hidden_after_confirm(monkeypatch, tmp_path):
         tree.insert("", "end", iid="0", values=["" for _ in cols])
         tree.focus("0")
 
+        focused = {"value": False}
+        orig_focus_set = tree.focus_set
+
+        def track_focus():
+            focused["value"] = True
+            orig_focus_set()
+
+        tree.focus_set = track_focus
+
         ns.update(
             {
                 "df": df,
@@ -99,12 +110,22 @@ def test_listbox_hidden_after_confirm(monkeypatch, tmp_path):
                 "_schedule_totals": lambda: None,
             }
         )
+        cleared = {"value": False}
+
+        def close_suggestions():
+            lb.grid_remove()
+            lb.selection_clear(0, "end")
+            cleared["value"] = True
+            entry.focus_set()
+
+        ns["_close_suggestions"] = close_suggestions
         monkeypatch.setattr("wsm.utils.load_last_price", lambda *a, **k: None)
 
-        entry.bind("<Return>", _confirm)
         root.update()
-        entry.event_generate("<Return>")
+        _confirm()
         root.update()
 
         assert not lb.winfo_ismapped()
+        assert cleared["value"]
+        assert focused["value"]
         root.destroy()
