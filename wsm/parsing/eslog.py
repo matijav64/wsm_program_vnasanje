@@ -106,6 +106,29 @@ def _sum_moa_deep(node: LET._Element, codes: set[str]) -> Decimal:
     return total
 
 
+def _line_moa203(sg26: LET._Element) -> Decimal:
+    """Return MOA 203 value for a line, searching nested segments if needed."""
+    m = None
+    for cand in sg26.findall("./e:S_MOA", NS) + sg26.findall("./S_MOA"):
+        q = cand.find("e:C_C516/e:D_5025", NS)
+        if q is None:
+            q = cand.find("C_C516/D_5025")
+        if q is not None and _text(q) == "203":
+            m = cand
+            break
+    if m is None:
+        for cand in sg26.findall(".//e:S_MOA", NS) + sg26.findall(".//S_MOA"):
+            q = cand.find("e:C_C516/e:D_5025", NS)
+            if q is None:
+                q = cand.find("C_C516/D_5025")
+            if q is not None and _text(q) == "203":
+                m = cand
+                break
+    if m is not None:
+        return _dec2(_moa_value(m))
+    return Decimal("0.00")
+
+
 def _get_pcd_shallow(node: LET._Element) -> list[Decimal]:
     """Return list of percentages from direct ``S_PCD`` children."""
     out: list[Decimal] = []
@@ -1021,7 +1044,7 @@ def _pct_base(sg39: LET._Element, sg26: LET._Element) -> Decimal:
     if base != 0:
         return base
 
-    base = _sum_moa_shallow(sg26, {"203"})
+    base = _line_moa203(sg26)
     if base != 0:
         return base
 
@@ -1179,7 +1202,7 @@ def _line_gross(sg26: LET._Element) -> Decimal:
 def _line_net(sg26: LET._Element) -> Decimal:
     """Return net line amount excluding VAT with line discounts applied."""
 
-    base = _sum_moa_shallow(sg26, {"203"})
+    base = _line_moa203(sg26)
     if base == 0:
         val = _first_moa(sg26, {"125"})
         return _dec2(val) if val != 0 else Decimal("0.00")
@@ -1368,7 +1391,7 @@ def parse_eslog_invoice(
 
     # ───────────── LINE ITEMS ─────────────
     for idx, sg26 in enumerate(root.findall(".//e:G_SG26", NS)):
-        base203 = _sum_moa_shallow(sg26, {"203"})
+        base203 = _line_moa203(sg26)
         doc_disc_raw = _doc_discount_from_line(sg26)
         add_doc = Decimal("0.00")
         if doc_disc_raw is not None and base203 == 0:
