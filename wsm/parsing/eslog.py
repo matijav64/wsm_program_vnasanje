@@ -1498,6 +1498,7 @@ def parse_eslog_invoice(
                 "moa203": base203,
                 "net_std": net_amount,
                 "doc_added": add_doc,
+                "carried_doc_disc": add_doc,
             }
         )
 
@@ -1755,25 +1756,15 @@ def parse_eslog_invoice(
     )
 
     for ln in line_logs:
-        net_used = ln["moa203"] if _INFO_DISCOUNTS else ln["net_std"]
-        if _INFO_DISCOUNTS:
-            # Debug: remove once sanity checks pass
-            log.info(
-                "line_idx=%s, base203=%s, line_net_used=%s",
-                ln["idx"],
-                ln["moa203"],
-                net_used,
-            )
-        else:
-            # Debug: remove once sanity checks pass
-            log.info(
-                "line_idx=%s, base203=%s, line_net_used=%s, "
-                "added_to_doc_discount=%s",
-                ln["idx"],
-                ln["moa203"],
-                net_used,
-                ln["doc_added"],
-            )
+        line_net_used = ln["moa203"] if _INFO_DISCOUNTS else ln["net_std"]
+        log.debug(
+            "line_idx=%s, moa203=%s, line_net_used=%s, doc_added=%s, carried_doc_disc=%s",
+            ln["idx"],
+            ln["moa203"],
+            line_net_used,
+            ln.get("doc_added", Decimal("0")),
+            ln.get("carried_doc_disc", Decimal("0")),
+        )
 
     for it in items:
         it.pop("_idx", None)
