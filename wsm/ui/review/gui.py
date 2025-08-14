@@ -1097,6 +1097,39 @@ def review_links(
                 _nav_list(evt)
         return "break"
 
+    def _close_suggestions():
+        """Hide the suggestion listbox and reset selection."""
+        if not lb.winfo_ismapped():
+            return
+        try:
+            lb.grid_remove()
+        except Exception:  # pragma: no cover - defensive
+            lb.pack_forget()
+        lb.selection_clear(0, "end")
+        entry.focus_set()
+
+    def _accept_current_suggestion():
+        """Insert the selected suggestion into the entry widget."""
+        if lb.curselection():
+            value = lb.get(lb.curselection()[0])
+            entry.delete(0, "end")
+            entry.insert(0, value)
+            entry.icursor("end")
+        lb.selection_clear(0, "end")
+        _close_suggestions()
+        return "break"
+
+    def _on_return_accept(evt=None):
+        if lb.winfo_ismapped():
+            _accept_current_suggestion()
+            return "break"
+        return _confirm(evt)
+
+    def _on_entry_focus_out(evt):
+        if entry.focus_get() is lb:
+            return
+        entry.after(10, _close_suggestions)
+
     def _nav_list(evt):
         cur = lb.curselection()[0] if lb.curselection() else -1
         nxt = cur + 1 if evt.keysym == "Down" else cur - 1
@@ -1260,7 +1293,7 @@ def review_links(
         _update_summary()  # Update summary after confirming
         _schedule_totals()  # Update totals after confirming
         entry.delete(0, "end")
-        lb.pack_forget()
+        _close_suggestions()
         tree.focus_set()
         next_i = tree.next(sel_i)
         if next_i:
@@ -1363,12 +1396,14 @@ def review_links(
     bindings.append((entry, "<Tab>"))
     entry.bind("<Right>", _init_listbox)
     bindings.append((entry, "<Right>"))
-    entry.bind("<Return>", _confirm)
+    entry.bind("<Return>", _on_return_accept)
     bindings.append((entry, "<Return>"))
+    entry.bind("<FocusOut>", _on_entry_focus_out)
+    bindings.append((entry, "<FocusOut>"))
     entry.bind(
         "<Escape>",
         lambda e: (
-            lb.grid_remove(),
+            _close_suggestions(),
             entry.delete(0, "end"),
             tree.focus_set(),
             "break",
