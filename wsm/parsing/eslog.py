@@ -1634,7 +1634,7 @@ def parse_eslog_invoice(
 
     hdr125 = _first_moa(root, {"125"}, ignore_sg26=True)
     hdr125 = hdr125 if hdr125 != 0 else None
-    hdr9 = _first_moa(root, {"9"}, ignore_sg26=True)
+    hdr9 = _first_moa(root, {"9", "388"}, ignore_sg26=True)
     hdr9 = hdr9 if hdr9 != 0 else None
 
     hdr260_present = False
@@ -1667,19 +1667,20 @@ def parse_eslog_invoice(
         return (net_t + vat_t).quantize(DEC2, ROUND_HALF_UP)
 
     if hdr125 is None:
-        mode = "real" if abs(sum203 - sum_line_net_std) > TOL else "info"
-    elif abs(hdr125 - sum203) <= TOL and not hdr260_present:
+        diff = sum203 - sum_line_net_std
+        mode = "real" if diff > TOL or diff < -TOL else "info"
+    elif -TOL <= (hdr125 - sum203) <= TOL and not hdr260_present:
         mode = "info"
-    elif abs(hdr125 - sum_line_net_std) <= TOL or hdr260_present:
+    elif -TOL <= (hdr125 - sum_line_net_std) <= TOL or hdr260_present:
         mode = "real"
     else:
         gross_info = _gross_total(sum203, Decimal("0"), lines_by_rate_info)
         gross_real = _gross_total(
             sum_line_net_std, doc_discount_from_lines, lines_by_rate_std
         )
-        if hdr9 is not None and abs(hdr9 - gross_info) <= abs(
+        if hdr9 is not None and (hdr9 - gross_info) * (hdr9 - gross_info) <= (
             hdr9 - gross_real
-        ):
+        ) * (hdr9 - gross_real):
             mode = "info"
         else:
             mode = "real"
@@ -1783,7 +1784,7 @@ def parse_eslog_invoice(
             }
         )
 
-    header_vat = extract_total_tax(xml_path)
+    header_vat = extract_total_tax(root)
     vat_total = (
         header_vat
         if header_vat != 0
@@ -1797,6 +1798,26 @@ def parse_eslog_invoice(
     net_total = _dec2(net_total)
     gross_calc = (net_total + vat_total).quantize(DEC2, ROUND_HALF_UP)
 
+    header_gross = _first_moa(root, {"9", "388"}, ignore_sg26=True)
+    ok = True
+    if header_gross != 0:
+        header_gross = header_gross.quantize(DEC2, ROUND_HALF_UP)
+        diff_gross = gross_calc - header_gross
+        if diff_gross > DEC2 or diff_gross < -DEC2:
+            ok = False
+            log.warning(
+                "Invoice total mismatch: MOA 9/38/388 %s vs calculated %s",
+                header_gross,
+                gross_calc,
+            )
+
+    if hdr125 is not None:
+        net_total = _dec2(hdr125)
+    if header_vat != 0:
+        vat_total = header_vat
+    if header_gross != 0:
+        gross_calc = header_gross
+
     df = pd.DataFrame(items)
     df.attrs["vat_mismatch"] = vat_mismatch
     df.attrs["info_discounts"] = _INFO_DISCOUNTS
@@ -1806,18 +1827,6 @@ def parse_eslog_invoice(
         df.sort_values(
             ["sifra_dobavitelja", "naziv"], inplace=True, ignore_index=True
         )
-
-    header_gross = extract_grand_total(xml_path)
-    ok = True
-    if header_gross != 0:
-        header_gross = header_gross.quantize(DEC2, ROUND_HALF_UP)
-        if abs(gross_calc - header_gross) > DEC2:
-            ok = False
-            log.warning(
-                "Invoice total mismatch: MOA 9/38/388 %s vs calculated %s",
-                header_gross,
-                gross_calc,
-            )
 
     return df, ok
 
