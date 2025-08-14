@@ -73,18 +73,22 @@ def _decimal(el: LET._Element | None) -> Decimal:
         return Decimal("0")
 
 
+def _moa_value(m: LET._Element) -> Decimal:
+    """Extract signed monetary amount from an ``S_MOA`` element."""
+    val_el = m.find("./e:C_C516/e:D_5004", NS)
+    if val_el is None:
+        val_el = m.find("./C_C516/D_5004")
+    return _decimal(val_el)
+
+
 def _sum_moa_shallow(node: LET._Element, codes: set[str]) -> Decimal:
     total = Decimal("0")
     for m in node.findall("./e:S_MOA", NS) + node.findall("./S_MOA"):
         q = m.find("e:C_C516/e:D_5025", NS)
         if q is None:
             q = m.find("C_C516/D_5025")
-        v = m.find("e:C_C516/e:D_5004", NS)
-        if v is None:
-            v = m.find("C_C516/D_5004")
-        if q is not None and v is not None and (q.text or "").strip() in codes:
-            val = _decimal(v)
-            total += val
+        if q is not None and (q.text or "").strip() in codes:
+            total += _moa_value(m)
     return total
 
 
@@ -94,12 +98,8 @@ def _sum_moa_deep(node: LET._Element, codes: set[str]) -> Decimal:
         q = m.find("e:C_C516/e:D_5025", NS)
         if q is None:
             q = m.find("C_C516/D_5025")
-        v = m.find("e:C_C516/e:D_5004", NS)
-        if v is None:
-            v = m.find("C_C516/D_5004")
-        if q is not None and v is not None and (q.text or "").strip() in codes:
-            val = _decimal(v)
-            total += val
+        if q is not None and (q.text or "").strip() in codes:
+            total += _moa_value(m)
     return total
 
 
@@ -160,13 +160,9 @@ def _first_moa(
         if q is None:
             q = m.find("C_C516/D_5025")
         if q is not None and (q.text or "").strip() in codes:
-            v = m.find("e:C_C516/e:D_5004", NS)
-            if v is None:
-                v = m.find("C_C516/D_5004")
-            if v is not None:
-                val = _decimal(v)
-                if val:
-                    return val
+            val = _moa_value(m)
+            if val:
+                return val
     return Decimal("0")
 
 
@@ -1643,9 +1639,11 @@ def parse_eslog_invoice(
             else "real"
         )
 
-    sum_line_net = sum203 if mode == "info" else sum_line_net_std
     if mode == "info":
         doc_discount_from_lines = Decimal("0.00")
+        sum_line_net = sum203
+    else:
+        sum_line_net = sum_line_net_std
 
     log.info(
         (
