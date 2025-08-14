@@ -1205,6 +1205,21 @@ def _line_net_before_discount(
     return (net_after + discount).quantize(DEC2, ROUND_HALF_UP)
 
 
+def _line_net_standard(sg26: LET._Element, base203: Decimal | None = None) -> Decimal:
+    """Return net amount minus only MOA 204 and PCD-based discounts."""
+
+    if base203 is None:
+        base203 = _line_moa203(sg26)
+        if base203 == 0:
+            val = _first_moa(sg26, {"125"})
+            base203 = _dec2(val) if val != 0 else Decimal("0.00")
+
+    net = base203
+    net -= _sum_moa(sg26, DISCOUNT_MOA_LINE, deep=True)
+    net -= _line_pct_discount(sg26)
+    return _dec2(net)
+
+
 def _line_tax(
     sg26: LET._Element, default_rate: Decimal | None = None
 ) -> tuple[Decimal, Decimal]:
@@ -1364,6 +1379,9 @@ def parse_eslog_invoice(
     vat_mismatch = False
     doc_discount_from_lines = Decimal("0")
     line_logs: list[dict[str, Any]] = []
+    line_items: list[tuple[LET._Element, Decimal, Decimal]] = []
+    lines_by_rate_info: Dict[Decimal, Decimal] = {}
+    lines_by_rate_std: Dict[Decimal, Decimal] = {}
 
     # ───────────── LINE ITEMS ─────────────
     for idx, sg26 in enumerate(root.findall(".//e:G_SG26", NS)):
@@ -1378,7 +1396,13 @@ def parse_eslog_invoice(
         if qty == 0 and base203 <= 0:
             continue
         unit = _text(sg26.find(".//e:S_QTY/e:C_C186/e:D_6411", NS))
-        item: Dict[str, Any] = {"_idx": idx, "_base203": base203}
+        net_std = _line_net_standard(sg26, base203)
+        item: Dict[str, Any] = {
+            "_idx": idx,
+            "_base203": base203,
+            "_net_std": net_std,
+        }
+        line_items.append((sg26, base203, net_std))
 
         # poiščemo šifro artikla
         art_code = ""
@@ -1402,7 +1426,6 @@ def parse_eslog_invoice(
                 break
 
         net_amount = _line_net(sg26)
-        item["_net_std"] = net_amount
         net_before = _line_net_before_discount(sg26, net_amount)
         rebate_moa = _line_discount(sg26) + _line_amount_discount(sg26)
         pct_rebate = _line_pct_discount(sg26)
@@ -1439,6 +1462,12 @@ def parse_eslog_invoice(
         if vat_rate:
             lines_by_rate[vat_rate] = (
                 lines_by_rate.get(vat_rate, Decimal("0")) + net_amount
+            )
+            lines_by_rate_info[vat_rate] = (
+                lines_by_rate_info.get(vat_rate, Decimal("0")) + base203
+            )
+            lines_by_rate_std[vat_rate] = (
+                lines_by_rate_std.get(vat_rate, Decimal("0")) + net_std
             )
 
         line_logs.append(
@@ -1598,15 +1627,13 @@ def parse_eslog_invoice(
                 )
 
     # ───────── POST LINE CHECK ─────────
-    sum203 = Decimal("0")
-    for seg in root.findall(".//e:G_SG26", NS) + root.findall(".//G_SG26"):
-        sum203 += _sum_moa(seg, {"203"}, deep=False)
-    sum203 = _dec2(sum203)
+    sum203 = _dec2(sum((b for _, b, _ in line_items), Decimal("0")))
+    sum_line_net_std = _dec2(sum((n for _, _, n in line_items), Decimal("0")))
 
-    sum_line_net_std = net_total
-
-    hdr125 = _first_moa(root, {"125", "389"}, ignore_sg26=True)
+    hdr125 = _first_moa(root, {"125"}, ignore_sg26=True)
     hdr125 = hdr125 if hdr125 != 0 else None
+    hdr9 = _first_moa(root, {"9"}, ignore_sg26=True)
+    hdr9 = hdr9 if hdr9 != 0 else None
 
     hdr260_present = False
     for moa in root.findall(".//e:S_MOA", NS) + root.findall(".//S_MOA"):
@@ -1626,36 +1653,68 @@ def parse_eslog_invoice(
             hdr260_present = True
             break
 
-    info = (
-        hdr125 is not None
-        and abs(hdr125 - sum203) <= TOL
-        and abs(hdr125 - sum_line_net_std) > TOL
-        and not hdr260_present
-    )
+    def _gross_total(base_net: Decimal, doc_disc: Decimal, by_rate: dict[Decimal, Decimal]) -> Decimal:
+        net_after_doc, doc_allow_header, _ = _apply_doc_allowances_sequential(
+            base_net, root
+        )
+        net_t = net_after_doc + doc_disc
+        doc_allow_total = doc_allow_header + doc_disc
+        vat_t = _vat_total_after_doc(None, by_rate, doc_allow_total)
+        return (net_t + vat_t).quantize(DEC2, ROUND_HALF_UP)
 
-    if info:
+    if hdr125 is None:
+        mode = "real" if abs(sum203 - sum_line_net_std) > TOL else "info"
+    elif abs(hdr125 - sum203) <= TOL and not hdr260_present:
+        mode = "info"
+    elif abs(hdr125 - sum_line_net_std) <= TOL or hdr260_present:
+        mode = "real"
+    else:
+        gross_info = _gross_total(sum203, Decimal("0"), lines_by_rate_info)
+        gross_real = _gross_total(
+            sum_line_net_std, doc_discount_from_lines, lines_by_rate_std
+        )
+        if hdr9 is not None and abs(hdr9 - gross_info) <= abs(hdr9 - gross_real):
+            mode = "info"
+        else:
+            mode = "real"
+
+    if mode == "info":
         doc_discount_from_lines = Decimal("0.00")
         sum_line_net = sum203
+        tax_total = Decimal("0")
+        for it in items:
+            if "_idx" in it:
+                base = it["_base203"]
+                rate = it.get("ddv_stopnja", Decimal("0"))
+                it["cena_netto"] = base
+                it["vrednost"] = base
+                it["rabata"] = Decimal("0")
+                it["rabata_pct"] = Decimal("0.00")
+                it["ddv"] = calculate_vat(base, rate)
+                tax_total += it["ddv"]
+        tax_total = tax_total.quantize(DEC2, ROUND_HALF_UP)
+        lines_by_rate = lines_by_rate_info
     else:
-        sum_line_net = sum_line_net_std
+        sum_line_net = net_total
 
     global _INFO_DISCOUNTS
-    _INFO_DISCOUNTS = info
+    _INFO_DISCOUNTS = mode == "info"
 
     log.info(
         (
             "hdr125=%s, sum203=%s, sum_line_net_std=%s, "
-            "hdr260_present=%s, info_discounts=%s"
+            "hdr9=%s, hdr260_present=%s, mode=%s"
         ),
         _dec2(hdr125) if hdr125 is not None else None,
         sum203,
         sum_line_net_std,
+        _dec2(hdr9) if hdr9 is not None else None,
         hdr260_present,
-        info,
+        mode,
     )
     for ln in line_logs:
-        net_used = ln["moa203"] if info else ln["net_std"]
-        added = Decimal("0.00") if info else ln["doc_added"]
+        net_used = ln["moa203"] if _INFO_DISCOUNTS else ln["net_std"]
+        added = Decimal("0.00") if _INFO_DISCOUNTS else ln["doc_added"]
         log.info(
             (
                 "line_idx=%s, line_moa203=%s, line_net_used=%s, "
@@ -1667,24 +1726,6 @@ def parse_eslog_invoice(
             added,
         )
 
-    if info:
-        tax_total = Decimal("0")
-        lines_by_rate = {}
-        for it in items:
-            if "_idx" in it:
-                base = it["_base203"]
-                rate = it.get("ddv_stopnja", Decimal("0"))
-                it["cena_netto"] = base
-                it["vrednost"] = base
-                it["rabata"] = Decimal("0")
-                it["rabata_pct"] = Decimal("0.00")
-                it["ddv"] = calculate_vat(base, rate)
-                tax_total += it["ddv"]
-                if rate:
-                    lines_by_rate[rate] = (
-                        lines_by_rate.get(rate, Decimal("0")) + base
-                    )
-        tax_total = tax_total.quantize(DEC2, ROUND_HALF_UP)
     for it in items:
         it.pop("_idx", None)
         it.pop("_base203", None)
