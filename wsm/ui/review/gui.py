@@ -1052,11 +1052,38 @@ def review_links(
     nazivi = wsm_df["wsm_naziv"].dropna().tolist()
     n2s = dict(zip(wsm_df["wsm_naziv"], wsm_df["wsm_sifra"]))
 
+    _accepting_enter = False
+
+    def _dropdown_is_open(widget: tk.Listbox) -> bool:
+        return widget.winfo_ismapped()
+
+    def _close_suggestions(entry_widget: ttk.Entry, lb_widget: tk.Listbox) -> None:
+        """Hide the suggestion listbox and reset selection."""
+        if not _dropdown_is_open(lb_widget):
+            return
+        try:
+            lb_widget.grid_remove()
+        except Exception:  # pragma: no cover - defensive
+            lb_widget.pack_forget()
+        lb_widget.selection_clear(0, "end")
+        entry_widget.focus_set()
+
+    def _accept_current_suggestion(entry_widget: ttk.Entry, lb_widget: tk.Listbox):
+        """Insert the selected suggestion into the entry widget."""
+        if lb_widget.curselection():
+            value = lb_widget.get(lb_widget.curselection()[0])
+            entry_widget.delete(0, "end")
+            entry_widget.insert(0, value)
+            entry_widget.icursor("end")
+        lb_widget.selection_clear(0, "end")
+        _close_suggestions(entry_widget, lb_widget)
+        return "break"
+
     def _start_edit(_=None):
         if not tree.focus():
             return "break"
         entry.delete(0, "end")
-        lb.grid_remove()
+        _close_suggestions(entry, lb)
         entry.focus_set()
         return "break"
 
@@ -1071,12 +1098,12 @@ def review_links(
             "Left",
         }:
             return
-        if lb.winfo_ismapped() and not lb.curselection():
-            _close_suggestions()
+        if _dropdown_is_open(lb) and not lb.curselection():
+            _close_suggestions(entry, lb)
         txt = entry.get().strip().lower()
         lb.delete(0, "end")
         if not txt:
-            lb.grid_remove()
+            _close_suggestions(entry, lb)
             return
         matches = [n for n in nazivi if txt in n.lower()]
         if matches:
@@ -1087,11 +1114,11 @@ def review_links(
             lb.activate(0)
             lb.see(0)
         else:
-            lb.grid_remove()
+            _close_suggestions(entry, lb)
 
     def _init_listbox(evt=None):
         """Give focus to the listbox and handle initial navigation."""
-        if lb.winfo_ismapped():
+        if _dropdown_is_open(lb):
             lb.focus_set()
             if not lb.curselection():
                 lb.selection_set(0)
@@ -1101,41 +1128,34 @@ def review_links(
                 _nav_list(evt)
         return "break"
 
-    def _close_suggestions():
-        """Hide the suggestion listbox and reset selection."""
-        if not lb.winfo_ismapped():
+    def _confirm_and_move_down() -> None:
+        nonlocal _accepting_enter
+        if _accepting_enter:
             return
+        _accepting_enter = True
         try:
-            lb.grid_remove()
-        except Exception:  # pragma: no cover - defensive
-            lb.pack_forget()
-        lb.selection_clear(0, "end")
-        entry.focus_set()
-
-    def _accept_current_suggestion():
-        """Insert the selected suggestion into the entry widget."""
-        if lb.curselection():
-            value = lb.get(lb.curselection()[0])
-            entry.delete(0, "end")
-            entry.insert(0, value)
-            entry.icursor("end")
-        lb.selection_clear(0, "end")
-        _close_suggestions()
-        return "break"
+            _confirm()
+            _start_edit()
+        finally:
+            _accepting_enter = False
 
     def _on_return_accept(evt=None):
-        if lb.winfo_ismapped():
-            _accept_current_suggestion()
+        nonlocal _accepting_enter
+        if _accepting_enter:
+            return "break"
+        if _dropdown_is_open(lb):
+            _accept_current_suggestion(entry, lb)
+            entry.after(0, _confirm_and_move_down)
             return "break"
         return _confirm(evt)
 
     def _on_entry_focus_out(evt):
         if entry.focus_get() is lb:
             return
-        entry.after(10, _close_suggestions)
+        entry.after(10, lambda: _close_suggestions(entry, lb))
 
     def _on_entry_escape(evt):
-        _close_suggestions()
+        _close_suggestions(entry, lb)
         return "break"
 
     def _nav_list(evt):
@@ -1301,7 +1321,7 @@ def review_links(
         _update_summary()  # Update summary after confirming
         _schedule_totals()  # Update totals after confirming
         entry.delete(0, "end")
-        _close_suggestions()
+        _close_suggestions(entry, lb)
         lb.selection_clear(0, "end")
         tree.focus_set()
         next_i = tree.next(sel_i)
@@ -1417,10 +1437,13 @@ def review_links(
     bindings.append((lb, "<Return>"))
     lb.bind("<KP_Enter>", _on_return_accept)
     bindings.append((lb, "<KP_Enter>"))
-    lb.bind("<Button-1>", lambda e: lb.after(0, _accept_current_suggestion))
+
+    def _on_lb_click(_):
+        _accept_current_suggestion(entry, lb)
+        lb.after(0, _confirm_and_move_down)
+
+    lb.bind("<Button-1>", _on_lb_click)
     bindings.append((lb, "<Button-1>"))
-    lb.bind("<Double-Button-1>", lambda e: _accept_current_suggestion())
-    bindings.append((lb, "<Double-Button-1>"))
     lb.bind("<Down>", _nav_list)
     bindings.append((lb, "<Down>"))
     lb.bind("<Up>", _nav_list)
