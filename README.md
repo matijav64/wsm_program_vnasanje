@@ -172,6 +172,63 @@ stalno maso pakiranja, jo dodajte v ta slovar.
 Ukaz izpiše povzetek po WSM šifrah in preveri, ali se vsota ujema z
 vrednostjo na računu.
 
+### Line discounts
+
+The invoice parser distinguishes between *informational* and *real* line
+discounts.  Line level discounts in ``SG39`` are **ignored** when all of the
+following hold:
+
+* The header net total (``MOA 125`` or ``389``) equals the sum of ``MOA 203``
+  amounts across all lines.
+* That header total differs from the net amount calculated after applying line
+  discounts.
+* The document does **not** contain a ``MOA 260`` element.
+
+In this situation, allowance/charge segments are treated as annotations only
+and do not affect totals.  Example (discount ignored):
+
+```xml
+<G_SG26>
+  <S_MOA><C_C516><D_5025>203</D_5025><D_5004>8</D_5004></C_C516></S_MOA>
+  <G_SG39>
+    <S_ALC><D_5463>A</D_5463></S_ALC>
+    <G_SG42>
+      <S_MOA><C_C516><D_5025>204</D_5025><D_5004>2</D_5004></C_C516></S_MOA>
+    </G_SG42>
+  </G_SG39>
+</G_SG26>
+<G_SG50>
+  <S_MOA><C_C516><D_5025>389</D_5025><D_5004>8</D_5004></C_C516></S_MOA>
+</G_SG50>
+```
+
+Expected result: the line discount is ignored, ``discount_total`` is ``0`` and
+the net total remains ``8``.
+
+Line discounts are **applied** whenever one of the above conditions is not
+met—either the header total differs from the ``MOA 203`` sum or a ``MOA 260``
+segment is present.  Example (discount applied):
+
+```xml
+<G_SG26>
+  <S_MOA><C_C516><D_5025>203</D_5025><D_5004>10</D_5004></C_C516></S_MOA>
+  <G_SG39>
+    <S_ALC><D_5463>A</D_5463></S_ALC>
+    <G_SG42>
+      <S_MOA><C_C516><D_5025>204</D_5025><D_5004>2</D_5004></C_C516></S_MOA>
+    </G_SG42>
+  </G_SG39>
+</G_SG26>
+<G_SG50>
+  <S_MOA><C_C516><D_5025>389</D_5025><D_5004>8</D_5004></C_C516></S_MOA>
+</G_SG50>
+```
+
+Expected result: the parser subtracts the discount and reports a
+``discount_total`` of ``2`` with a net total of ``8``.  Adding a ``MOA 260``
+segment in the header would also force this behaviour even if the header net
+matched the sum of ``MOA 203`` amounts.
+
 ### Okoljske spremenljivke
 
 | Ime | Privzeto | Opis |
