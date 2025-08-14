@@ -503,7 +503,6 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
             doc_disc = _doc_discount_from_line(seg)
             if doc_disc is not None and base203 == 0:
                 line_doc_discount += doc_disc
-                continue
             for moa in seg.findall(".//e:S_MOA", NS) + seg.findall(".//S_MOA"):
                 code_el = moa.find("./e:C_C516/e:D_5025", NS)
                 if code_el is None:
@@ -1391,10 +1390,7 @@ def parse_eslog_invoice(
         if doc_disc_raw is not None and base203 == 0:
             add_doc = doc_disc_raw
             doc_discount_from_lines += add_doc
-
         qty = _decimal(sg26.find(".//e:S_QTY/e:C_C186/e:D_6060", NS))
-        if qty == 0 and base203 <= 0:
-            continue
         unit = _text(sg26.find(".//e:S_QTY/e:C_C186/e:D_6411", NS))
         net_std = _line_net_standard(sg26, base203)
         item: Dict[str, Any] = {

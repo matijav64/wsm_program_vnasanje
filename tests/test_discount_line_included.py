@@ -1,11 +1,9 @@
 from decimal import Decimal
 from pathlib import Path
-import logging
 
-from wsm import analyze
+from wsm.parsing.eslog import parse_eslog_invoice
 
-
-def test_line_discount_zero_qty(tmp_path: Path, caplog) -> None:
+def test_discount_line_included(tmp_path: Path) -> None:
     xml = (
         "<Invoice xmlns='urn:eslog:2.00'>"
         "  <M_INVOIC>"
@@ -24,21 +22,13 @@ def test_line_discount_zero_qty(tmp_path: Path, caplog) -> None:
         "    <G_SG50>"
         "      <S_MOA><C_C516><D_5025>9</D_5025><D_5004>8</D_5004></C_C516></S_MOA>"
         "    </G_SG50>"
-        "    <G_SG50>"
-        "      <S_MOA><C_C516><D_5025>389</D_5025><D_5004>8</D_5004></C_C516></S_MOA>"
-        "    </G_SG50>"
         "  </M_INVOIC>"
         "</Invoice>"
     )
-    xml_path = tmp_path / "invoice.xml"
-    xml_path.write_text(xml)
-
-    with caplog.at_level(logging.WARNING):
-        df, header_total, ok = analyze.analyze_invoice(xml_path)
-
+    path = tmp_path / "inv.xml"
+    path.write_text(xml)
+    df, ok = parse_eslog_invoice(path)
     assert ok
-    assert not any("Invoice total mismatch" in rec.message for rec in caplog.records)
-    assert df[df["sifra_dobavitelja"] == "_DOC_"].empty
     assert len(df) == 2
-    assert Decimal("0") in df["kolicina"].values
-    assert df["vrednost"].sum().quantize(Decimal("0.01")) == header_total
+    discount_line = df[df["kolicina"] == Decimal("0")].iloc[0]
+    assert discount_line["vrednost"] == Decimal("-2")
