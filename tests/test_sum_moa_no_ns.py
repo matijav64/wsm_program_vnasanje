@@ -22,5 +22,5 @@ def test_sum_moa_handles_groups_without_namespace():
         "</Invoice>"
     )
     root = LET.fromstring(xml)
-    total = sum_moa(root, ["204"], negative_only=True)
-    assert total == Decimal("3.50")
+    total = sum_moa(root, ["204"])
+    assert total == Decimal("-3.50")
