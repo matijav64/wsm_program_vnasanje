@@ -44,6 +44,9 @@ TOL = Decimal("0.01")
 DISCOUNT_MOA_LINE = {"204"}
 DISCOUNT_MOA_DOC = {"260"}
 
+# Global flag indicating that SG26 discounts are informational only.
+_INFO_DISCOUNTS = False
+
 # module logger
 log = logging.getLogger(__name__)
 
@@ -944,6 +947,8 @@ def _get_document_discount(xml_root: LET._Element) -> Decimal:
 
 def _line_discount(sg26: LET._Element) -> Decimal:
     """Return discount amount for a line (sum of direct MOA 204 values)."""
+    if _INFO_DISCOUNTS:
+        return Decimal("0")
     total = Decimal("0")
     seen: set[tuple[int, str, Decimal]] = set()
     for moa in sg26.findall("./e:S_MOA", NS) + sg26.findall("./S_MOA"):
@@ -968,7 +973,8 @@ def _line_discount(sg26: LET._Element) -> Decimal:
 
 def _line_amount_discount(sg26: LET._Element) -> Decimal:
     """Return sum of MOA 204 allowance amounts for a line."""
-
+    if _INFO_DISCOUNTS:
+        return Decimal("0")
     total = Decimal("0")
     seen: set[tuple[int, str, Decimal]] = set()
     for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(".//G_SG39"):
@@ -1022,6 +1028,8 @@ def _pct_base(sg39: LET._Element, sg26: LET._Element) -> Decimal:
 
 def _line_pct_discount(sg26: LET._Element) -> Decimal:
     """Return discount amount calculated from ``G_SG39`` percentage values."""
+    if _INFO_DISCOUNTS:
+        return Decimal("0")
     total = Decimal("0")
 
     for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(".//G_SG39"):
@@ -1572,7 +1580,7 @@ def parse_eslog_invoice(
                     }
                 )
 
-    # ───────── RECONCILIATION MODE ─────────
+    # ───────── POST LINE CHECK ─────────
     sum203 = Decimal("0")
     for seg in root.findall(".//e:G_SG26", NS) + root.findall(".//G_SG26"):
         sum203 += _sum_moa_shallow(seg, {"203"})
@@ -1580,85 +1588,57 @@ def parse_eslog_invoice(
 
     sum_line_net_std = net_total
 
-    hdr125 = _first_moa(root, {"125"}, ignore_sg26=True)
+    hdr125 = _first_moa(root, {"125", "389"}, ignore_sg26=True)
     hdr125 = hdr125 if hdr125 != 0 else None
-    hdr9 = _first_moa(root, {"9", "38", "388"})
-    hdr9 = hdr9 if hdr9 != 0 else None
 
     hdr260_present = False
     for moa in root.findall(".//e:S_MOA", NS) + root.findall(".//S_MOA"):
         code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
             moa.find("./C_C516/D_5025")
         )
-        if code == "260":
+        if code != "260":
+            continue
+        anc = moa.getparent()
+        in_sg26 = False
+        while anc is not None:
+            if anc.tag.split("}")[-1] == "G_SG26":
+                in_sg26 = True
+                break
+            anc = anc.getparent()
+        if not in_sg26:
             hdr260_present = True
             break
 
-    info = (hdr125 is not None and abs(hdr125 - sum203) <= TOL) and (
-        not hdr260_present
+    info = (
+        hdr125 is not None
+        and abs(hdr125 - sum203) <= TOL
+        and abs(hdr125 - sum_line_net_std) > TOL
+        and not hdr260_present
     )
-    real = (
-        hdr125 is not None and abs(hdr125 - sum_line_net_std) <= TOL
-    ) or hdr260_present
 
-    def build_invoice_model(
-        tree_obj, override_sum_line_net: Decimal
-    ) -> SimpleNamespace:
-        line_disc = (
-            doc_discount_from_lines
-            if override_sum_line_net == sum_line_net_std
-            else Decimal("0")
-        )
-        net_after, allow_header, charge_total = (
-            _apply_doc_allowances_sequential(override_sum_line_net, root)
-        )
-        allow_total = allow_header + line_disc
-        net_val = net_after - line_disc
-        vat_val = _vat_total_after_doc(
-            tax_total if tax_total != 0 else None, lines_by_rate, allow_total
-        )
-        gross_total = net_val + vat_val
-        return SimpleNamespace(gross_total=gross_total)
-
-    def calc_gross(sum_line_net: Decimal) -> Decimal:
-        inv = build_invoice_model(tree, override_sum_line_net=sum_line_net)
-        return _dec2(inv.gross_total)
-
-    if info and not real:
-        mode = "info"
-    elif real and not info:
-        mode = "real"
-    else:
-        mode = (
-            "info"
-            if abs(calc_gross(sum203) - (hdr9 or calc_gross(sum203)))
-            <= abs(
-                calc_gross(sum_line_net_std)
-                - (hdr9 or calc_gross(sum_line_net_std))
-            )
-            else "real"
-        )
-
-    if mode == "info":
+    if info:
         doc_discount_from_lines = Decimal("0.00")
         sum_line_net = sum203
     else:
         sum_line_net = sum_line_net_std
 
+    global _INFO_DISCOUNTS
+    _INFO_DISCOUNTS = info
+
     log.info(
         (
             "hdr125=%s, sum203=%s, sum_line_net_std=%s, "
-            "hdr260_present=%s, mode=%s"
+            "hdr260_present=%s, info_discounts=%s"
         ),
         _dec2(hdr125) if hdr125 is not None else None,
         sum203,
         sum_line_net_std,
         hdr260_present,
-        mode,
+        info,
     )
     for ln in line_logs:
-        net_used = ln["moa203"] if mode == "info" else ln["net_std"]
-        added = Decimal("0.00") if mode == "info" else ln["doc_added"]
+        net_used = ln["moa203"] if info else ln["net_std"]
+        added = Decimal("0.00") if info else ln["doc_added"]
         log.info(
             (
                 "line_idx=%s, line_moa203=%s, line_net_used=%s, "
@@ -1670,7 +1650,7 @@ def parse_eslog_invoice(
             added,
         )
 
-    if mode == "info":
+    if info:
         tax_total = Decimal("0")
         lines_by_rate = {}
         for it in items:
@@ -1684,7 +1664,9 @@ def parse_eslog_invoice(
                 it["ddv"] = calculate_vat(base, rate)
                 tax_total += it["ddv"]
                 if rate:
-                    lines_by_rate[rate] = lines_by_rate.get(rate, Decimal("0")) + base
+                    lines_by_rate[rate] = (
+                        lines_by_rate.get(rate, Decimal("0")) + base
+                    )
         tax_total = tax_total.quantize(DEC2, ROUND_HALF_UP)
     for it in items:
         it.pop("_idx", None)
@@ -1748,6 +1730,7 @@ def parse_eslog_invoice(
 
     df = pd.DataFrame(items)
     df.attrs["vat_mismatch"] = vat_mismatch
+    df.attrs["info_discounts"] = _INFO_DISCOUNTS
     if "sifra_dobavitelja" in df.columns and not df["sifra_dobavitelja"].any():
         df["sifra_dobavitelja"] = supplier_code
     if not df.empty:
@@ -1867,8 +1850,12 @@ def parse_invoice(source: str | Path):
                 Decimal("0.01"), rounding=ROUND_HALF_UP
             )
         else:
-            discount_total = sum_moa(
-                root, DEFAULT_DOC_DISCOUNT_CODES, negative_only=True
+            discount_total = (
+                Decimal("0")
+                if df_items.attrs.get("info_discounts")
+                else sum_moa(
+                    root, DEFAULT_DOC_DISCOUNT_CODES, negative_only=True
+                )
             )
 
         if gross_total != 0:
