@@ -39,6 +39,24 @@ def _extract_confirm():
     return ns["_confirm"], ns
 
 
+def _extract_accept():
+    src = inspect.getsource(rl.review_links).splitlines()
+    start = next(
+        i
+        for i, line in enumerate(src)
+        if "def _accept_current_suggestion" in line
+    )
+    end = next(
+        i
+        for i, line in enumerate(src[start:], start)
+        if line.strip().startswith("def _on_return_accept")
+    )
+    snippet = textwrap.dedent("\n".join(src[start:end]))
+    ns: dict[str, object] = {}
+    exec(snippet, ns)
+    return ns["_accept_current_suggestion"], ns
+
+
 def test_listbox_hidden_after_confirm(monkeypatch, tmp_path):
     _confirm, ns = _extract_confirm()
     df = pd.DataFrame(
@@ -69,6 +87,9 @@ def test_listbox_hidden_after_confirm(monkeypatch, tmp_path):
         lb.grid(row=1, column=0)
         lb.insert(0, "Foo")
         lb.selection_set(0)
+        root.update()
+
+        root.update()
 
         cols = [
             "naziv",
@@ -128,4 +149,39 @@ def test_listbox_hidden_after_confirm(monkeypatch, tmp_path):
         assert not lb.winfo_ismapped()
         assert cleared["value"]
         assert focused["value"]
+        root.destroy()
+
+
+def test_double_click_returns_break():
+    _accept, ns = _extract_accept()
+
+    with Display():
+        root = tk.Tk()
+        root.withdraw()
+
+        entry = ttk.Entry(root)
+        entry.grid(row=0, column=0)
+
+        lb = tk.Listbox(root)
+        lb.grid(row=1, column=0)
+        lb.insert(0, "Foo")
+        lb.selection_set(0)
+        root.update()
+
+        closed = {"value": False}
+
+        def close_suggestions():
+            closed["value"] = True
+
+        ns.update(
+            {"lb": lb, "entry": entry, "_close_suggestions": close_suggestions}
+        )
+
+        def handler(_):
+            return _accept()
+
+        assert handler(None) == "break"
+        assert closed["value"]
+        assert entry.get() == "Foo"
+
         root.destroy()
