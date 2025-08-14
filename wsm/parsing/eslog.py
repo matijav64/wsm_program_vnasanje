@@ -800,11 +800,14 @@ def extract_invoice_number(xml_path: Path | str) -> str | None:
     return None
 
 
-def extract_total_tax(xml_path: Path | str) -> Decimal:
+def extract_total_tax(source: Path | str | Any) -> Decimal:
     """Sum MOA values with qualifier 124 inside all ``G_SG52`` groups."""
     try:
-        tree = LET.parse(xml_path, parser=XML_PARSER)
-        root = tree.getroot()
+        if hasattr(source, "findall"):
+            root = source
+        else:
+            tree = LET.parse(source, parser=XML_PARSER)
+            root = tree.getroot()
         total = Decimal("0")
         for sg52 in root.findall(".//e:G_SG52", NS):
             for moa in sg52.findall("./e:S_MOA", NS):
@@ -1804,12 +1807,49 @@ def build_invoice_model(
 def parse_invoice_totals(
     tree: LET._Element | LET._ElementTree,
 ) -> dict[str, Decimal | bool]:
-    inv = build_invoice_model(tree)
+    """Return aggregated invoice totals and validate against header values."""
+
+    if hasattr(tree, "getroot"):
+        root = tree.getroot()
+    else:
+        root = tree
+
+    buf = io.BytesIO(LET.tostring(root))
+    df, _ = parse_eslog_invoice(buf)
+
+    net_total = (
+        _dec2(df["vrednost"].sum()) if "vrednost" in df.columns else Decimal("0")
+    )
+    vat_total = (
+        _dec2(df["ddv"].sum()) if "ddv" in df.columns else Decimal("0")
+    )
+    gross_total = (
+        _dec2((df["vrednost"] + df["ddv"]).sum()) if not df.empty else Decimal("0")
+    )
+
+    header_net = extract_header_net(root)
+    header_vat = extract_total_tax(root)
+    header_gross = extract_grand_total(root)
+
+    calc_gross = _dec2(net_total + vat_total)
+    header_total = _dec2(
+        header_gross if header_gross != 0 else header_net + header_vat
+    )
+
+    mismatch = bool(df.attrs.get("vat_mismatch", False))
+    if header_total != 0 and abs(calc_gross - header_total) > DEC2:
+        mismatch = True
+        log.warning(
+            "Invoice total mismatch: MOA 9/38/388 %s vs calculated %s",
+            header_total,
+            calc_gross,
+        )
+
     return {
-        "net": _dec2(inv.net_total),
-        "vat": _dec2(inv.vat_total),
-        "gross": _dec2(inv.gross_total),
-        "mismatch": bool(getattr(inv, "mismatch", False)),
+        "net": net_total,
+        "vat": vat_total,
+        "gross": gross_total,
+        "mismatch": mismatch,
     }
 
 
@@ -1823,7 +1863,8 @@ def parse_invoice(source: str | Path):
       • header_total: Decimal (InvoiceTotal –
         DocumentDiscount + DocumentCharge)
       • discount_total: Decimal (znesek dokumentarnega popusta)
-      • gross_total: Decimal (MOA 9 – skupni znesek računa)
+      • gross_total: Decimal (vsota zaokroženih neto in DDV zneskov po
+        posameznih vrsticah)
     Uporablja se v CLI (wsm/cli.py).
     """
     # naložimo XML
@@ -1844,9 +1885,6 @@ def parse_invoice(source: str | Path):
     ):
         df_items, ok = parse_eslog_invoice(xml_source)
         header_total = extract_header_net(
-            root if parsed_from_string else xml_source
-        )
-        gross_total = extract_grand_total(
             root if parsed_from_string else xml_source
         )
         # ─────────────────────── dokumentarni popusti ───────────────────────
@@ -1873,10 +1911,11 @@ def parse_invoice(source: str | Path):
                 )
             )
 
-        if gross_total != 0:
-            gross_total = (gross_total - discount_total).quantize(
-                Decimal("0.01"), rounding=ROUND_HALF_UP
-            )
+        gross_total = (
+            _dec2((df_items["vrednost"] + df_items["ddv"]).sum())
+            if not df_items.empty
+            else Decimal("0")
+        )
 
         # Če želimo posebej slediti tudi pribitkom:
         # charge_total = doc_rows.loc[
