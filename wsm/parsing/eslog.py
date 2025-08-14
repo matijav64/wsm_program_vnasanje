@@ -950,25 +950,47 @@ def _line_discount(sg26: LET._Element) -> Decimal:
     if _INFO_DISCOUNTS:
         return Decimal("0")
     total = Decimal("0")
-    seen: set[tuple[int, str, Decimal]] = set()
-    for moa in sg26.findall("./e:S_MOA", NS) + sg26.findall("./S_MOA"):
-        code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
-            moa.find("./C_C516/D_5025")
+    for amt_el in (
+        sg26.xpath(
+            "./e:S_MOA[e:C_C516/e:D_5025='204']/e:C_C516/e:D_5004",
+            namespaces=NS,
         )
-        if code == Moa.DISCOUNT.value:
-            amount_el = moa.find("./e:C_C516/e:D_5004", NS)
-            if amount_el is None:
-                amount_el = moa.find("./C_C516/D_5004")
-            amount = _decimal(amount_el).quantize(
-                Decimal("0.01"), ROUND_HALF_UP
-            )
-            key = (id(moa), code, amount)
-            if key in seen:
-                continue
-            seen.add(key)
-            total += amount
+        + sg26.xpath("./S_MOA[C_C516/D_5025='204']/C_C516/D_5004")
+    ):
+        total += _decimal(amt_el).quantize(DEC2, ROUND_HALF_UP)
 
-    return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
+    pct_nodes = sg26.xpath(
+        "./e:S_PCD[e:C_C501/e:D_5245='1']/e:C_C501/e:D_5482", namespaces=NS
+    )
+    if not pct_nodes:
+        pct_nodes = sg26.xpath("./S_PCD[C_C501/D_5245='1']/C_C501/D_5482")
+    pct = _decimal(pct_nodes[0] if pct_nodes else None)
+    if pct != 0:
+        base_nodes = sg26.xpath(
+            "./e:S_PRI[e:C_C509/e:D_5125='AAB']/e:C_C509/e:D_5118",
+            namespaces=NS,
+        )
+        if not base_nodes:
+            base_nodes = sg26.xpath(
+                "./S_PRI[C_C509/D_5125='AAB']/C_C509/D_5118"
+            )
+        qty_el = sg26.find("./e:S_QTY/e:C_C186/e:D_6060", NS) or sg26.find(
+            "./S_QTY/C_C186/D_6060"
+        )
+        base = _decimal(base_nodes[0] if base_nodes else None) * _decimal(qty_el)
+        if base == 0:
+            base_nodes = sg26.xpath(
+                "./e:S_MOA[e:C_C516/e:D_5025='38']/e:C_C516/e:D_5004",
+                namespaces=NS,
+            )
+            if not base_nodes:
+                base_nodes = sg26.xpath(
+                    "./S_MOA[C_C516/D_5025='38']/C_C516/D_5004"
+                )
+            base = _decimal(base_nodes[0] if base_nodes else None)
+        total += (base * pct / Decimal("100")).quantize(DEC2, ROUND_HALF_UP)
+
+    return total.quantize(DEC2, ROUND_HALF_UP)
 
 
 def _line_amount_discount(sg26: LET._Element) -> Decimal:
@@ -976,22 +998,15 @@ def _line_amount_discount(sg26: LET._Element) -> Decimal:
     if _INFO_DISCOUNTS:
         return Decimal("0")
     total = Decimal("0")
-    seen: set[tuple[int, str, Decimal]] = set()
-    for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(".//G_SG39"):
-        for moa in sg39.findall(".//e:S_MOA", NS) + sg39.findall(".//S_MOA"):
-            code = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
-                moa.find("./C_C516/D_5025")
-            )
-            if code == Moa.DISCOUNT.value:
-                amount_el = moa.find("./e:C_C516/e:D_5004", NS)
-                if amount_el is None:
-                    amount_el = moa.find("./C_C516/D_5004")
-                amount = _decimal(amount_el).quantize(DEC2, ROUND_HALF_UP)
-                key = (id(moa), code, amount)
-                if key in seen:
-                    continue
-                seen.add(key)
-                total += amount
+    paths = (
+        "./e:G_SG39/e:S_MOA[e:C_C516/e:D_5025='204']/e:C_C516/e:D_5004",
+        "./e:G_SG39/e:G_SG42/e:S_MOA[e:C_C516/e:D_5025='204']/e:C_C516/e:D_5004",
+        "./G_SG39/S_MOA[C_C516/D_5025='204']/C_C516/D_5004",
+        "./G_SG39/G_SG42/S_MOA[C_C516/D_5025='204']/C_C516/D_5004",
+    )
+    for path in paths:
+        for amt_el in sg26.xpath(path, namespaces=NS):
+            total += _decimal(amt_el).quantize(DEC2, ROUND_HALF_UP)
 
     return total.quantize(DEC2, ROUND_HALF_UP)
 
