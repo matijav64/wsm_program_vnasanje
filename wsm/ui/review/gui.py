@@ -9,6 +9,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import builtins
@@ -725,6 +726,31 @@ def review_links(
         summary_tree.heading(c, text=h)
         summary_tree.column(c, width=150, anchor="w")
 
+    def _summary_df_from_records(records: list[dict]) -> pd.DataFrame:
+        SUMMARY_COLS = [
+            "WSM šifra",
+            "WSM Naziv",
+            "Količina",
+            "Znesek",
+            "Rabat (%)",
+            "Neto po rabatu",
+        ]
+        summary_df = pd.DataFrame.from_records(records, columns=SUMMARY_COLS)
+        if len(summary_df) > 0:
+            summary_df[
+                ["Količina", "Znesek", "Rabat (%)", "Neto po rabatu"]
+            ] = np.column_stack(
+                [
+                    summary_df["Količina"].fillna(0),
+                    summary_df["Znesek"].fillna(0),
+                    summary_df["Rabat (%)"].fillna(0),
+                    summary_df["Neto po rabatu"].fillna(0),
+                ]
+            )
+        summary_df["WSM šifra"] = summary_df["WSM šifra"].fillna("")
+        summary_df["WSM Naziv"] = summary_df["WSM Naziv"].fillna("")
+        return summary_df
+
     def _update_summary():
         for item in summary_tree.get_children():
             summary_tree.delete(item)
@@ -736,7 +762,7 @@ def review_links(
             "rabata_pct",
         }
         if required.issubset(df.columns):
-            summary_df = (
+            agg_df = (
                 df[df["wsm_sifra"].notna()]
                 .groupby(["wsm_sifra", "rabata_pct"], dropna=False)
                 .agg(
@@ -748,40 +774,44 @@ def review_links(
                 )
                 .reset_index()
             )
-
-            summary_df["neto_brez_popusta"] = (
-                summary_df["vrednost"] + summary_df["rabata"]
-            )
-            summary_df["wsm_naziv"] = summary_df["wsm_sifra"].map(
-                wsm_df.set_index("wsm_sifra")["wsm_naziv"]
-            )
-            summary_df["rabata_pct"] = [
-                (
+            name_map = wsm_df.set_index("wsm_sifra")["wsm_naziv"].to_dict()
+            records = []
+            for _, row in agg_df.iterrows():
+                neto_brez_popusta = row["vrednost"] + row["rabata"]
+                rabata_pct = (
                     (
                         row["rabata"]
-                        / row["neto_brez_popusta"]
+                        / neto_brez_popusta
                         * Decimal("100")
                     ).quantize(Decimal("0.01"), ROUND_HALF_UP)
-                    if row["neto_brez_popusta"]
+                    if neto_brez_popusta
                     else Decimal("0.00")
                 )
-                for _, row in summary_df.iterrows()
-            ]
-
+                records.append(
+                    {
+                        "WSM šifra": row["wsm_sifra"],
+                        "WSM Naziv": name_map.get(row["wsm_sifra"], ""),
+                        "Količina": row["kolicina_norm"],
+                        "Znesek": neto_brez_popusta,
+                        "Rabat (%)": rabata_pct,
+                        "Neto po rabatu": row["vrednost"],
+                    }
+                )
+            summary_df = _summary_df_from_records(records)
             for _, row in summary_df.iterrows():
                 vals = [
-                    row["wsm_sifra"],
-                    row["wsm_naziv"],
-                    _fmt(row["kolicina_norm"]),
-                    _fmt(row["neto_brez_popusta"]),
-                    _fmt(row["rabata_pct"]),
-                    _fmt(row["vrednost"]),
+                    row["WSM šifra"],
+                    row["WSM Naziv"],
+                    _fmt(row["Količina"]),
+                    _fmt(row["Znesek"]),
+                    _fmt(row["Rabat (%)"]),
+                    _fmt(row["Neto po rabatu"]),
                 ]
                 summary_tree.insert("", "end", values=vals)
                 log.info(
                     "SUMMARY[%s] cena=%s",
-                    row["wsm_sifra"],
-                    row.get("vrednost"),
+                    row["WSM šifra"],
+                    row.get("Neto po rabatu"),
                 )
             log.debug(f"Povzetek posodobljen: {len(summary_df)} WSM šifer")
 
