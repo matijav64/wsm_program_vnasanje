@@ -184,7 +184,12 @@ def _first_moa(
 
 
 # Namespace za ESLOG (če je prisoten)
-NS = {"e": "urn:eslog:2.00"}
+#
+# The original eSLOG 2.0 schema used the ``urn:eslog:2.00`` namespace, but
+# real-world documents often rely on the enriched EDIFACT namespace
+# ``urn:edifact:xml:enriched``.  Use the latter by default so that lightweight
+# XML samples without explicit namespace mappings are parsed correctly.
+NS = {"e": "urn:edifact:xml:enriched"}
 
 # Namespaces for UBL documents
 UBL_NS = {
@@ -830,10 +835,32 @@ def extract_total_tax(source: Path | str | Any) -> Decimal:
             tree = LET.parse(source, parser=XML_PARSER)
             root = tree.getroot()
         total = Decimal("0")
-        for sg52 in root.findall(".//e:G_SG52", NS):
-            for moa in sg52.findall("./e:S_MOA", NS):
-                if _text(moa.find("./e:C_C516/e:D_5025", NS)) == "124":
-                    total += _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+        # Prefer tax summary groups (G_SG52) if present
+        for sg52 in root.findall(".//e:G_SG52", NS) + root.findall(
+            ".//G_SG52"
+        ):
+            for moa in sg52.findall("./e:S_MOA", NS) + sg52.findall("./S_MOA"):
+                code_el = moa.find("./e:C_C516/e:D_5025", NS)
+                if code_el is None:
+                    code_el = moa.find("./C_C516/D_5025")
+                if _text(code_el) == "124":
+                    val_el = moa.find("./e:C_C516/e:D_5004", NS)
+                    if val_el is None:
+                        val_el = moa.find("./C_C516/D_5004")
+                    total += _decimal(val_el)
+        if total == 0:
+            # Fallback to header totals (G_SG34)
+            for moa in root.findall(".//e:G_SG34/e:S_MOA", NS) + root.findall(
+                ".//G_SG34/S_MOA"
+            ):
+                code_el = moa.find("./e:C_C516/e:D_5025", NS)
+                if code_el is None:
+                    code_el = moa.find("./C_C516/D_5025")
+                if _text(code_el) == "124":
+                    val_el = moa.find("./e:C_C516/e:D_5004", NS)
+                    if val_el is None:
+                        val_el = moa.find("./C_C516/D_5004")
+                    total += _decimal(val_el)
         return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
     except Exception:
         return Decimal("0")
@@ -1923,17 +1950,17 @@ def parse_invoice_totals(
         else Decimal("0")
     )
     vat_total = _dec2(df["ddv"].sum()) if "ddv" in df.columns else Decimal("0")
-    gross_total = (
-        _dec2((df["vrednost"] + df["ddv"]).sum())
-        if not df.empty
-        else Decimal("0")
-    )
 
     header_net = extract_header_net(root)
     header_vat = extract_total_tax(root)
     header_gross = extract_grand_total(root)
 
-    calc_gross = _dec2(net_total + vat_total)
+    if vat_total == 0 and header_vat != 0:
+        vat_total = header_vat
+
+    gross_total = _dec2(net_total + vat_total)
+
+    calc_gross = gross_total
     header_total = _dec2(
         header_gross if header_gross != 0 else header_net + header_vat
     )
