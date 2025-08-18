@@ -4,10 +4,14 @@ from pathlib import Path
 from typing import Any, Dict, IO
 import unicodedata
 import re
+import logging
 
 import pandas as pd
 
 __all__ = ["load_catalog", "load_keywords_map"]
+
+
+log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +158,9 @@ def load_keywords_map(path: str | Path | IO[Any]) -> Dict[str, str]:
 
     ``path`` may be a filesystem path or a file-like object.  Headers are
     normalized according to :data:`KEYWORD_ALIASES`.  The returned dictionary
-    uses lowercase keywords as keys.
+    uses lowercase keywords as keys.  When the same keyword maps to multiple
+    codes, the first occurrence is kept and subsequent conflicting entries are
+    ignored.  A warning is logged listing all conflicting codes.
     """
 
     df = _read_table(path)
@@ -162,7 +168,19 @@ def load_keywords_map(path: str | Path | IO[Any]) -> Dict[str, str]:
     if not {"wsm_sifra", "keyword"} <= set(df.columns):
         return {}
     result: Dict[str, str] = {}
+    duplicates: Dict[str, set[str]] = {}
     for _, row in df.dropna(subset=["wsm_sifra", "keyword"]).iterrows():
         key = str(row["keyword"]).strip().lower()
-        result[key] = str(row["wsm_sifra"]).strip()
+        code = str(row["wsm_sifra"]).strip()
+        existing = result.get(key)
+        if existing is None:
+            result[key] = code
+        elif existing != code:
+            duplicates.setdefault(key, {existing}).add(code)
+    for key, codes in duplicates.items():
+        log.warning(
+            "Duplicate keyword '%s' found for codes: %s",
+            key,
+            ", ".join(sorted(codes)),
+        )
     return result

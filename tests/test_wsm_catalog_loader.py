@@ -2,10 +2,11 @@ import pytest
 
 pytest.importorskip("openpyxl")
 
-import pandas as pd
-from io import BytesIO
+import logging  # noqa: E402
+import pandas as pd  # noqa: E402
+from io import BytesIO  # noqa: E402
 
-from wsm.io import load_catalog, load_keywords_map
+from wsm.io import load_catalog, load_keywords_map  # noqa: E402
 
 
 def _to_excel_bytes(df: pd.DataFrame) -> BytesIO:
@@ -29,8 +30,10 @@ def test_load_catalog_alternate_headers_and_decimal():
     assert result.loc[0, "cena"] == pytest.approx(1.1232)
 
 
-@pytest.mark.parametrize("kw_header", ["Ključna beseda", "Kljucna beseda", "keyword"])
-def test_load_keywords_map_aliases_and_dedup(kw_header):
+@pytest.mark.parametrize(
+    "kw_header", ["Ključna beseda", "Kljucna beseda", "keyword"]
+)
+def test_load_keywords_map_aliases_and_duplicate_warning(kw_header, caplog):
     df = pd.DataFrame(
         {
             "Šifra": ["1", "2", "3"],
@@ -38,5 +41,7 @@ def test_load_keywords_map_aliases_and_dedup(kw_header):
         }
     )
     buf = _to_excel_bytes(df)
-    mapping = load_keywords_map(buf)
-    assert mapping == {"foo": "2", "bar": "3"}
+    with caplog.at_level(logging.WARNING):
+        mapping = load_keywords_map(buf)
+    assert mapping == {"foo": "1", "bar": "3"}
+    assert "Duplicate keyword 'foo'" in caplog.text
