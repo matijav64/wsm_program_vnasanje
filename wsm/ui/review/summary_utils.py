@@ -32,11 +32,14 @@ def summary_df_from_records(records: Sequence[dict] | None) -> pd.DataFrame:
     df = df.reindex(columns=SUMMARY_COLS)
 
     numeric_cols = ["Količina", "Znesek", "Rabat (%)", "Neto po rabatu"]
-    df = _safe_set_block(
-        df,
-        numeric_cols,
-        df[numeric_cols].apply(pd.to_numeric, errors="coerce").fillna(0),
-    )
+    for col in numeric_cols:
+        df[col] = df[col].apply(
+            lambda x: (
+                x
+                if isinstance(x, Decimal)
+                else Decimal(str(x)) if not pd.isna(x) and x != "" else Decimal("0")
+            )
+        )
     text_cols = ["WSM šifra", "WSM Naziv"]
     df = _safe_set_block(df, text_cols, df[text_cols].fillna(""))
     return df

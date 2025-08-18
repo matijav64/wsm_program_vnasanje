@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from wsm.ui.review.summary_utils import SUMMARY_COLS, summary_df_from_records
 
 
@@ -20,3 +22,5 @@ def test_summary_missing_fields_filled():
     assert df["Znesek"].tolist() == [0, 0]
     assert df["Rabat (%)"].tolist() == [0, 0]
     assert df["Neto po rabatu"].tolist() == [0, 0]
+    for col in ["Količina", "Znesek", "Rabat (%)", "Neto po rabatu"]:
+        assert all(isinstance(x, Decimal) for x in df[col])
