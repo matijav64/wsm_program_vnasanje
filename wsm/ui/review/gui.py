@@ -26,11 +26,8 @@ from .helpers import (
     _safe_set_block,
 )
 from .io import _save_and_close, _load_supplier_map
-from .summary_utils import (
-    SUMMARY_COLS,
-    summary_df_from_records,
-    vectorized_discount_pct,
-)
+from .summary_columns import SUMMARY_COLS, SUMMARY_KEYS, SUMMARY_HEADS
+from .summary_utils import summary_df_from_records, vectorized_discount_pct
 
 builtins.tk = tk
 builtins.simpledialog = simpledialog
@@ -694,22 +691,11 @@ def review_links(
         font=("Arial", 12, "bold"),
     ).pack()
 
-    summary_cols = [
-        "wsm_sifra",
-        "wsm_naziv",
-        "kolicina_norm",
-        "neto_brez_popusta",
-        "rabata_pct",
-        "vrednost",
-    ]
-    summary_heads = [
-        "WSM Šifra",
-        "WSM Naziv",
-        "Količina",
-        "Znesek",
-        "Rabat (%)",
-        "Neto po rabatu",
-    ]
+    # Column keys and headers derive from :mod:`summary_columns` to stay in sync
+    # with :data:`SUMMARY_COLS` used throughout the project.
+    summary_cols = SUMMARY_KEYS
+    summary_heads = SUMMARY_HEADS
+    assert SUMMARY_COLS == summary_heads
     summary_tree = ttk.Treeview(
         summary_frame, columns=summary_cols, show="headings", height=5
     )
