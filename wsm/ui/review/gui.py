@@ -710,9 +710,27 @@ def review_links(
         summary_tree.heading(c, text=h)
         summary_tree.column(c, width=150, anchor="w")
 
-    def _update_summary():
+    def _render_summary(df_summary: pd.DataFrame) -> None:
         for item in summary_tree.get_children():
             summary_tree.delete(item)
+        for _, row in df_summary.iterrows():
+            vals = [
+                row["WSM šifra"],
+                row["WSM Naziv"],
+                _fmt(row["Količina"]),
+                _fmt(row["Znesek"]),
+                _fmt(row["Rabat (%)"]),
+                _fmt(row["Neto po rabatu"]),
+            ]
+            summary_tree.insert("", "end", values=vals)
+            log.info(
+                "SUMMARY[%s] cena=%s",
+                row["WSM šifra"],
+                row.get("Neto po rabatu"),
+            )
+        log.debug(f"Povzetek posodobljen: {len(df_summary)} WSM šifer")
+
+    def _update_summary():
         required = {
             "wsm_sifra",
             "vrednost",
@@ -724,9 +742,18 @@ def review_links(
             valid = df["wsm_sifra"].notna() & (
                 df["wsm_sifra"].astype(str).str.strip() != ""
             )
+            df_valid = df.loc[valid]
+
+            if df_valid.empty:
+                summary_df = summary_df_from_records([])
+                _render_summary(summary_df)
+                return
+
+            group_keys = ["wsm_sifra"] + (
+                ["wsm_naziv"] if "wsm_naziv" in df_valid.columns else []
+            )
             agg = (
-                df[valid]
-                .groupby("wsm_sifra")
+                df_valid.groupby(group_keys, dropna=True)
                 .agg(
                     {
                         "vrednost": "sum",
@@ -736,8 +763,11 @@ def review_links(
                 )
                 .reset_index()
             )
-            name_map = wsm_df.set_index("wsm_sifra")["wsm_naziv"].to_dict()
-            agg["wsm_naziv"] = agg["wsm_sifra"].map(name_map).fillna("")
+
+            if "wsm_naziv" not in agg.columns:
+                name_map = wsm_df.set_index("wsm_sifra")["wsm_naziv"].to_dict()
+                agg["wsm_naziv"] = agg["wsm_sifra"].map(name_map).fillna("")
+
             agg["neto_brez_popusta"] = agg["vrednost"] + agg["rabata"]
             agg["rabata_pct"] = vectorized_discount_pct(
                 agg["neto_brez_popusta"], agg["vrednost"]
@@ -745,31 +775,16 @@ def review_links(
             records = [
                 {
                     "WSM šifra": row["wsm_sifra"],
-                    "WSM Naziv": row["wsm_naziv"],
-                    "Količina": row["kolicina_norm"],
-                    "Znesek": row["neto_brez_popusta"],
-                    "Rabat (%)": row["rabata_pct"],
-                    "Neto po rabatu": row["vrednost"],
+                    "WSM Naziv": row.get("wsm_naziv", ""),
+                    "Količina": row.get("kolicina_norm", 0),
+                    "Znesek": row.get("neto_brez_popusta", 0),
+                    "Rabat (%)": row.get("rabata_pct", 0),
+                    "Neto po rabatu": row.get("vrednost", 0),
                 }
                 for _, row in agg.iterrows()
             ]
             summary_df = summary_df_from_records(records)
-            for _, row in summary_df.iterrows():
-                vals = [
-                    row["WSM šifra"],
-                    row["WSM Naziv"],
-                    _fmt(row["Količina"]),
-                    _fmt(row["Znesek"]),
-                    _fmt(row["Rabat (%)"]),
-                    _fmt(row["Neto po rabatu"]),
-                ]
-                summary_tree.insert("", "end", values=vals)
-                log.info(
-                    "SUMMARY[%s] cena=%s",
-                    row["WSM šifra"],
-                    row.get("Neto po rabatu"),
-                )
-            log.debug(f"Povzetek posodobljen: {len(summary_df)} WSM šifer")
+            _render_summary(summary_df)
 
     # Skupni zneski pod povzetkom
     total_frame = tk.Frame(root)

@@ -88,10 +88,23 @@ def _safe_set_block(
             )
 
         if block.shape != (len(df), len(cols)):
-            block = np.zeros((len(df), len(cols)))
+            raise ValueError("Shape mismatch")
         df.loc[:, cols] = block
     except Exception:
-        df.loc[:, cols] = 0
+        # Fallback: align by index and fill numeric columns with 0,
+        # textual columns with an empty string.
+        for c in cols:
+            col_series = df.get(c)
+            num = pd.to_numeric(col_series, errors="coerce") if col_series is not None else None
+            if num is not None and num.notna().any():
+                df[c] = num.reindex(df.index).fillna(0)
+            else:
+                s = (
+                    col_series
+                    if col_series is not None
+                    else pd.Series(index=df.index, dtype=object)
+                )
+                df[c] = s.reindex(df.index).fillna("")
 
     return df
 
