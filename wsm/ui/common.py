@@ -7,13 +7,14 @@ import os
 from pathlib import Path
 from decimal import Decimal
 
-import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from wsm.analyze import analyze_invoice
 from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
 from wsm.parsing.eslog import get_supplier_name, extract_grand_total
+import pandas as pd
+from wsm.io import load_catalog
 from wsm.utils import sanitize_folder_name, _load_supplier_map
 from wsm.supplier_store import _norm_vat, choose_supplier_key
 from wsm.ui.review.gui import review_links
@@ -132,7 +133,7 @@ def open_invoice_gui(
     sifre_file = wsm_codes
     if sifre_file.exists():
         try:
-            wsm_df = pd.read_excel(sifre_file, dtype=str)
+            wsm_df = load_catalog(sifre_file)
         except Exception as exc:
             logging.warning(f"Napaka pri branju {sifre_file}: {exc}")
             wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
