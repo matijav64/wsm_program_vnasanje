@@ -735,8 +735,11 @@ def review_links(
             "rabata_pct",
         }
         if required.issubset(df.columns):
+            valid = df["wsm_sifra"].notna() & (
+                df["wsm_sifra"].astype(str).str.strip() != ""
+            )
             agg = (
-                df[df["wsm_sifra"].notna()]
+                df[valid]
                 .groupby("wsm_sifra")
                 .agg(
                     {
@@ -780,9 +783,7 @@ def review_links(
                     row["WSM šifra"],
                     row.get("Neto po rabatu"),
                 )
-            log.debug(
-                f"Povzetek posodobljen: {len(summary_df)} WSM šifer"
-            )
+            log.debug(f"Povzetek posodobljen: {len(summary_df)} WSM šifer")
 
     # Skupni zneski pod povzetkom
     total_frame = tk.Frame(root)
