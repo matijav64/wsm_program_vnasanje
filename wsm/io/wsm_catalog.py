@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, IO
 import unicodedata
 import re
 
@@ -78,7 +78,7 @@ CATALOG_ALIASES = {
         "minkolicina",
         "min qty",
     },
-    "cena": {"cena", "price", "neto", "unit price"},
+    "cena": {"cena", "price", "neto", "unit price", "zadnja nabavna cena"},
 }
 CATALOG_ALIAS_MAP = _build_alias_map(CATALOG_ALIASES)
 
@@ -114,37 +114,50 @@ def _rename_with_aliases(
 NUMERIC_COLS = {"pakiranje", "min_kolicina", "cena"}
 
 
-def load_catalog(path: str | Path) -> pd.DataFrame:
+def _read_table(path_or_buf: str | Path | IO[Any]) -> pd.DataFrame:
+    """Return DataFrame from ``path_or_buf`` as Excel or CSV.
+
+    ``path_or_buf`` may be a filesystem path or a file-like object.  The
+    function tries to read Excel first and falls back to CSV if that fails.
+    """
+
+    if hasattr(path_or_buf, "read"):
+        try:
+            return pd.read_excel(path_or_buf, dtype=str)
+        except Exception:  # pragma: no cover - defensive
+            path_or_buf.seek(0)
+            return pd.read_csv(path_or_buf, dtype=str)
+    p = Path(path_or_buf)
+    if p.suffix.lower() in {".xls", ".xlsx", ".xlsm"}:
+        return pd.read_excel(p, dtype=str)
+    return pd.read_csv(p, dtype=str)
+
+
+def load_catalog(path: str | Path | IO[Any]) -> pd.DataFrame:
     """Return normalized catalog data from ``path``.
 
-    Column headers are matched case-insensitively and without diacritics using
+    ``path`` may be a filesystem path or a file-like object.  Column headers
+    are matched case-insensitively and without diacritics using
     :data:`CATALOG_ALIASES`.  Numeric fields have decimal commas converted to
     dots and coerced to proper numeric types.
     """
 
-    p = Path(path)
-    if p.suffix.lower() in {".xls", ".xlsx", ".xlsm"}:
-        df = pd.read_excel(p, dtype=str)
-    else:
-        df = pd.read_csv(p, dtype=str)
+    df = _read_table(path)
     df = _rename_with_aliases(df, CATALOG_ALIAS_MAP)
     for col in NUMERIC_COLS & set(df.columns):
         df[col] = df[col].map(_to_number)
     return df
 
 
-def load_keywords_map(path: str | Path) -> Dict[str, str]:
+def load_keywords_map(path: str | Path | IO[Any]) -> Dict[str, str]:
     """Return ``{keyword: wsm_sifra}`` mapping from ``path``.
 
-    Headers are normalized according to :data:`KEYWORD_ALIASES`.  The returned
-    dictionary uses lowercase keywords as keys.
+    ``path`` may be a filesystem path or a file-like object.  Headers are
+    normalized according to :data:`KEYWORD_ALIASES`.  The returned dictionary
+    uses lowercase keywords as keys.
     """
 
-    p = Path(path)
-    if p.suffix.lower() in {".xls", ".xlsx", ".xlsm"}:
-        df = pd.read_excel(p, dtype=str)
-    else:
-        df = pd.read_csv(p, dtype=str)
+    df = _read_table(path)
     df = _rename_with_aliases(df, KEYWORD_ALIAS_MAP)
     if not {"wsm_sifra", "keyword"} <= set(df.columns):
         return {}
