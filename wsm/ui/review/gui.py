@@ -24,6 +24,7 @@ from .helpers import (
     _norm_unit,
     _merge_same_items,
     _apply_price_warning,
+    _safe_set_block,
 )
 from .io import _save_and_close, _load_supplier_map
 
@@ -736,17 +737,16 @@ def review_links(
             "Neto po rabatu",
         ]
         summary_df = pd.DataFrame.from_records(records, columns=SUMMARY_COLS)
-        if len(summary_df) > 0:
-            summary_df[
-                ["Količina", "Znesek", "Rabat (%)", "Neto po rabatu"]
-            ] = np.column_stack(
-                [
-                    summary_df["Količina"].fillna(0),
-                    summary_df["Znesek"].fillna(0),
-                    summary_df["Rabat (%)"].fillna(0),
-                    summary_df["Neto po rabatu"].fillna(0),
-                ]
-            )
+        summary_df = _safe_set_block(
+            summary_df,
+            ["Količina", "Znesek", "Rabat (%)", "Neto po rabatu"],
+            [
+                summary_df["Količina"].fillna(0),
+                summary_df["Znesek"].fillna(0),
+                summary_df["Rabat (%)"].fillna(0),
+                summary_df["Neto po rabatu"].fillna(0),
+            ],
+        )
         summary_df["WSM šifra"] = summary_df["WSM šifra"].fillna("")
         summary_df["WSM Naziv"] = summary_df["WSM Naziv"].fillna("")
         return summary_df
@@ -775,31 +775,43 @@ def review_links(
                 .reset_index()
             )
             name_map = wsm_df.set_index("wsm_sifra")["wsm_naziv"].to_dict()
-            summary_df["wsm_naziv"] = summary_df["wsm_sifra"].map(name_map).fillna("")
+            summary_df["wsm_naziv"] = (
+                summary_df["wsm_sifra"].map(name_map).fillna("")
+            )
             summary_df["neto_brez_popusta"] = (
                 summary_df["vrednost"] + summary_df["rabata"]
             )
-            # Vectorized to avoid length mismatch errors and speed up processing
+            # Vectorized to avoid length mismatch errors and speed up
+            # processing
             summary_df["rabata_pct"] = (
-                (summary_df["rabata"] / summary_df["neto_brez_popusta"])
-                .replace([np.inf, np.nan], 0)
-                * 100
-            )
+                summary_df["rabata"] / summary_df["neto_brez_popusta"]
+            ).replace([np.inf, np.nan], 0) * 100
             summary_df["rabata_pct"] = pd.to_numeric(
                 summary_df["rabata_pct"], errors="coerce"
             ).fillna(0)
             summary_df["rabata_pct"] = summary_df["rabata_pct"].apply(
-                lambda x: Decimal(str(x)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+                lambda x: Decimal(str(x)).quantize(
+                    Decimal("0.01"), ROUND_HALF_UP
+                )
             )
             summary_df = summary_df[summary_cols]
-            summary_df[
-                ["kolicina_norm", "neto_brez_popusta", "rabata_pct", "vrednost"]
-            ] = summary_df[
-                ["kolicina_norm", "neto_brez_popusta", "rabata_pct", "vrednost"]
-            ].apply(pd.to_numeric, errors="coerce").fillna(0)
-            summary_df[["wsm_sifra", "wsm_naziv"]] = summary_df[
-                ["wsm_sifra", "wsm_naziv"]
-            ].fillna("")
+            numeric_cols = [
+                "kolicina_norm",
+                "neto_brez_popusta",
+                "rabata_pct",
+                "vrednost",
+            ]
+            summary_df = _safe_set_block(
+                summary_df,
+                numeric_cols,
+                summary_df[numeric_cols]
+                .apply(pd.to_numeric, errors="coerce")
+                .fillna(0),
+            )
+            text_cols = ["wsm_sifra", "wsm_naziv"]
+            summary_df = _safe_set_block(
+                summary_df, text_cols, summary_df[text_cols].fillna("")
+            )
             for _, row in summary_df.iterrows():
                 vals = [
                     row["wsm_sifra"],
@@ -1089,7 +1101,9 @@ def review_links(
     def _dropdown_is_open(widget: tk.Listbox) -> bool:
         return widget.winfo_ismapped()
 
-    def _close_suggestions(entry_widget: ttk.Entry, lb_widget: tk.Listbox) -> None:
+    def _close_suggestions(
+        entry_widget: ttk.Entry, lb_widget: tk.Listbox
+    ) -> None:
         """Hide the suggestion listbox and reset selection."""
         if not _dropdown_is_open(lb_widget):
             return
@@ -1100,7 +1114,9 @@ def review_links(
         lb_widget.selection_clear(0, "end")
         entry_widget.focus_set()
 
-    def _accept_current_suggestion(entry_widget: ttk.Entry, lb_widget: tk.Listbox):
+    def _accept_current_suggestion(
+        entry_widget: ttk.Entry, lb_widget: tk.Listbox
+    ):
         """Insert the selected suggestion into the entry widget."""
         if lb_widget.curselection():
             value = lb_widget.get(lb_widget.curselection()[0])
