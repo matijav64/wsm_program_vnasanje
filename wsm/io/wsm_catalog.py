@@ -90,6 +90,12 @@ CATALOG_ALIAS_MAP = _build_alias_map(CATALOG_ALIASES)
 KEYWORD_ALIASES = {
     "wsm_sifra": {"wsm sifra", "šifra", "sifra", "code"},
     "keyword": {"keyword", "kljucna beseda", "kljucnabeseda"},
+    "sifra_dobavitelja": {
+        "dobavitelj",
+        "supplier",
+        "supplier_code",
+        "supplier code",
+    },
 }
 KEYWORD_ALIAS_MAP = _build_alias_map(KEYWORD_ALIASES)
 
@@ -153,18 +159,24 @@ def load_catalog(path: str | Path | IO[Any]) -> pd.DataFrame:
     return df
 
 
-def load_keywords_map(path: str | Path | IO[Any]) -> Dict[str, str]:
+def load_keywords_map(
+    path: str | Path | IO[Any], supplier_code: str | None = None
+) -> Dict[str, str]:
     """Return ``{keyword: wsm_sifra}`` mapping from ``path``.
 
     ``path`` may be a filesystem path or a file-like object.  Headers are
-    normalized according to :data:`KEYWORD_ALIASES`.  The returned dictionary
-    uses lowercase keywords as keys.  When the same keyword maps to multiple
-    codes, the first occurrence is kept and subsequent conflicting entries are
-    ignored.  A warning is logged listing all conflicting codes.
+    normalized according to :data:`KEYWORD_ALIASES`.  If ``supplier_code`` is
+    provided and the file contains a ``sifra_dobavitelja`` column, only rows for
+    that supplier are used.  The returned dictionary uses lowercase keywords as
+    keys.  When the same keyword maps to multiple codes, the first occurrence is
+    kept and subsequent conflicting entries are ignored.  A warning is logged
+    listing all conflicting codes.
     """
 
     df = _read_table(path)
     df = _rename_with_aliases(df, KEYWORD_ALIAS_MAP)
+    if supplier_code and "sifra_dobavitelja" in df.columns:
+        df = df[df["sifra_dobavitelja"].astype(str) == str(supplier_code)]
     if not {"wsm_sifra", "keyword"} <= set(df.columns):
         return {}
     result: Dict[str, str] = {}

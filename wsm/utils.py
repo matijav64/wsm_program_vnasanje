@@ -290,7 +290,8 @@ def load_wsm_data(
     """
     Vrne:
       • sifre_df  – celotno tabelo “sifre_wsm.xlsx”
-      • kw_df     – ključne besede filtrirane na dobavitelja, če je stolpec
+      • kw_df     – ključne besede; če datoteka vsebuje stolpec
+                   ``sifra_dobavitelja``, so filtrirane na dobavitelja
       • links_df  – ročne povezave za dobavitelja (če obstaja datoteka)
     """
     sifre_df = load_catalog(sifre_path)
@@ -300,7 +301,7 @@ def load_wsm_data(
             "WSM_KEYWORDS_FILE", "kljucne_besede_wsm_kode.xlsx"
         )
 
-    kw_map = load_keywords_map(keywords_path)
+    kw_map = load_keywords_map(keywords_path, supplier_code)
     kw_df = (
         pd.DataFrame(
             [
