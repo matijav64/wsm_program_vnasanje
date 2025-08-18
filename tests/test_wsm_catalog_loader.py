@@ -45,3 +45,16 @@ def test_load_keywords_map_aliases_and_duplicate_warning(kw_header, caplog):
         mapping = load_keywords_map(buf)
     assert mapping == {"foo": "1", "bar": "3"}
     assert "Duplicate keyword 'foo'" in caplog.text
+
+
+def test_load_keywords_map_filters_by_supplier():
+    df = pd.DataFrame(
+        {
+            "sifra_dobavitelja": ["A", "B"],
+            "wsm_sifra": ["1", "2"],
+            "keyword": ["Foo", "Bar"],
+        }
+    )
+    buf = _to_excel_bytes(df)
+    mapping = load_keywords_map(buf, supplier_code="A")
+    assert mapping == {"foo": "1"}
