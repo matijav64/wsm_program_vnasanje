@@ -7,15 +7,7 @@ import numpy as np
 import pandas as pd
 
 from .helpers import _safe_set_block
-
-SUMMARY_COLS = [
-    "WSM šifra",
-    "WSM Naziv",
-    "Količina",
-    "Znesek",
-    "Rabat (%)",
-    "Neto po rabatu",
-]
+from .summary_columns import SUMMARY_COLS
 
 
 def summary_df_from_records(records: Sequence[dict] | None) -> pd.DataFrame:
