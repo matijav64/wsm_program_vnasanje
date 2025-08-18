@@ -14,7 +14,8 @@ from wsm.analyze import analyze_invoice
 from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
 from wsm.parsing.eslog import get_supplier_name, extract_grand_total
 import pandas as pd
-from wsm.io import load_catalog
+from wsm.io import load_catalog, load_keywords_map
+from wsm.io.wsm_catalog import KEYWORD_ALIAS_MAP, _rename_with_aliases
 from wsm.utils import sanitize_folder_name, _load_supplier_map
 from wsm.supplier_store import _norm_vat, choose_supplier_key
 from wsm.ui.review.gui import review_links
@@ -134,11 +135,47 @@ def open_invoice_gui(
     if sifre_file.exists():
         try:
             wsm_df = load_catalog(sifre_file)
+            logging.info(
+                "Catalog %s loaded: %d rows, columns=%s",
+                sifre_file,
+                len(wsm_df),
+                sorted(wsm_df.columns),
+            )
+            missing = {"wsm_sifra", "wsm_naziv"} - set(wsm_df.columns)
+            if missing:
+                raise ValueError(
+                    f"Manjkajoči stolpci {missing}. Najdeni: {list(wsm_df.columns)}"
+                )
         except Exception as exc:
             logging.warning(f"Napaka pri branju {sifre_file}: {exc}")
             wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
     else:
+        logging.warning(f"Datoteka {sifre_file} ne obstaja.")
         wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
+
+    kw_file = Path(keywords)
+    if kw_file.exists():
+        try:
+            if kw_file.suffix.lower() in {".xls", ".xlsx", ".xlsm"}:
+                kw_df = pd.read_excel(kw_file, dtype=str)
+            else:
+                kw_df = pd.read_csv(kw_file, dtype=str)
+            kw_df = _rename_with_aliases(kw_df, KEYWORD_ALIAS_MAP)
+            logging.info(
+                "Keywords %s loaded: %d rows, columns=%s",
+                kw_file,
+                len(kw_df),
+                sorted(kw_df.columns),
+            )
+            if not {"wsm_sifra", "keyword"} <= set(kw_df.columns):
+                raise ValueError(
+                    f"Manjkajoči stolpci v ključnih besedah. Najdeni: {list(kw_df.columns)}"
+                )
+            _ = load_keywords_map(kw_file)
+        except Exception as exc:
+            logging.warning(f"Napaka pri branju {kw_file}: {exc}")
+    else:
+        logging.warning(f"Datoteka {kw_file} ne obstaja.")
 
     try:
         from wsm.utils import povezi_z_wsm
