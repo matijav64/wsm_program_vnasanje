@@ -9,7 +9,6 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 import pandas as pd
-import numpy as np
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import builtins
@@ -27,6 +26,11 @@ from .helpers import (
     _safe_set_block,
 )
 from .io import _save_and_close, _load_supplier_map
+from .summary_utils import (
+    SUMMARY_COLS,
+    summary_df_from_records,
+    vectorized_discount_pct,
+)
 
 builtins.tk = tk
 builtins.simpledialog = simpledialog
@@ -387,15 +391,8 @@ def review_links(
         ),
         axis=1,
     )
-    df["rabata_pct"] = df.apply(
-        lambda r: (
-            (
-                (r["rabata"] / (r["vrednost"] + r["rabata"])) * Decimal("100")
-            ).quantize(Decimal("0.01"), ROUND_HALF_UP)
-            if (r["vrednost"] + r["rabata"])
-            else Decimal("0.00")
-        ),
-        axis=1,
+    df["rabata_pct"] = vectorized_discount_pct(
+        df["vrednost"] + df["rabata"], df["vrednost"]
     )
     df["total_net"] = df["vrednost"]
     df["is_gratis"] = df["rabata_pct"] >= Decimal("99.9")
@@ -727,30 +724,6 @@ def review_links(
         summary_tree.heading(c, text=h)
         summary_tree.column(c, width=150, anchor="w")
 
-    def _summary_df_from_records(records: list[dict]) -> pd.DataFrame:
-        SUMMARY_COLS = [
-            "WSM šifra",
-            "WSM Naziv",
-            "Količina",
-            "Znesek",
-            "Rabat (%)",
-            "Neto po rabatu",
-        ]
-        summary_df = pd.DataFrame.from_records(records, columns=SUMMARY_COLS)
-        summary_df = _safe_set_block(
-            summary_df,
-            ["Količina", "Znesek", "Rabat (%)", "Neto po rabatu"],
-            [
-                summary_df["Količina"].fillna(0),
-                summary_df["Znesek"].fillna(0),
-                summary_df["Rabat (%)"].fillna(0),
-                summary_df["Neto po rabatu"].fillna(0),
-            ],
-        )
-        summary_df["WSM šifra"] = summary_df["WSM šifra"].fillna("")
-        summary_df["WSM Naziv"] = summary_df["WSM Naziv"].fillna("")
-        return summary_df
-
     def _update_summary():
         for item in summary_tree.get_children():
             summary_tree.delete(item)
@@ -762,7 +735,7 @@ def review_links(
             "rabata_pct",
         }
         if required.issubset(df.columns):
-            summary_df = (
+            agg = (
                 df[df["wsm_sifra"].notna()]
                 .groupby("wsm_sifra", dropna=False)
                 .agg(
@@ -775,59 +748,41 @@ def review_links(
                 .reset_index()
             )
             name_map = wsm_df.set_index("wsm_sifra")["wsm_naziv"].to_dict()
-            summary_df["wsm_naziv"] = (
-                summary_df["wsm_sifra"].map(name_map).fillna("")
+            agg["wsm_naziv"] = agg["wsm_sifra"].map(name_map).fillna("")
+            agg["neto_brez_popusta"] = agg["vrednost"] + agg["rabata"]
+            agg["rabata_pct"] = vectorized_discount_pct(
+                agg["neto_brez_popusta"], agg["vrednost"]
             )
-            summary_df["neto_brez_popusta"] = (
-                summary_df["vrednost"] + summary_df["rabata"]
-            )
-            # Vectorized to avoid length mismatch errors and speed up
-            # processing
-            summary_df["rabata_pct"] = (
-                summary_df["rabata"] / summary_df["neto_brez_popusta"]
-            ).replace([np.inf, np.nan], 0) * 100
-            summary_df["rabata_pct"] = pd.to_numeric(
-                summary_df["rabata_pct"], errors="coerce"
-            ).fillna(0)
-            summary_df["rabata_pct"] = summary_df["rabata_pct"].apply(
-                lambda x: Decimal(str(x)).quantize(
-                    Decimal("0.01"), ROUND_HALF_UP
-                )
-            )
-            summary_df = summary_df[summary_cols]
-            numeric_cols = [
-                "kolicina_norm",
-                "neto_brez_popusta",
-                "rabata_pct",
-                "vrednost",
+            records = [
+                {
+                    "WSM šifra": row["wsm_sifra"],
+                    "WSM Naziv": row["wsm_naziv"],
+                    "Količina": row["kolicina_norm"],
+                    "Znesek": row["neto_brez_popusta"],
+                    "Rabat (%)": row["rabata_pct"],
+                    "Neto po rabatu": row["vrednost"],
+                }
+                for _, row in agg.iterrows()
             ]
-            summary_df = _safe_set_block(
-                summary_df,
-                numeric_cols,
-                summary_df[numeric_cols]
-                .apply(pd.to_numeric, errors="coerce")
-                .fillna(0),
-            )
-            text_cols = ["wsm_sifra", "wsm_naziv"]
-            summary_df = _safe_set_block(
-                summary_df, text_cols, summary_df[text_cols].fillna("")
-            )
+            summary_df = summary_df_from_records(records)
             for _, row in summary_df.iterrows():
                 vals = [
-                    row["wsm_sifra"],
-                    row["wsm_naziv"],
-                    _fmt(row["kolicina_norm"]),
-                    _fmt(row["neto_brez_popusta"]),
-                    _fmt(row["rabata_pct"]),
-                    _fmt(row["vrednost"]),
+                    row["WSM šifra"],
+                    row["WSM Naziv"],
+                    _fmt(row["Količina"]),
+                    _fmt(row["Znesek"]),
+                    _fmt(row["Rabat (%)"]),
+                    _fmt(row["Neto po rabatu"]),
                 ]
                 summary_tree.insert("", "end", values=vals)
                 log.info(
                     "SUMMARY[%s] cena=%s",
-                    row["wsm_sifra"],
-                    row.get("vrednost"),
+                    row["WSM šifra"],
+                    row.get("Neto po rabatu"),
                 )
-            log.debug(f"Povzetek posodobljen: {len(summary_df)} WSM šifer")
+            log.debug(
+                f"Povzetek posodobljen: {len(summary_df)} WSM šifer"
+            )
 
     # Skupni zneski pod povzetkom
     total_frame = tk.Frame(root)

@@ -30,6 +30,7 @@ from wsm.ui.review.helpers import (
 )
 from wsm.ui.review.io import _save_and_close, _load_supplier_map
 from wsm.utils import short_supplier_name
+from wsm.ui.review.summary_utils import vectorized_discount_pct
 
 log = logging.getLogger(__name__)
 
@@ -118,15 +119,8 @@ def review_links_qt(
         ),
         axis=1,
     )
-    df["rabata_pct"] = df.apply(
-        lambda r: (
-            (
-                (r["rabata"] / (r["vrednost"] + r["rabata"])) * Decimal("100")
-            ).quantize(Decimal("0.01"))
-            if (r["vrednost"] + r["rabata"])
-            else Decimal("0.00")
-        ),
-        axis=1,
+    df["rabata_pct"] = vectorized_discount_pct(
+        df["vrednost"] + df["rabata"], df["vrednost"]
     )
     df["total_net"] = df["vrednost"]
     df["is_gratis"] = df["rabata_pct"] >= Decimal("99.9")
