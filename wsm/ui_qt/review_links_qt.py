@@ -232,7 +232,7 @@ def review_links_qt(
         if required.issubset(df.columns):
             summary_df = (
                 df[df["wsm_sifra"].notna()]
-                .groupby(["wsm_sifra", "rabata_pct"], dropna=False)
+                .groupby(["wsm_sifra", "rabata_pct"])
                 .agg(
                     {
                         "vrednost": "sum",

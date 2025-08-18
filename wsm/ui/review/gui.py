@@ -737,7 +737,7 @@ def review_links(
         if required.issubset(df.columns):
             agg = (
                 df[df["wsm_sifra"].notna()]
-                .groupby("wsm_sifra", dropna=False)
+                .groupby("wsm_sifra")
                 .agg(
                     {
                         "vrednost": "sum",
