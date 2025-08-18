@@ -5,13 +5,14 @@ import math
 import os
 import re
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Tuple
+from typing import Sequence, Tuple
 
 from wsm.constants import (
     WEIGHTS_PER_PIECE,
     PRICE_DIFF_THRESHOLD as DEFAULT_PRICE_DIFF_THRESHOLD,
 )
 
+import numpy as np
 import pandas as pd
 
 log = logging.getLogger(__name__)
@@ -40,6 +41,59 @@ def _fmt(v) -> str:
     d = d.quantize(Decimal("0.0001"))
     s = format(d, "f")
     return s.rstrip("0").rstrip(".") if "." in s else s
+
+
+def _safe_set_block(
+    df: pd.DataFrame,
+    cols: Sequence[str],
+    data,
+) -> pd.DataFrame:
+    """Safely assign ``data`` to ``df`` columns ``cols``.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Target DataFrame to modify in-place.
+    cols : sequence[str]
+        Column names to populate.
+    data : DataFrame | sequence | scalar
+        Source data. When a sequence is provided each element is
+        reindexed to ``df.index`` and stacked using
+        :func:`numpy.column_stack`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The modified DataFrame. When shapes mismatch the requested
+        columns are created and filled with zeros.
+    """
+
+    if df.empty:
+        df.loc[:, cols] = 0
+        return df
+
+    try:
+        if np.isscalar(data):
+            block = np.full((len(df), len(cols)), data)
+        elif isinstance(data, pd.DataFrame):
+            block = data.reindex(df.index).fillna(0).to_numpy()
+        else:
+            if not isinstance(data, Sequence):
+                data = [data]
+            block = np.column_stack(
+                [
+                    pd.Series(d).reindex(df.index).fillna(0).to_numpy()
+                    for d in data
+                ]
+            )
+
+        if block.shape != (len(df), len(cols)):
+            block = np.zeros((len(df), len(cols)))
+        df.loc[:, cols] = block
+    except Exception:
+        df.loc[:, cols] = 0
+
+    return df
 
 
 _piece = {"kos", "kom", "stk", "st", "can", "ea", "pcs"}
@@ -372,7 +426,9 @@ def _split_totals(
         if net_amount
         else Decimal("0")
     )
-    gross = (net_amount + vat).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    gross = (net_amount + vat).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
 
     return net_amount, vat, gross
 
