@@ -33,6 +33,35 @@ from wsm.parsing.money import (
     calculate_vat,
 )
 
+# --- dynamic namespace mapping for 'e:' ---
+NS = {"e": "urn:edifact:xml:enriched"}  # default; will be overridden per document
+
+
+def _detect_edifact_ns(root) -> str:
+    """Return namespace URI present in the document."""
+    try:
+        tag = getattr(root, "tag", "")
+        if isinstance(tag, str) and tag.startswith("{"):
+            uri = tag.split("}", 1)[0][1:]
+            if uri:
+                return uri
+        for el in root.iter():
+            t = getattr(el, "tag", "")
+            if isinstance(t, str) and t.startswith("{"):
+                return t.split("}", 1)[0][1:]
+    except Exception:
+        pass
+    return "urn:edifact:xml:enriched"
+
+
+def _force_ns_for_doc(root) -> None:
+    """Align ``NS['e']`` with the namespace used in ``root``."""
+    uri = _detect_edifact_ns(root)
+    if uri in ("urn:edifact:xml:enriched", "urn:eslog:2.00"):
+        NS["e"] = uri
+    else:
+        NS["e"] = "urn:edifact:xml:enriched"
+
 XML_PARSER = LET.XMLParser(resolve_entities=False)
 
 # Use higher precision to avoid premature rounding when summing values.
@@ -182,14 +211,6 @@ def _first_moa(
                 return val
     return Decimal("0")
 
-
-# Namespace za ESLOG (če je prisoten)
-#
-# The original eSLOG 2.0 schema used the ``urn:eslog:2.00`` namespace, but
-# real-world documents often rely on the enriched EDIFACT namespace
-# ``urn:edifact:xml:enriched``.  Use the latter by default so that lightweight
-# XML samples without explicit namespace mappings are parsed correctly.
-NS = {"e": "urn:edifact:xml:enriched"}
 
 # Namespaces for UBL documents
 UBL_NS = {
@@ -1932,14 +1953,19 @@ def build_invoice_model(
 
 
 def parse_invoice_totals(
-    tree: LET._Element | LET._ElementTree,
+    root_or_tree: LET._Element | LET._ElementTree,
 ) -> dict[str, Decimal | bool]:
     """Return aggregated invoice totals and validate against header values."""
 
-    if hasattr(tree, "getroot"):
-        root = tree.getroot()
-    else:
-        root = tree
+    root = root_or_tree
+    try:
+        if hasattr(root_or_tree, "getroot"):
+            root = root_or_tree.getroot()
+    except Exception:
+        pass
+
+    _force_ns_for_doc(root)
+    log.info("eslog NS[e]=%s", NS.get("e"))
 
     buf = io.BytesIO(LET.tostring(root))
     df, _ = parse_eslog_invoice(buf)
