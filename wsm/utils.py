@@ -14,6 +14,7 @@ from typing import Tuple, Union, List, Dict
 
 import pandas as pd
 import logging
+from wsm.io import load_catalog, load_keywords_map
 
 log = logging.getLogger(__name__)
 
@@ -226,17 +227,6 @@ def zdruzi_artikle(df: pd.DataFrame) -> pd.DataFrame:
     return pd.concat([grouped, df_doc], ignore_index=True)
 
 
-# ────────────────────────── pomožne tabele ──────────────────────────
-def _coerce_keyword_column(df: pd.DataFrame) -> pd.DataFrame:
-    """Dovoli alternativno ime stolpca (“kljucna_beseda”) namesto “keyword”."""
-    if "keyword" in df.columns:
-        return df
-    for col in df.columns:
-        if col.strip().lower() == "kljucna_beseda":
-            return df.rename(columns={col: "keyword"})
-    return df
-
-
 def extract_keywords(links_dir: Path, keywords_path: Path) -> pd.DataFrame:
     """Prebere ročne povezave in iz njih izdela seznam ključnih besed."""
     rows: List[Dict[str, str]] = []
@@ -272,12 +262,18 @@ def extract_keywords(links_dir: Path, keywords_path: Path) -> pd.DataFrame:
     keywords_path.parent.mkdir(parents=True, exist_ok=True)
     if keywords_path.exists():
         try:
-            old = pd.read_excel(keywords_path, dtype=str)
-            old = _coerce_keyword_column(old)
-            kw_df = pd.concat(
-                [old[["wsm_sifra", "keyword"]], kw_df], ignore_index=True
-            )
-            kw_df.drop_duplicates(inplace=True)
+            old_map = load_keywords_map(keywords_path)
+            if old_map:
+                old = pd.DataFrame(
+                    [
+                        {"wsm_sifra": v, "keyword": k}
+                        for k, v in old_map.items()
+                    ]
+                )
+                kw_df = pd.concat(
+                    [old[["wsm_sifra", "keyword"]], kw_df], ignore_index=True
+                )
+                kw_df.drop_duplicates(inplace=True)
         except Exception as exc:
             log.warning(f"Napaka pri branju obstoječih ključnih besed: {exc}")
 
@@ -297,25 +293,24 @@ def load_wsm_data(
       • kw_df     – ključne besede filtrirane na dobavitelja, če je stolpec
       • links_df  – ročne povezave za dobavitelja (če obstaja datoteka)
     """
-    sifre_df = pd.read_excel(sifre_path, dtype=str)
+    sifre_df = load_catalog(sifre_path)
 
     if keywords_path is None:
         keywords_path = os.getenv(
             "WSM_KEYWORDS_FILE", "kljucne_besede_wsm_kode.xlsx"
         )
 
-    kw_all = pd.read_excel(keywords_path, dtype=str)
-    kw_all = _coerce_keyword_column(kw_all)
-    if "sifra_dobavitelja" in kw_all.columns:
-        kw_df = kw_all[kw_all["sifra_dobavitelja"] == supplier_code][
-            ["wsm_sifra", "keyword"]
-        ]
-    else:
-        kw_df = (
-            kw_all[["wsm_sifra", "keyword"]]
-            if "keyword" in kw_all.columns
-            else pd.DataFrame(columns=["wsm_sifra", "keyword"])
+    kw_map = load_keywords_map(keywords_path)
+    kw_df = (
+        pd.DataFrame(
+            [
+                {"wsm_sifra": v, "keyword": k}
+                for k, v in kw_map.items()
+            ]
         )
+        if kw_map
+        else pd.DataFrame(columns=["wsm_sifra", "keyword"])
+    )
 
     suppliers_file = links_dir
     sup_map = _load_supplier_map(suppliers_file)

@@ -14,6 +14,7 @@ from wsm.parsing.eslog import (
 )
 from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
 from wsm.parsing.money import detect_round_step, round_to_step
+from wsm.io import load_catalog
 from wsm.utils import sanitize_folder_name, _load_supplier_map
 from wsm.supplier_store import _norm_vat
 from wsm.analyze import analyze_invoice
@@ -221,7 +222,7 @@ def review(invoice, wsm_codes, suppliers, keywords, price_warn_pct, use_pyqt):
 
     if sifre_path.exists():
         try:
-            wsm_df = pd.read_excel(sifre_path, dtype=str)
+            wsm_df = load_catalog(sifre_path)
         except Exception as exc:
             click.echo(f"[NAPAKA] Napaka pri branju {sifre_path}: {exc}")
             wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
