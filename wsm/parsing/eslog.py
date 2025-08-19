@@ -1160,6 +1160,16 @@ def _line_amount_after_allowances(seg: LET._Element) -> Decimal:
     return _dec2(run)
 
 
+def _line_discount_components(sg26: LET._Element) -> tuple[Decimal, Decimal, Decimal]:
+    """Return line discount components with MOA 204 preferred over matching PCD."""
+    disc_direct = _line_discount(sg26)
+    disc_moa = _line_amount_discount(sg26)
+    pct_disc = _line_pct_discount(sg26)
+    if disc_direct != 0 and pct_disc != 0 and abs(disc_direct - pct_disc) <= TOL:
+        pct_disc = Decimal("0")
+    return disc_direct, disc_moa, pct_disc
+
+
 def _doc_discount_from_line(seg: LET._Element) -> Decimal | None:
     base = sum(
         _sum_moa(sg27, {"203"}, deep=False)
@@ -1267,13 +1277,8 @@ def _line_net_before_discount(
 
     if net_after is None:
         net_after = _line_net(sg26)
-    disc_direct = _line_discount(sg26)
-    disc_moa = _line_amount_discount(sg26)
-    pct_disc = _line_pct_discount(sg26)
-    if (disc_direct != 0 or disc_moa != 0) and pct_disc != 0:
-        discount = disc_direct + disc_moa
-    else:
-        discount = disc_direct + disc_moa + pct_disc
+    disc_direct, disc_moa, pct_disc = _line_discount_components(sg26)
+    discount = disc_direct + disc_moa + pct_disc
     return (net_after + discount).quantize(DEC2, ROUND_HALF_UP)
 
 
@@ -1503,8 +1508,9 @@ def parse_eslog_invoice(
 
         net_amount = _line_net(sg26)
         net_before = _line_net_before_discount(sg26, net_amount)
-        rebate_moa = _line_discount(sg26) + _line_amount_discount(sg26)
-        pct_rebate = _line_pct_discount(sg26)
+        disc_direct, disc_moa, pct_disc = _line_discount_components(sg26)
+        rebate_moa = disc_direct + disc_moa
+        pct_rebate = pct_disc
         rebate = rebate_moa + pct_rebate
 
         tax_amount, vat_rate = _line_tax(
