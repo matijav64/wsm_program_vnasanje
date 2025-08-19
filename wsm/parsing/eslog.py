@@ -74,7 +74,7 @@ TOL = Decimal("0.01")
 
 # MOA qualifiers used for discounts and base amounts
 DISCOUNT_MOA_LINE = {"204"}
-DOC_DISCOUNT_MOA = {"260"}
+DOC_DISCOUNT_MOA = {"260", "204"}
 BASE_MOA_LINE = {"25"}
 
 # Global flag indicating that SG26 discounts are informational only.
@@ -148,6 +148,12 @@ def _line_moa203(sg26: LET._Element) -> Decimal:
                 q = cand.find("C_C516/D_5025")
             if q is not None and _text(q) == "203":
                 return _dec2(_moa_value(cand))
+    for cand in sg26.findall("./e:S_MOA", NS) + sg26.findall("./S_MOA"):
+        q = cand.find("e:C_C516/e:D_5025", NS)
+        if q is None:
+            q = cand.find("C_C516/D_5025")
+        if q is not None and _text(q) == "203":
+            return _dec2(_moa_value(cand))
     return Decimal("0.00")
 
 
@@ -511,6 +517,7 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
         else:
             tree = LET.parse(source, parser=XML_PARSER)
             root = tree.getroot()
+        _force_ns_for_doc(root)
 
         header_base = Decimal("0")
         for code in ("203", "389", "79"):
@@ -663,26 +670,27 @@ def _invoice_total(
 
 
 def _apply_doc_allowances_sequential(
-    sum_line_net: Decimal, header_node: LET._Element
+    sum_line_net: Decimal, header_node: LET._Element, *, discount_codes: set[str] | None = None
 ) -> tuple[Decimal, Decimal, Decimal]:
     """Apply document-level allowances/charges sequentially."""
     base = sum_line_net
     run = base
     allow_total = Decimal("0")
     charge_total = Decimal("0")
+    codes = discount_codes or DOC_DISCOUNT_MOA
     for sg in header_node.findall(".//e:G_SG50", NS) + header_node.findall(
         ".//G_SG50"
     ):
         if sg.find("./e:S_ALC", NS) is None and sg.find("./S_ALC") is None:
             continue
         ancestor = sg.getparent()
-        skip = False
+        in_summary = False
         while ancestor is not None:
             if ancestor.tag.split("}")[-1] == "G_SG52":
-                skip = True
+                in_summary = True
                 break
             ancestor = ancestor.getparent()
-        if skip:
+        if in_summary and _sum_moa(sg, DOC_DISCOUNT_MOA, deep=False) == 0:
             continue
         alc = sg.find("./e:S_ALC/e:D_5463", NS)
         if alc is None:
@@ -698,7 +706,7 @@ def _apply_doc_allowances_sequential(
             else:
                 charge_total += amt
             run += amt
-        moa = _sum_moa(sg, DOC_DISCOUNT_MOA, deep=False)
+        moa = _sum_moa(sg, codes, deep=False)
         run += moa
         if kind == "A":
             allow_total += moa
@@ -1140,9 +1148,13 @@ def _line_pct_discount(sg26: LET._Element) -> Decimal:
 def _line_amount_after_allowances(seg: LET._Element) -> Decimal:
     """Return line amount after sequential SG39 allowances/charges."""
     base = sum(
-        _sum_moa(sg27, {"203"}, deep=False)
+        (_sum_moa(sg27, {"203"}, deep=False))
         for sg27 in seg.findall("./e:G_SG27", NS) + seg.findall("./G_SG27")
     )
+    if isinstance(base, int):
+        base = Decimal(base)
+    if base == 0:
+        base = _line_moa203(seg)
     run = base
     for sg39, kind, pcds, moa_allow, moa_charge in _iter_sg39(seg):
         pct_base = _pct_base(sg39, seg)
@@ -1454,6 +1466,7 @@ def parse_eslog_invoice(
     except EntitiesForbidden:
         return pd.DataFrame(), True
     root = tree.getroot()
+    _force_ns_for_doc(root)
     supplier_code = get_supplier_info(tree)
     header_rate = _tax_rate_from_header(root)
     items: List[Dict] = []
@@ -1839,8 +1852,9 @@ def parse_eslog_invoice(
         it.pop("_net_std", None)
 
     # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
-    net_after_doc, doc_allow_header, doc_charge_total = (
-        _apply_doc_allowances_sequential(sum_line_net, root)
+    discount_set = set(discount_codes or DEFAULT_DOC_DISCOUNT_CODES)
+    net_after_doc, doc_allow_header, doc_charge_total = _apply_doc_allowances_sequential(
+        sum_line_net, root, discount_codes=discount_set
     )
     doc_allow_total = doc_allow_header + doc_discount_from_lines
     net_total = net_after_doc + doc_discount_from_lines
@@ -1884,9 +1898,9 @@ def parse_eslog_invoice(
         header_vat
         if header_vat != 0
         else _vat_total_after_doc(
-            tax_total if tax_total != 0 else None,
+            tax_total if tax_total != 0 and doc_allow_total == 0 else None,
             lines_by_rate,
-            doc_allow_total,
+            -doc_allow_total,
         )
     )
 
