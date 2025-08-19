@@ -492,7 +492,7 @@ def _apply_price_warning(
     return False, ""
 
 
-GRATIS_THRESHOLD = Decimal("99.9")
+GRATIS_THRESHOLD = Decimal("99.5")
 
 
 def first_existing(df: pd.DataFrame, columns: Sequence[str]) -> pd.Series:
@@ -531,7 +531,7 @@ def first_existing(df: pd.DataFrame, columns: Sequence[str]) -> pd.Series:
     return pd.Series(0, index=df.index)
 
 
-def compute_eff_discount_pct(
+def _compute_eff_discount_pct(
     rabata_pct=None,
     gross=None,
     net=None,
@@ -540,8 +540,8 @@ def compute_eff_discount_pct(
 ) -> pd.Series:
     """Return effective discount percentage combining line and document discounts.
 
-    The function prefers an explicit percentage column when available but can
-    also infer the discount rate from gross, net and discount amounts.
+    This internal helper prefers an explicit percentage column when available
+    but can also infer the discount rate from gross, net and discount amounts.
 
     Parameters
     ----------
@@ -620,4 +620,40 @@ def compute_eff_discount_pct(
     eff_series = pd.Series(eff, index=idx)
     return eff_series.apply(
         lambda x: Decimal(str(x)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    )
+
+
+def compute_eff_discount_pct(
+    df: pd.DataFrame, doc_discount_pct: Decimal | float | int | str | None = None
+) -> pd.Series:
+    """Return effective discount percentage for ``df``.
+
+    The function prefers an explicit ``rabata_pct`` column but falls back to
+    deriving the percentage from value (``vrednost``) and discount amount
+    (``rabata``) when the percentage is missing. Discounts of 99.5% or more are
+    normalized to 100% to capture promotional lines.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Source table containing discount information.
+    doc_discount_pct : Decimal | float | int | str | None, optional
+        Document-level discount percentage applied uniformly to all lines.
+
+    Returns
+    -------
+    pandas.Series
+        Effective discount percentages as :class:`~decimal.Decimal` values
+        rounded to two decimal places.
+    """
+
+    pct = first_existing(df, ["rabata_pct"])
+    net = first_existing(
+        df, ["net_po_rab", "neto_po_rabatu", "skupna_neto", "neto", "vrednost"]
+    )
+    eur = first_existing(df, ["rabata", "popust_eur", "popust"])
+    gross = first_existing(df, ["net_pred_rab", "net_pred", "net_pred_rabat"])
+    gross = gross.where(gross != 0, net + eur)
+    return _compute_eff_discount_pct(
+        pct, gross=gross, net=net, eur=eur, doc_discount_pct=doc_discount_pct
     )

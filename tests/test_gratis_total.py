@@ -12,7 +12,7 @@ def _calc_totals(xml_path: Path):
     doc_discount_total = df_doc["vrednost"].sum()
     df = df[df["sifra_dobavitelja"] != "_DOC_"].copy()
     df["total_net"] = df["vrednost"]
-    df["is_gratis"] = df["rabata_pct"] >= Decimal("99.9")
+    df["is_gratis"] = df["rabata_pct"] >= Decimal("99.5")
     df["wsm_sifra"] = pd.NA
     df.loc[df["naziv"] == "Normal", "wsm_sifra"] = "X"
 
@@ -55,6 +55,6 @@ def test_gratis_line_excluded_from_totals(tmp_path):
     xml_path.write_text(xml)
 
     net, vat, gross = _calc_totals(xml_path)
-    assert net == Decimal("10")
+    assert net == Decimal("5")
     assert vat == Decimal("0")
     assert gross == net
