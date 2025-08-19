@@ -21,7 +21,6 @@ from wsm.supplier_store import _norm_vat
 from wsm.ui.review.helpers import (
     first_existing,
     compute_eff_discount_pct,
-    summary_df_from_records,
 )
 from .helpers import (
     _fmt,
@@ -539,14 +538,25 @@ def review_links(
         root.clipboard_clear()
         root.clipboard_append(val)
 
+    def copy_supplier_name() -> None:
+        name = (
+            supplier_name
+            or supplier_info.get("ime")
+            or supplier_vat
+            or supplier_code
+            or ""
+        )
+        if name:
+            _copy(str(name))
+
     tk.Button(
         info_frame,
         text="Kopiraj dobavitelja",
-        command=lambda: _copy(supplier_var.get()),
+        command=copy_supplier_name,
     ).grid(row=0, column=0, sticky="w", padx=(0, 4))
     tk.Button(
         info_frame,
-        text="Kopiraj storitev",
+        text="Kopiraj datum storitve",
         command=lambda: _copy(date_var.get()),
     ).grid(row=0, column=1, sticky="w", padx=(0, 4))
 
@@ -735,62 +745,60 @@ def review_links(
         log.debug(f"Povzetek posodobljen: {len(df_summary)} WSM šifer")
 
     def _update_summary():
-        qty = first_existing(df, ["kolicina_norm", "kolicina"])
-        gross = first_existing(
-            df, ["vrednost", "net_pred_rab", "net_pred", "net_pred_rabat"]
-        )
-        net = first_existing(
-            df, ["net_po_rab", "neto_po_rabatu", "skupna_neto", "neto"]
-        )
-        eur = first_existing(df, ["rabata", "popust_eur", "popust"])
-        gross = gross.where(gross != 0, net + eur)
-        eff_pct = compute_eff_discount_pct(df)
+        """Povzetek po WSM šifrah: loči tudi po efektivnem rabatu (%)"""
+        from wsm.ui.review.summary_utils import summary_df_from_records
 
-        valid = df["wsm_sifra"].notna() & (
-            df["wsm_sifra"].astype(str).str.strip() != ""
-        )
-        if not valid.any():
+        if df is None or df.empty or "wsm_sifra" not in df:
             _render_summary(summary_df_from_records([]))
             return
 
-        work = pd.DataFrame(
-            {
-                "wsm_sifra": df["wsm_sifra"],
-                "wsm_naziv": df.get("wsm_naziv"),
-                "qty": qty,
-                "gross": gross,
-                "net": net,
-                "eur": eur,
-                "eff_pct": eff_pct,
-            }
-        ).loc[valid]
+        valid = df["wsm_sifra"].notna() & (df["wsm_sifra"].astype(str).str.strip() != "")
+        df_valid = df.loc[valid].copy()
+        if df_valid.empty:
+            _render_summary(summary_df_from_records([]))
+            return
 
-        group_keys = ["wsm_sifra", "eff_pct"]
-        if "wsm_naziv" in work.columns and work["wsm_naziv"].notna().any():
+        val_s = first_existing(
+            df_valid, ["vrednost", "skupna_neto", "neto_po_rabatu", "neto", "neto_po"]
+        ) or 0
+        disc_s = first_existing(
+            df_valid, ["rabata", "rabat_znesek", "popust_znesek"]
+        ) or 0
+        qty_s = first_existing(df_valid, ["kolicina_norm", "kolicina"]) or 0
+
+        df_valid["vrednost"] = pd.to_numeric(val_s, errors="coerce").fillna(0.0)
+        df_valid["rabata"] = pd.to_numeric(disc_s, errors="coerce").fillna(0.0)
+        df_valid["kolicina_norm"] = pd.to_numeric(qty_s, errors="coerce").fillna(0.0)
+
+        eff = compute_eff_discount_pct(df_valid).fillna(Decimal("0.00"))
+        df_valid["__eff_rabat_pct__"] = eff
+
+        group_keys = ["wsm_sifra"]
+        if "wsm_naziv" in df_valid.columns:
             group_keys.append("wsm_naziv")
+        group_keys.append("__eff_rabat_pct__")
 
         agg = (
-            work.groupby(group_keys, dropna=False)
-            .agg({"qty": "sum", "gross": "sum", "net": "sum", "eur": "sum"})
+            df_valid.groupby(group_keys, dropna=False)
+            .agg({"vrednost": "sum", "rabata": "sum", "kolicina_norm": "sum"})
             .reset_index()
         )
 
-        records = [
-            {
-                "WSM šifra": row["wsm_sifra"],
-                "WSM Naziv": row.get("wsm_naziv", ""),
-                "Količina": row.get("qty", 0),
-                "Znesek": (
-                    row.get("gross", 0)
-                    if row.get("gross", 0)
-                    else row.get("net", 0) + row.get("eur", 0)
-                ),
-                "Rabat (%)": row.get("eff_pct", 0),
-                "Neto po rabatu": row.get("net", 0),
-            }
-            for _, row in agg.iterrows()
-        ]
-        _render_summary(summary_df_from_records(records))
+        records = []
+        for _, row in agg.iterrows():
+            records.append(
+                {
+                    "WSM šifra": row["wsm_sifra"],
+                    "WSM Naziv": row.get("wsm_naziv", ""),
+                    "Količina": float(row.get("kolicina_norm", 0) or 0),
+                    "Znesek": float(row.get("vrednost", 0) or 0),
+                    "Rabat (%)": row.get("__eff_rabat_pct__", Decimal("0.00")),
+                    "Neto po rabatu": float(row.get("vrednost", 0) or 0),
+                }
+            )
+
+        df_summary = summary_df_from_records(records)
+        _render_summary(df_summary)
 
     # Skupni zneski pod povzetkom
     total_frame = tk.Frame(root)
