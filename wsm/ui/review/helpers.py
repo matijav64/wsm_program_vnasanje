@@ -109,6 +109,9 @@ def _safe_set_block(
     return df
 
 
+from wsm.ui.review.summary_utils import summary_df_from_records  # noqa: E402
+
+
 _piece = {"kos", "kom", "stk", "st", "can", "ea", "pcs"}
 _mass = {"kg", "g", "gram", "grams", "mg", "milligram", "milligrams"}
 _vol = {"l", "ml", "cl", "dl", "dcl"}
