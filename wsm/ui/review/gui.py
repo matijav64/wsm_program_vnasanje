@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -28,7 +28,6 @@ from .helpers import (
     _norm_unit,
     _merge_same_items,
     _apply_price_warning,
-    _safe_set_block,
 )
 from .io import _save_and_close, _load_supplier_map
 from .summary_columns import SUMMARY_COLS, SUMMARY_KEYS, SUMMARY_HEADS
@@ -696,8 +695,8 @@ def review_links(
         font=("Arial", 12, "bold"),
     ).pack()
 
-    # Column keys and headers derive from :mod:`summary_columns` to stay in sync
-    # with :data:`SUMMARY_COLS` used throughout the project.
+    # Column keys and headers derive from :mod:`summary_columns`
+    # to stay in sync with :data:`SUMMARY_COLS` used throughout the project.
     summary_cols = SUMMARY_KEYS
     summary_heads = SUMMARY_HEADS
     assert SUMMARY_COLS == summary_heads
@@ -747,7 +746,9 @@ def review_links(
         gross = gross.where(gross != 0, net + eur)
         eff_pct = compute_eff_discount_pct(df)
 
-        valid = df["wsm_sifra"].notna() & (df["wsm_sifra"].astype(str).str.strip() != "")
+        valid = df["wsm_sifra"].notna() & (
+            df["wsm_sifra"].astype(str).str.strip() != ""
+        )
         if not valid.any():
             _render_summary(summary_df_from_records([]))
             return
@@ -769,7 +770,7 @@ def review_links(
             group_keys.append("wsm_naziv")
 
         agg = (
-            work.groupby(group_keys, dropna=True)
+            work.groupby(group_keys, dropna=False)
             .agg({"qty": "sum", "gross": "sum", "net": "sum", "eur": "sum"})
             .reset_index()
         )
@@ -779,9 +780,11 @@ def review_links(
                 "WSM šifra": row["wsm_sifra"],
                 "WSM Naziv": row.get("wsm_naziv", ""),
                 "Količina": row.get("qty", 0),
-                "Znesek": row.get("gross", 0)
-                if row.get("gross", 0)
-                else row.get("net", 0) + row.get("eur", 0),
+                "Znesek": (
+                    row.get("gross", 0)
+                    if row.get("gross", 0)
+                    else row.get("net", 0) + row.get("eur", 0)
+                ),
                 "Rabat (%)": row.get("eff_pct", 0),
                 "Neto po rabatu": row.get("net", 0),
             }

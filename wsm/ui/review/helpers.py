@@ -95,7 +95,11 @@ def _safe_set_block(
         # textual columns with an empty string.
         for c in cols:
             col_series = df.get(c)
-            num = pd.to_numeric(col_series, errors="coerce") if col_series is not None else None
+            num = (
+                pd.to_numeric(col_series, errors="coerce")
+                if col_series is not None
+                else None
+            )
             if num is not None and num.notna().any():
                 df[c] = num.reindex(df.index).fillna(0)
             else:
@@ -109,7 +113,9 @@ def _safe_set_block(
     return df
 
 
-from wsm.ui.review.summary_utils import summary_df_from_records  # noqa: E402
+from wsm.ui.review import summary_utils  # noqa: E402
+
+summary_df_from_records = summary_utils.summary_df_from_records
 
 
 _piece = {"kos", "kom", "stk", "st", "can", "ea", "pcs"}
@@ -538,10 +544,12 @@ def _compute_eff_discount_pct(
     eur=None,
     doc_discount_pct: Decimal | float | int | str | None = None,
 ) -> pd.Series:
-    """Return effective discount percentage combining line and document discounts.
+    """Return effective discount percentage combining line and document
+    discounts.
 
-    This internal helper prefers an explicit percentage column when available
-    but can also infer the discount rate from gross, net and discount amounts.
+    This internal helper prefers an explicit percentage column when
+    available but can also infer the discount rate from gross, net and
+    discount amounts.
 
     Parameters
     ----------
@@ -564,6 +572,7 @@ def _compute_eff_discount_pct(
     """
 
     line_series = None
+    base_num = None
 
     if isinstance(rabata_pct, pd.DataFrame):
         candidate = first_existing(rabata_pct, list(rabata_pct.columns))
@@ -596,18 +605,25 @@ def _compute_eff_discount_pct(
             after = net
 
         if base is None or after is None:
-            line_series = pd.Series(0, index=net.index if isinstance(net, pd.Series) else None)
+            idx = net.index if isinstance(net, pd.Series) else None
+            base_num = pd.Series(np.nan, index=idx)
+            line_series = pd.Series(0, index=idx)
             line_disc = line_series.to_numpy(dtype=float)
         else:
             from .summary_utils import vectorized_discount_pct
 
-            line_series = vectorized_discount_pct(base, after)
-            line_disc = pd.to_numeric(line_series, errors="coerce").fillna(0).to_numpy(
-                dtype=float
+            base_num = pd.to_numeric(base, errors="coerce")
+            line_series = vectorized_discount_pct(base_num, after)
+            line_disc = (
+                pd.to_numeric(line_series, errors="coerce")
+                .fillna(0)
+                .to_numpy(dtype=float)
             )
 
     try:
-        doc_disc = float(doc_discount_pct) if doc_discount_pct is not None else 0.0
+        doc_disc = (
+            float(doc_discount_pct) if doc_discount_pct is not None else 0.0
+        )
     except Exception:
         doc_disc = 0.0
 
@@ -615,6 +631,9 @@ def _compute_eff_discount_pct(
     eff *= 100.0
     eff = np.clip(eff, 0.0, 100.0)
     eff = np.where(line_disc >= float(GRATIS_THRESHOLD), 100.0, eff)
+    if base_num is not None:
+        base_arr = base_num.to_numpy(dtype=float)
+        eff = np.where(~np.isfinite(base_arr) | (base_arr == 0), 0.0, eff)
 
     idx = line_series.index if isinstance(line_series, pd.Series) else None
     eff_series = pd.Series(eff, index=idx)
@@ -624,7 +643,8 @@ def _compute_eff_discount_pct(
 
 
 def compute_eff_discount_pct(
-    df: pd.DataFrame, doc_discount_pct: Decimal | float | int | str | None = None
+    df: pd.DataFrame,
+    doc_discount_pct: Decimal | float | int | str | None = None,
 ) -> pd.Series:
     """Return effective discount percentage for ``df``.
 
