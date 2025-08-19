@@ -34,7 +34,9 @@ from wsm.parsing.money import (
 )
 
 # --- dynamic namespace mapping for 'e:' ---
-NS = {"e": "urn:edifact:xml:enriched"}  # default; will be overridden per document
+NS = {
+    "e": "urn:edifact:xml:enriched"
+}  # default; will be overridden per document
 
 
 def _detect_edifact_ns(root) -> str:
@@ -61,6 +63,7 @@ def _force_ns_for_doc(root) -> None:
         NS["e"] = uri
     else:
         NS["e"] = "urn:edifact:xml:enriched"
+
 
 XML_PARSER = LET.XMLParser(resolve_entities=False)
 
@@ -1239,13 +1242,20 @@ def _line_net(sg26: LET._Element) -> Decimal:
     """Return net line amount excluding VAT with line discounts applied."""
 
     base = _line_moa203(sg26)
+    has_moa204 = _sum_moa(sg26, DISCOUNT_MOA_LINE, deep=True) != 0
     if base == 0:
         val = _first_moa(sg26, {"125"})
-        return _dec2(val) if val != 0 else Decimal("0.00")
+        net = _dec2(val) if val != 0 else Decimal("0.00")
+        if val != 0 and not has_moa204:
+            net -= _line_pct_discount(sg26)
+        return _dec2(net)
 
     val = _first_moa(sg26, {"125"})
     if val != 0:
-        return _dec2(val)
+        net = _dec2(val)
+        if not has_moa204:
+            net -= _line_pct_discount(sg26)
+        return _dec2(net)
 
     return _line_amount_after_allowances(sg26)
 
@@ -1257,11 +1267,13 @@ def _line_net_before_discount(
 
     if net_after is None:
         net_after = _line_net(sg26)
-    discount = (
-        _line_discount(sg26)
-        + _line_amount_discount(sg26)
-        + _line_pct_discount(sg26)
-    )
+    disc_direct = _line_discount(sg26)
+    disc_moa = _line_amount_discount(sg26)
+    pct_disc = _line_pct_discount(sg26)
+    if (disc_direct != 0 or disc_moa != 0) and pct_disc != 0:
+        discount = disc_direct + disc_moa
+    else:
+        discount = disc_direct + disc_moa + pct_disc
     return (net_after + discount).quantize(DEC2, ROUND_HALF_UP)
 
 
@@ -1806,7 +1818,8 @@ def parse_eslog_invoice(
     for ln in line_logs:
         line_net_used = ln["moa203"] if _INFO_DISCOUNTS else ln["net_std"]
         log.debug(
-            "line_idx=%s, moa203=%s, line_net_used=%s, doc_added=%s, carried_doc_disc=%s",
+            "line_idx=%s, moa203=%s, line_net_used=%s, doc_added=%s, "
+            "carried_doc_disc=%s",
             ln["idx"],
             ln["moa203"],
             line_net_used,
