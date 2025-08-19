@@ -720,13 +720,21 @@ def _apply_doc_allowances_sequential(
 
 
 def _vat_total_after_doc(
-    sum_line_tax_124: Decimal | None,
+    sum_tax_124: Decimal | None,
     lines_by_rate: dict[Decimal, Decimal],
     doc_allow_total: Decimal,
 ) -> Decimal:
-    """Compute VAT total after document allowance allocation."""
-    if sum_line_tax_124 is not None and sum_line_tax_124 != 0:
-        return _dec2(sum_line_tax_124)
+    """Compute VAT total after document allowance allocation.
+
+    ``sum_tax_124`` represents the sum of MOA 124 amounts already
+    present in the document, either on individual lines or in the VAT
+    summary.  When provided, these authoritative totals are returned
+    directly.  Only when such MOA 124 values are missing do we prorate
+    the document level discount across ``lines_by_rate`` and recompute
+    the VAT on the reduced bases.
+    """
+    if sum_tax_124 is not None and sum_tax_124 != 0:
+        return _dec2(sum_tax_124)
     if not lines_by_rate:
         return Decimal("0.00")
     base_total = sum(lines_by_rate.values())
@@ -1894,14 +1902,13 @@ def parse_eslog_invoice(
         )
 
     header_vat = extract_total_tax(root)
-    vat_total = (
+    sum_tax_124 = (
         header_vat
         if header_vat != 0
-        else _vat_total_after_doc(
-            tax_total if tax_total != 0 and doc_allow_total == 0 else None,
-            lines_by_rate,
-            -doc_allow_total,
-        )
+        else (tax_total if tax_total != 0 else None)
+    )
+    vat_total = _vat_total_after_doc(
+        sum_tax_124, lines_by_rate, -doc_allow_total
     )
 
     net_total = _dec2(net_total)
