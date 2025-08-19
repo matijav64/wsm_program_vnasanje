@@ -8,6 +8,7 @@ from wsm.parsing.eslog import (
     parse_eslog_invoice,
     DEFAULT_DOC_DISCOUNT_CODES,
     extract_header_net,
+    extract_grand_total,
     sum_moa,
     _force_ns_for_doc,
     _line_net,
@@ -17,6 +18,7 @@ from wsm.parsing.eslog import (
 def _compute_doc_discount(xml_path: Path) -> Decimal:
     """Compute document discount sum using ``sum_moa``."""
     root = LET.parse(xml_path).getroot()
+    _force_ns_for_doc(root)
     codes = list(DEFAULT_DOC_DISCOUNT_CODES)
     if "204" not in codes:
         codes.append("204")
@@ -170,6 +172,45 @@ def test_parse_eslog_invoice_handles_moa_500(tmp_path):
     assert doc_row["rabata_pct"] == Decimal("100.00")
 
 
+def test_global_discount_totals_match_moa9(tmp_path):
+    xml = (
+        "<Invoice xmlns='urn:eslog:2.00'>"
+        "  <M_INVOIC>"
+        "    <G_SG26>"
+        "      <S_QTY><C_C186><D_6060>1</D_6060><D_6411>PCE</D_6411></C_C186></S_QTY>"
+        "      <S_LIN><C_C212><D_7140>0001</D_7140></C_C212></S_LIN>"
+        "      <S_IMD><C_C273><D_7008>Item</D_7008></C_C273></S_IMD>"
+        "      <S_PRI><C_C509><D_5125>AAA</D_5125><D_5118>10</D_5118></C_C509></S_PRI>"
+        "      <S_MOA><C_C516><D_5025>203</D_5025><D_5004>10</D_5004></C_C516></S_MOA>"
+        "      <G_SG34><S_TAX><C_C243><D_5278>22</D_5278></C_C243></S_TAX></G_SG34>"
+        "    </G_SG26>"
+        "    <G_SG52>"
+        "      <S_TAX><C_C243><D_5278>22</D_5278></C_C243></S_TAX>"
+        "      <G_SG50>"
+        "        <S_ALC><D_5463>A</D_5463></S_ALC>"
+        "        <S_MOA><C_C516><D_5025>260</D_5025><D_5004>-1</D_5004></C_C516></S_MOA>"
+        "      </G_SG50>"
+        "    </G_SG52>"
+        "    <G_SG50>"
+        "      <S_MOA><C_C516><D_5025>9</D_5025><D_5004>10.98</D_5004></C_C516></S_MOA>"
+        "    </G_SG50>"
+        "  </M_INVOIC>"
+        "</Invoice>"
+    )
+    xml_path = tmp_path / "disc_moa9_match.xml"
+    xml_path.write_text(xml)
+    root = LET.parse(xml_path).getroot()
+    _force_ns_for_doc(root)
+    df, ok = parse_eslog_invoice(xml_path)
+    net_total = df["vrednost"].sum().quantize(Decimal("0.01"))
+    grand_total = extract_grand_total(xml_path)
+    vat_total = (df.attrs.get("gross_calc", net_total) - net_total).quantize(
+        Decimal("0.01")
+    )
+    assert ok
+    assert (net_total + vat_total).quantize(Decimal("0.01")) == grand_total
+
+
 def test_parse_eslog_invoice_sums_duplicate_values(tmp_path):
     """Discounts with the same code and amount should all be summed."""
     xml = (
@@ -285,4 +326,6 @@ def test_line_pct_discount_without_moa204():
         """
     )
     _force_ns_for_doc(seg)
+    from wsm.parsing import eslog as eslog_mod
+    eslog_mod._INFO_DISCOUNTS = False
     assert _line_net(seg) == Decimal("9.00")
