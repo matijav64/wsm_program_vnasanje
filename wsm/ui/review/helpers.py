@@ -532,37 +532,79 @@ def first_existing(df: pd.DataFrame, columns: Sequence[str]) -> pd.Series:
 
 
 def compute_eff_discount_pct(
-    rabata_pct,
+    rabata_pct=None,
+    gross=None,
+    net=None,
+    eur=None,
     doc_discount_pct: Decimal | float | int | str | None = None,
 ) -> pd.Series:
     """Return effective discount percentage combining line and document discounts.
 
+    The function prefers an explicit percentage column when available but can
+    also infer the discount rate from gross, net and discount amounts.
+
     Parameters
     ----------
-    rabata_pct : pandas.Series | array-like | pandas.DataFrame
+    rabata_pct : pandas.Series | array-like | pandas.DataFrame | None, optional
         Line-level discount percentages. When a DataFrame is provided the first
-        existing column is used.
+        existing column is used. When ``None`` or missing the value is inferred
+        from amounts.
+    gross, net, eur : pandas.Series | array-like | None, optional
+        Source columns for amounts before discount (``gross``), after discount
+        (``net``) and discount in currency (``eur``). At least two of these are
+        required for inference when ``rabata_pct`` is absent.
     doc_discount_pct : Decimal | float | int | str | None, optional
         Document-level discount percentage applied uniformly to all lines.
 
     Returns
     -------
     pandas.Series
-        Effective discount percentages as :class:`~decimal.Decimal` values rounded
-        to two decimal places. Lines meeting or exceeding
-        :data:`GRATIS_THRESHOLD` are reported as ``Decimal("100")``.
-
-    Notes
-    -----
-    Both numeric and textual inputs are handled gracefully with numeric
-    fallbacks defaulting to ``0`` and textual fallbacks defaulting to an empty
-    string.
+        Effective discount percentages as :class:`~decimal.Decimal` values
+        rounded to two decimal places.
     """
+
+    line_series = None
+
     if isinstance(rabata_pct, pd.DataFrame):
-        line_series = first_existing(rabata_pct, list(rabata_pct.columns))
+        candidate = first_existing(rabata_pct, list(rabata_pct.columns))
+    elif rabata_pct is not None:
+        candidate = pd.Series(rabata_pct)
     else:
-        line_series = pd.Series(rabata_pct)
-    line_disc = pd.to_numeric(line_series, errors="coerce").fillna(0).to_numpy(dtype=float)
+        candidate = None
+
+    if candidate is not None and candidate.name is not None:
+        line_series = pd.to_numeric(candidate, errors="coerce")
+        if line_series.notna().any():
+            line_disc = line_series.fillna(0).to_numpy(dtype=float)
+        else:
+            line_series = None
+
+    if line_series is None:
+        # Infer discount from amounts using the first pair of available columns
+        base = after = None
+        if gross is not None and net is not None:
+            base, after = gross, net
+        elif gross is not None and eur is not None:
+            base = gross
+            after = pd.to_numeric(gross, errors="coerce") - pd.to_numeric(
+                eur, errors="coerce"
+            )
+        elif net is not None and eur is not None:
+            base = pd.to_numeric(net, errors="coerce") + pd.to_numeric(
+                eur, errors="coerce"
+            )
+            after = net
+
+        if base is None or after is None:
+            line_series = pd.Series(0, index=net.index if isinstance(net, pd.Series) else None)
+            line_disc = line_series.to_numpy(dtype=float)
+        else:
+            from .summary_utils import vectorized_discount_pct
+
+            line_series = vectorized_discount_pct(base, after)
+            line_disc = pd.to_numeric(line_series, errors="coerce").fillna(0).to_numpy(
+                dtype=float
+            )
 
     try:
         doc_disc = float(doc_discount_pct) if doc_discount_pct is not None else 0.0
@@ -576,4 +618,6 @@ def compute_eff_discount_pct(
 
     idx = line_series.index if isinstance(line_series, pd.Series) else None
     eff_series = pd.Series(eff, index=idx)
-    return eff_series.apply(lambda x: Decimal(str(x)).quantize(Decimal("0.01"), ROUND_HALF_UP))
+    return eff_series.apply(
+        lambda x: Decimal(str(x)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    )
