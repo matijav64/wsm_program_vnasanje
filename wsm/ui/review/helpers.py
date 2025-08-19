@@ -530,3 +530,71 @@ def compute_eff_discount_pct(
     return eff_series.apply(
         lambda x: Decimal(str(x)).quantize(Decimal("0.01"), ROUND_HALF_UP)
     )
+
+def first_existing(df: pd.DataFrame, columns: Sequence[str]) -> pd.Series:
+    """Return the first available column from ``df``.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Source table.
+    columns : sequence[str]
+        Candidate column names ordered by preference.
+
+    Returns
+    -------
+    pandas.Series
+        Series taken from the first existing column. Numeric columns are
+        coerced to numbers with missing values replaced by ``0`` while
+        textual columns fall back to empty strings.
+    """
+    for col in columns:
+        if col in df:
+            s = df[col]
+            num = pd.to_numeric(s, errors="coerce")
+            if num.notna().any():
+                return num.fillna(0)
+            return s.fillna("")
+
+    if columns:
+        first = columns[0]
+        if first in df:
+            s = df[first]
+            num = pd.to_numeric(s, errors="coerce")
+            if num.notna().any():
+                return pd.Series(0, index=df.index)
+            return pd.Series("", index=df.index, dtype=object)
+    return pd.Series(0, index=df.index)
+
+
+def compute_eff_discount_pct(
+    rabata_pct,
+    doc_discount_pct: Decimal | float | int | str | None = None,
+) -> pd.Series:
+    """Return effective discount percentage combining line and document discounts.
+
+    This enhanced version accepts a Series, array-like object or DataFrame for
+    ``rabata_pct``. When a DataFrame is provided the first existing column is
+    used. Both numeric and textual inputs are handled gracefully with numeric
+    fallbacks defaulting to ``0`` and textual fallbacks defaulting to an empty
+    string.
+    """
+    if isinstance(rabata_pct, pd.DataFrame):
+        line_series = first_existing(rabata_pct, list(rabata_pct.columns))
+    else:
+        line_series = pd.Series(rabata_pct)
+    line_disc = pd.to_numeric(line_series, errors="coerce").fillna(0).to_numpy(dtype=float)
+
+    try:
+        doc_disc = float(doc_discount_pct) if doc_discount_pct is not None else 0.0
+    except Exception:
+        doc_disc = 0.0
+
+    eff = 1 - (1 - line_disc / 100.0) * (1 - doc_disc / 100.0)
+    eff *= 100.0
+    eff = np.clip(eff, 0.0, 100.0)
+    eff = np.where(line_disc >= float(GRATIS_THRESHOLD), 100.0, eff)
+
+    idx = line_series.index if isinstance(line_series, pd.Series) else None
+    eff_series = pd.Series(eff, index=idx)
+    return eff_series.apply(lambda x: Decimal(str(x)).quantize(Decimal("0.01"), ROUND_HALF_UP))
