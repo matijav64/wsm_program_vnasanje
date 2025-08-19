@@ -9,6 +9,8 @@ from wsm.parsing.eslog import (
     DEFAULT_DOC_DISCOUNT_CODES,
     extract_header_net,
     sum_moa,
+    _force_ns_for_doc,
+    _line_net,
 )
 
 
@@ -53,6 +55,8 @@ def test_parse_eslog_invoice_handles_additional_discount_codes(tmp_path):
     xml_path = tmp_path / "disc131.xml"
     xml_path.write_text(xml)
 
+    root = LET.parse(xml_path).getroot()
+    _force_ns_for_doc(root)
     df, ok = parse_eslog_invoice(xml_path)
     doc_row = df[df["sifra_dobavitelja"] == "_DOC_"].iloc[0]
 
@@ -261,3 +265,24 @@ def test_parse_eslog_invoice_ignores_vat_totals(tmp_path):
     df, ok = parse_eslog_invoice(xml_path)
     assert df[df["sifra_dobavitelja"] == "_DOC_"].empty
     assert ok
+
+
+def test_line_pct_discount_without_moa204():
+    seg = LET.fromstring(
+        """
+        <G_SG26 xmlns="urn:eslog:2.00">
+          <S_QTY><C_C186><D_6060>1</D_6060><D_6411>PCE</D_6411></C_C186></S_QTY>
+          <S_PRI><C_C509><D_5125>AAA</D_5125><D_5118>10</D_5118></C_C509></S_PRI>
+          <S_MOA><C_C516><D_5025>203</D_5025><D_5004>10</D_5004></C_C516></S_MOA>
+          <S_MOA><C_C516><D_5025>125</D_5025><D_5004>10</D_5004></C_C516></S_MOA>
+          <G_SG39>
+            <S_ALC><D_5463>A</D_5463><C_C552><D_5189>95</D_5189></C_C552></S_ALC>
+            <G_SG41>
+              <S_PCD><C_C501><D_5249>1</D_5249><D_5482>10</D_5482></C_C501></S_PCD>
+            </G_SG41>
+          </G_SG39>
+        </G_SG26>
+        """
+    )
+    _force_ns_for_doc(seg)
+    assert _line_net(seg) == Decimal("9.00")
