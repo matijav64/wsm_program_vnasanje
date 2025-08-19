@@ -737,12 +737,16 @@ def review_links(
 
     def _update_summary():
         qty = first_existing(df, ["kolicina_norm", "kolicina"])
-        gross = first_existing(df, ["neto_brez_popusta"])
-        net = first_existing(df, ["vrednost"])
-        eur = first_existing(df, ["rabata"])
+        gross = first_existing(
+            df, ["vrednost", "net_pred_rab", "net_pred", "net_pred_rabat"]
+        )
+        net = first_existing(
+            df, ["net_po_rab", "neto_po_rabatu", "skupna_neto", "neto"]
+        )
+        eur = first_existing(df, ["rabata", "popust_eur", "popust"])
         gross = gross.where(gross != 0, net + eur)
         pct = first_existing(df, ["rabata_pct"])
-        eff_pct = compute_eff_discount_pct(pct)
+        eff_pct = compute_eff_discount_pct(pct, gross=gross, net=net, eur=eur)
 
         valid = df["wsm_sifra"].notna() & (df["wsm_sifra"].astype(str).str.strip() != "")
         if not valid.any():
@@ -762,8 +766,8 @@ def review_links(
         ).loc[valid]
 
         group_keys = ["wsm_sifra", "eff_pct"]
-        if "wsm_naziv" in work.columns:
-            group_keys.insert(1, "wsm_naziv")
+        if "wsm_naziv" in work.columns and work["wsm_naziv"].notna().any():
+            group_keys.append("wsm_naziv")
 
         agg = (
             work.groupby(group_keys, dropna=True)
