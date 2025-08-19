@@ -24,6 +24,7 @@ from .helpers import (
     _merge_same_items,
     _apply_price_warning,
     _safe_set_block,
+    compute_eff_discount_pct,
 )
 from .io import _save_and_close, _load_supplier_map
 from .summary_columns import SUMMARY_COLS, SUMMARY_KEYS, SUMMARY_HEADS
@@ -745,13 +746,16 @@ def review_links(
             df_valid = df.loc[valid]
 
             if df_valid.empty:
-                summary_df = summary_df_from_records([])
-                _render_summary(summary_df)
+                _render_summary(summary_df_from_records([]))
                 return
 
-            group_keys = ["wsm_sifra"] + (
-                ["wsm_naziv"] if "wsm_naziv" in df_valid.columns else []
-            )
+            df_valid = df_valid.copy()
+            df_valid["eff_discount_pct"] = compute_eff_discount_pct(df_valid["rabata_pct"])
+
+            group_keys = ["wsm_sifra", "eff_discount_pct"]
+            if "wsm_naziv" in df_valid.columns:
+                group_keys.insert(1, "wsm_naziv")
+
             agg = (
                 df_valid.groupby(group_keys, dropna=True)
                 .agg(
@@ -768,23 +772,18 @@ def review_links(
                 name_map = wsm_df.set_index("wsm_sifra")["wsm_naziv"].to_dict()
                 agg["wsm_naziv"] = agg["wsm_sifra"].map(name_map).fillna("")
 
-            agg["neto_brez_popusta"] = agg["vrednost"] + agg["rabata"]
-            agg["rabata_pct"] = vectorized_discount_pct(
-                agg["neto_brez_popusta"], agg["vrednost"]
-            )
             records = [
                 {
                     "WSM šifra": row["wsm_sifra"],
                     "WSM Naziv": row.get("wsm_naziv", ""),
                     "Količina": row.get("kolicina_norm", 0),
-                    "Znesek": row.get("neto_brez_popusta", 0),
-                    "Rabat (%)": row.get("rabata_pct", 0),
+                    "Znesek": row.get("vrednost", 0) + row.get("rabata", 0),
+                    "Rabat (%)": row.get("eff_discount_pct", 0),
                     "Neto po rabatu": row.get("vrednost", 0),
                 }
                 for _, row in agg.iterrows()
             ]
-            summary_df = summary_df_from_records(records)
-            _render_summary(summary_df)
+            _render_summary(summary_df_from_records(records))
 
     # Skupni zneski pod povzetkom
     total_frame = tk.Frame(root)
