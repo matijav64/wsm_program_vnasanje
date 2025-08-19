@@ -340,6 +340,18 @@ def load_wsm_data(
     return sifre_df, kw_df, links_df
 
 
+def ensure_supplier_column(df: pd.DataFrame, meta: dict) -> pd.DataFrame:
+    """Ensure that ``df`` contains a "Dobavitelj" column with supplier name."""
+    supplier_name = meta.get("supplier_name") or meta.get("dobavitelj_ime") or ""
+    supplier_id = meta.get("supplier_vat") or meta.get("dobavitelj") or ""
+    display_supplier = supplier_name or supplier_id
+    if "Dobavitelj" in df.columns:
+        df["Dobavitelj"] = display_supplier
+    else:
+        df.insert(len(df.columns), "Dobavitelj", display_supplier)
+    return df
+
+
 # ────────────────────────── samodejno povezovanje ───────────────────
 def povezi_z_wsm(
     df_items: pd.DataFrame,

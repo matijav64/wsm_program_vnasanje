@@ -23,6 +23,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 from defusedxml.common import EntitiesForbidden
+from lxml import etree
 from lxml import etree as LET
 
 from .codes import Moa
@@ -71,6 +72,42 @@ XML_PARSER = LET.XMLParser(resolve_entities=False)
 decimal.getcontext().prec = 28  # Python's default precision
 DEC2 = Decimal("0.01")
 TOL = Decimal("0.01")
+
+
+def _first_text(root, xpaths: list[str]) -> str | None:
+    """
+    Vrne ``.text`` prve ujemajoče se poti. Podpira 'es' (eSLOG 2.00) in 'e'
+    (enriched EDIFACT), ter fallback z ``local-name()``.
+    """
+    ns_default = {"e": "urn:edifact:xml:enriched", "es": "urn:eslog:2.00"}
+    ns = getattr(root, "nsmap", None) or ns_default
+
+    for xp in xpaths:
+        try:
+            nodes = root.xpath(xp, namespaces=ns)
+            if nodes:
+                el = nodes[0]
+                txt = (el.text if isinstance(el, etree._Element) else str(el)) or ""
+                txt = txt.strip()
+                if txt:
+                    return txt
+        except Exception:
+            pass
+
+    for xp in xpaths:
+        parts = [p for p in xp.split("/") if p]
+        loc = ".//*[" + " and ".join(
+            f"local-name()='{p.split(':')[-1].split('[')[0]}'" for p in parts if p not in (".", "..")
+        ) + "]"
+        try:
+            nodes = root.xpath(loc)
+            if nodes:
+                txt = (nodes[0].text or "").strip()
+                if txt:
+                    return txt
+        except Exception:
+            pass
+    return None
 
 # MOA qualifiers used for discounts and base amounts
 DISCOUNT_MOA_LINE = {"204"}
@@ -1994,20 +2031,20 @@ def build_invoice_model(
 
 def parse_invoice_totals(
     root_or_tree: LET._Element | LET._ElementTree,
-) -> dict[str, Decimal | bool]:
-    """Return aggregated invoice totals and validate against header values."""
+) -> dict[str, Decimal | bool | str]:
+    """Return aggregated invoice totals and related metadata."""
 
-    root = root_or_tree
+    xml_root = root_or_tree
     try:
         if hasattr(root_or_tree, "getroot"):
-            root = root_or_tree.getroot()
+            xml_root = root_or_tree.getroot()
     except Exception:
         pass
 
-    _force_ns_for_doc(root)
+    _force_ns_for_doc(xml_root)
     log.info("eslog NS[e]=%s", NS.get("e"))
 
-    buf = io.BytesIO(LET.tostring(root))
+    buf = io.BytesIO(LET.tostring(xml_root))
     df, _ = parse_eslog_invoice(buf)
 
     net_total = (
@@ -2017,9 +2054,9 @@ def parse_invoice_totals(
     )
     vat_total = _dec2(df["ddv"].sum()) if "ddv" in df.columns else Decimal("0")
 
-    header_net = extract_header_net(root)
-    header_vat = extract_total_tax(root)
-    header_gross = extract_grand_total(root)
+    header_net = extract_header_net(xml_root)
+    header_vat = extract_total_tax(xml_root)
+    header_gross = extract_grand_total(xml_root)
 
     if vat_total == 0 and header_vat != 0:
         vat_total = header_vat
@@ -2040,12 +2077,32 @@ def parse_invoice_totals(
             calc_gross,
         )
 
-    return {
+    meta: dict[str, Decimal | bool | str] = {
         "net": net_total,
         "vat": vat_total,
         "gross": gross_total,
         "mismatch": mismatch,
     }
+
+    if not meta.get("supplier_name"):
+        meta["supplier_name"] = _first_text(
+            xml_root,
+            [
+                "//es:S_NAD[es:D_3035='SU']//es:D_3036",
+                "//e:S_NAD[e:D_3035='SU']//e:D_3036",
+            ],
+        ) or ""
+
+    if not meta.get("service_date"):
+        meta["service_date"] = _first_text(
+            xml_root,
+            [
+                "//es:S_DTM[.//es:D_2005='35']//es:D_2380",
+                "//e:S_DTM[.//e:D_2005='35']//e:D_2380",
+            ],
+        ) or meta.get("delivery_date") or meta.get("document_date") or ""
+
+    return meta
 
 
 # ───────────────────── PRILAGOJENA funkcija za CLI ─────────────────────
