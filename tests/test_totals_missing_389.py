@@ -11,7 +11,7 @@ def test_totals_missing_389():
 
     doc_discount = -df[df["sifra_dobavitelja"] == "_DOC_"]["vrednost"].sum()
     lines = df[df["sifra_dobavitelja"] != "_DOC_"]
-    lines = lines[lines["rabata_pct"] < Decimal("99.9")]
+    lines = lines[lines["rabata_pct"] < Decimal("99.5")]
     line_total = lines["vrednost"].sum()
 
     header_net = df["vrednost"].sum()

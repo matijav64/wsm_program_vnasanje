@@ -745,8 +745,7 @@ def review_links(
         )
         eur = first_existing(df, ["rabata", "popust_eur", "popust"])
         gross = gross.where(gross != 0, net + eur)
-        pct = first_existing(df, ["rabata_pct"])
-        eff_pct = compute_eff_discount_pct(pct, gross=gross, net=net, eur=eur)
+        eff_pct = compute_eff_discount_pct(df)
 
         valid = df["wsm_sifra"].notna() & (df["wsm_sifra"].astype(str).str.strip() != "")
         if not valid.any():
