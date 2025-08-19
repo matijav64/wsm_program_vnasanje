@@ -487,3 +487,46 @@ def _apply_price_warning(
         return True, f"±{diff:.2f} €"
 
     return False, ""
+
+
+GRATIS_THRESHOLD = Decimal("99.9")
+
+
+def compute_eff_discount_pct(
+    rabata_pct,
+    doc_discount_pct: Decimal | float | int | None = None,
+) -> pd.Series:
+    """Return effective discount percentage combining line and document discounts.
+
+    Parameters
+    ----------
+    rabata_pct : pandas.Series | array-like
+        Line-level discount percentages.
+    doc_discount_pct : Decimal | float | int | None, optional
+        Document-level discount percentage applied uniformly to all lines.
+
+    Returns
+    -------
+    pandas.Series
+        Effective discount percentages as :class:`~decimal.Decimal` values rounded
+        to two decimal places. Lines meeting or exceeding
+        :data:`GRATIS_THRESHOLD` are reported as ``Decimal("100")``.
+    """
+
+    line_disc = pd.to_numeric(rabata_pct, errors="coerce").fillna(0).to_numpy(dtype=float)
+
+    try:
+        doc_disc = float(doc_discount_pct) if doc_discount_pct is not None else 0.0
+    except Exception:
+        doc_disc = 0.0
+
+    eff = 1 - (1 - line_disc / 100.0) * (1 - doc_disc / 100.0)
+    eff *= 100.0
+    eff = np.clip(eff, 0.0, 100.0)
+    eff = np.where(line_disc >= float(GRATIS_THRESHOLD), 100.0, eff)
+
+    idx = rabata_pct.index if isinstance(rabata_pct, pd.Series) else None
+    eff_series = pd.Series(eff, index=idx)
+    return eff_series.apply(
+        lambda x: Decimal(str(x)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    )
