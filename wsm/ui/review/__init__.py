@@ -1,5 +1,5 @@
 from wsm.constants import PRICE_DIFF_THRESHOLD
-from .helpers import _fmt, _norm_unit, _apply_price_warning
+from .helpers import _fmt, _norm_unit, _apply_price_warning, ensure_eff_discount_col
 from .gui import review_links, log
 from .io import _save_and_close, _load_supplier_map, _write_supplier_map
 
@@ -12,5 +12,6 @@ __all__ = [
     "_save_and_close",
     "_load_supplier_map",
     "_write_supplier_map",
+    "ensure_eff_discount_col",
     "log",
 ]
