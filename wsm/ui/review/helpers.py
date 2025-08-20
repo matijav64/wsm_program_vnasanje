@@ -715,3 +715,30 @@ def compute_eff_discount_pct(
 
     pct = pct.apply(_to_dec)
     return pct.iloc[0] if is_series else pct
+
+
+def ensure_eff_discount_col(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure an ``eff_discount_pct`` column with quantized ``Decimal`` values.
+
+    If the column is missing, it is calculated via
+    :func:`compute_eff_discount_pct_robust`.  When present, all existing values
+    are coerced to :class:`~decimal.Decimal` and quantized to two decimal places.
+
+    Parameters
+    ----------
+    df:
+        DataFrame to operate on. Modified in-place and returned for
+        convenience.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The input ``df`` with a normalised ``eff_discount_pct`` column.
+    """
+
+    col = "eff_discount_pct"
+    if col not in df.columns:
+        df.loc[:, col] = compute_eff_discount_pct_robust(df)
+    else:
+        df.loc[:, col] = df[col].map(lambda v: q2(to_dec(v)))
+    return df
