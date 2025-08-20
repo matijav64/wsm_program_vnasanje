@@ -764,6 +764,16 @@ def review_links(
             _render_summary(summary_df_from_records([]))
             return
 
+        def _parse_decimal(x):
+            if isinstance(x, Decimal):
+                return x
+            if x is None or (isinstance(x, float) and pd.isna(x)) or pd.isna(x) or x == "":
+                return None
+            try:
+                return Decimal(str(x))
+            except Exception:
+                return None
+
         val_s = fes(
             df_valid,
             [
@@ -773,24 +783,20 @@ def review_links(
                 "neto",
                 "neto_po",
             ],
+        ).map(_parse_decimal)
+        disc_s = fes(df_valid, ["rabata", "rabat_znesek", "popust_znesek"]).map(
+            _parse_decimal
         )
-        disc_s = fes(df_valid, ["rabata", "rabat_znesek", "popust_znesek"])
-        qty_s = fes(df_valid, ["kolicina_norm", "kolicina"])
+        qty_s = fes(df_valid, ["kolicina_norm", "kolicina"]).map(_parse_decimal)
 
-        unit_gross = pd.to_numeric(
-            fes(
-                df_valid,
-                ["cena_pred_rabatom", "cena_bruto", "Cena pred rabatom", "Cena bruto"],
-            ),
-            errors="coerce",
-        )
-        unit_net = pd.to_numeric(
-            fes(
-                df_valid,
-                ["cena_po_rabatu", "cena_netto", "Cena po rabatu", "Cena neto"],
-            ),
-            errors="coerce",
-        )
+        unit_gross = fes(
+            df_valid,
+            ["cena_pred_rabatom", "cena_bruto", "Cena pred rabatom", "Cena bruto"],
+        ).map(_parse_decimal)
+        unit_net = fes(
+            df_valid,
+            ["cena_po_rabatu", "cena_netto", "Cena po rabatu", "Cena neto"],
+        ).map(_parse_decimal)
 
         val_s = val_s.copy()
         disc_s = disc_s.copy()
@@ -811,13 +817,9 @@ def review_links(
             unit_gross.loc[mask_disc] - unit_net.loc[mask_disc]
         )
 
-        df_valid["vrednost"] = pd.to_numeric(val_s, errors="coerce").fillna(
-            0.0
-        )
-        df_valid["rabata"] = pd.to_numeric(disc_s, errors="coerce").fillna(0.0)
-        df_valid["kolicina_norm"] = pd.to_numeric(
-            qty_s, errors="coerce"
-        ).fillna(0.0)
+        df_valid["vrednost"] = val_s.fillna(Decimal("0"))
+        df_valid["rabata"] = disc_s.fillna(Decimal("0"))
+        df_valid["kolicina_norm"] = qty_s.fillna(Decimal("0"))
 
         eff_discount_pct = compute_eff_discount_pct_robust(
             df_valid,
@@ -845,17 +847,21 @@ def review_links(
             .reset_index()
         )
 
+        def _to_decimal(x):
+            return x if isinstance(x, Decimal) else Decimal(str(x or 0))
+
         records = []
         for _, row in agg.iterrows():
+            vrednost = _to_decimal(row.get("vrednost", 0))
+            rabata = _to_decimal(row.get("rabata", 0))
             records.append(
                 {
                     "WSM šifra": row["wsm_sifra"],
                     "WSM Naziv": row.get("wsm_naziv", ""),
-                    "Količina": Decimal(str(row.get("kolicina_norm", 0) or 0)),
-                    "Znesek": Decimal(str(row.get("vrednost", 0) or 0)),
+                    "Količina": _to_decimal(row.get("kolicina_norm", 0)),
+                    "Znesek": vrednost,
                     "Rabat (%)": row.get("eff_discount_pct", Decimal("0.00")),
-                    "Neto po rabatu": Decimal(str(row.get("vrednost", 0) or 0))
-                    - Decimal(str(row.get("rabata", 0) or 0)),
+                    "Neto po rabatu": vrednost - rabata,
                 }
             )
 
