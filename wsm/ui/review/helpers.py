@@ -582,6 +582,81 @@ def compute_eff_discount_pct_from_df(
     return pct_series.apply(_to_dec)
 
 
+def compute_eff_discount_pct_robust(
+    df: pd.DataFrame,
+    pct_candidates: Sequence[str],
+    gross_candidates: Sequence[str],
+    net_candidates: Sequence[str],
+    amt_candidates: Sequence[str],
+) -> pd.Series:
+    """Return effective discount percentages for rows in ``df``.
+
+    The function first looks for existing percentage columns listed in
+    ``pct_candidates``.  If none are found the percentage is derived from
+    available amount columns using one of two fallbacks:
+
+    1. ``(gross - net) / gross`` when both gross and net values are present.
+    2. ``rabata / (rabata + net)`` when the discount amount (``rabata``) and
+       net value are available.
+
+    The result is normalised to :class:`~decimal.Decimal` with two decimals;
+    negative values are clamped to ``0`` and values of ``99.5`` or more are
+    rounded up to ``100``.
+    """
+
+    # 1) Try existing percentage columns
+    pct_series = None
+    for col in pct_candidates:
+        if col in df.columns:
+            pct_series = pd.to_numeric(df[col], errors="coerce")
+            break
+
+    if pct_series is None:
+        pct_series = pd.Series(np.nan, index=df.index)
+
+    # Prepare numeric series for amounts
+    gross = pd.to_numeric(
+        first_existing(df, gross_candidates, fill_value=np.nan), errors="coerce"
+    )
+    net = pd.to_numeric(
+        first_existing(df, net_candidates, fill_value=np.nan), errors="coerce"
+    )
+    disc = pd.to_numeric(
+        first_existing(df, amt_candidates, fill_value=np.nan), errors="coerce"
+    )
+
+    # 2) Derive from gross and net
+    mask = pct_series.isna()
+    mask_gross = mask & gross.notna() & net.notna() & (gross > 0)
+    pct_series.loc[mask_gross] = (
+        (gross.loc[mask_gross] - net.loc[mask_gross]) / gross.loc[mask_gross]
+    ) * 100.0
+
+    # 3) Derive from discount amount and net
+    mask = pct_series.isna()
+    if mask.any():
+        denom = disc + net
+        mask_valid = mask & denom.gt(0)
+        pct_series.loc[mask_valid] = (
+            disc.loc[mask_valid] / denom.loc[mask_valid]
+        ) * 100.0
+
+    pct_series = pct_series.fillna(0.0)
+    pct_series[pct_series < 0] = 0.0
+    pct_series[pct_series >= float(GRATIS_THRESHOLD)] = 100.0
+    pct_series = pct_series.round(2)
+
+    def _to_dec(x: float) -> Decimal:
+        try:
+            return Decimal(str(x)).quantize(
+                Decimal("0.00"), rounding=ROUND_HALF_UP
+            )
+        except Exception:
+            return Decimal("0.00")
+
+    return pct_series.apply(_to_dec)
+
+
 def compute_eff_discount_pct(
     data: pd.DataFrame | pd.Series,
 ) -> pd.Series | Decimal:

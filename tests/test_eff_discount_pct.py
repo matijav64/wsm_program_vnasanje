@@ -3,7 +3,7 @@ import pandas as pd
 
 from wsm.ui.review.helpers import (
     compute_eff_discount_pct,
-    compute_eff_discount_pct_from_df,
+    compute_eff_discount_pct_robust,
 )
 
 
@@ -48,9 +48,10 @@ def test_summary_distinguishes_discounts_without_pct_column():
         }
     )
 
-    pct = compute_eff_discount_pct_from_df(
+    pct = compute_eff_discount_pct_robust(
         df,
         ["Rabat (%)"],
+        ["neto_brez_popusta"],
         ["vrednost"],
         ["rabata"],
     )
@@ -67,3 +68,34 @@ def test_summary_distinguishes_discounts_without_pct_column():
         Decimal("16.67"),
         Decimal("100.00"),
     }
+
+
+def test_discount_from_gross_and_net_only():
+    df = pd.DataFrame(
+        {
+            "gross": [Decimal("10"), Decimal("5")],
+            "net": [Decimal("7.18"), Decimal("0")],
+        }
+    )
+    pct = compute_eff_discount_pct_robust(
+        df,
+        ["pct"],
+        ["gross"],
+        ["net"],
+        ["disc"],
+    )
+    expected = pd.Series([Decimal("28.20"), Decimal("100.00")])
+    pd.testing.assert_series_equal(pct, expected)
+
+
+def test_detects_100pct_discount_from_amounts():
+    df = pd.DataFrame({"net": [Decimal("0")], "rabata": [Decimal("5")]})
+    pct = compute_eff_discount_pct_robust(
+        df,
+        ["pct"],
+        ["gross"],
+        ["net"],
+        ["rabata"],
+    )
+    expected = pd.Series([Decimal("100.00")])
+    pd.testing.assert_series_equal(pct, expected)

@@ -20,7 +20,7 @@ from wsm.parsing.eslog import get_supplier_info, XML_PARSER
 from wsm.supplier_store import _norm_vat
 from wsm.ui.review.helpers import (
     first_existing,
-    compute_eff_discount_pct_from_df,
+    compute_eff_discount_pct_robust,
 )
 from .helpers import (
     _fmt,
@@ -786,18 +786,25 @@ def review_links(
             qty_s, errors="coerce"
         ).fillna(0.0)
 
-        eff_discount_pct = compute_eff_discount_pct_from_df(
+        eff_discount_pct = compute_eff_discount_pct_robust(
             df_valid,
             ["Rabat (%)", "rabat", "rabat_pct"],
+            [
+                "neto_brez_popusta",
+                "skupna_bruto",
+                "bruto",
+                "bruto_znesek",
+                "znesek",
+            ],
             ["vrednost", "skupna_neto", "neto_po_rabatu", "neto", "neto_po"],
             ["rabata", "rabat_znesek", "popust_znesek"],
         ).fillna(Decimal("0.00"))
-        df_valid["__eff_rabat_pct__"] = eff_discount_pct
+        df_valid["eff_discount_pct"] = eff_discount_pct
 
         group_keys = ["wsm_sifra"]
         if "wsm_naziv" in df_valid.columns:
             group_keys.append("wsm_naziv")
-        group_keys.append("__eff_rabat_pct__")
+        group_keys.append("eff_discount_pct")
 
         agg = (
             df_valid.groupby(group_keys, dropna=False)
@@ -813,7 +820,7 @@ def review_links(
                     "WSM Naziv": row.get("wsm_naziv", ""),
                     "Količina": float(row.get("kolicina_norm", 0) or 0),
                     "Znesek": float(row.get("vrednost", 0) or 0),
-                    "Rabat (%)": row.get("__eff_rabat_pct__", Decimal("0.00")),
+                    "Rabat (%)": row.get("eff_discount_pct", Decimal("0.00")),
                     "Neto po rabatu": float(row.get("vrednost", 0) or 0),
                 }
             )
