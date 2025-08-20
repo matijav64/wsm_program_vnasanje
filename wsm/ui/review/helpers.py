@@ -537,29 +537,49 @@ def first_existing(df: pd.DataFrame, columns: Sequence[str]) -> pd.Series:
     return pd.Series(0, index=df.index)
 
 
-def compute_eff_discount_pct(df: pd.DataFrame) -> pd.Series:
-    """Učinkovit rabat po vrstici kot ``Series[Decimal]``.
+def compute_eff_discount_pct(
+    data: pd.DataFrame | pd.Series,
+) -> pd.Series | Decimal:
+    """Effective discount percentage per row.
 
-    Primarno: ``rabata / (vrednost + rabata)``; fallback na stolpce z % (če so).
-    Vrednosti >= 99.5 % se normalizirajo na 100 %, manjkajoče vrednosti pa na 0 %.
+    The helper previously operated on an entire ``DataFrame`` and returned a
+    ``Series``.  Some call sites now pass a single row (``Series``) – for
+    example when using ``DataFrame.apply``.  To keep backwards compatibility we
+    accept either input: a DataFrame yields a ``Series`` while a single row
+    returns a ``Decimal``.
     """
-    disc = pd.to_numeric(df.get('rabata'), errors='coerce')
-    net = pd.to_numeric(df.get('vrednost'), errors='coerce')
+    # Normalise input to a DataFrame for unified processing
+    is_series = isinstance(data, pd.Series)
+    df = data.to_frame().T if is_series else data
+
+    disc = pd.to_numeric(
+        df.get("rabata", pd.Series(index=df.index, dtype=float)),
+        errors="coerce",
+    )
+    net = pd.to_numeric(
+        df.get("vrednost", pd.Series(index=df.index, dtype=float)),
+        errors="coerce",
+    )
     denom = net.fillna(0) + disc.fillna(0)
     pct = pd.Series(
         np.where(denom > 0, (disc.fillna(0) / denom) * 100.0, np.nan),
         index=df.index,
     )
-    for name in ('Rabat (%)', 'rabat', 'rabat_pct'):
+    for name in ("Rabat (%)", "rabat", "rabat_pct"):
         if name in df.columns:
-            pct = pct.fillna(pd.to_numeric(df[name], errors='coerce'))
+            pct = pct.fillna(pd.to_numeric(df[name], errors="coerce"))
             break
     pct = pct.fillna(0.0)
-    pct[pct >= 99.5] = 100.0
+    pct[pct >= 99.5 - 1e-9] = 100.0
     pct = pct.round(2)
+
     def _to_dec(x: float) -> Decimal:
         try:
-            return Decimal(str(x)).quantize(Decimal('0.00'), rounding=ROUND_HALF_UP)
+            return Decimal(str(x)).quantize(
+                Decimal("0.00"), rounding=ROUND_HALF_UP
+            )
         except Exception:
-            return Decimal('0.00')
-    return pct.apply(_to_dec)
+            return Decimal("0.00")
+
+    pct = pct.apply(_to_dec)
+    return pct.iloc[0] if is_series else pct
