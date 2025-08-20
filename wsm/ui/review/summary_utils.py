@@ -20,7 +20,7 @@ def summary_df_from_records(records: Sequence[dict] | None) -> pd.DataFrame:
         values are filled with defaults and the DataFrame is reindexed to
         :data:`SUMMARY_COLS`.
     """
-    df = pd.DataFrame.from_records(records or [])
+    df = pd.DataFrame.from_records(records or [], coerce_float=False)
     df = df.reindex(columns=SUMMARY_COLS)
 
     numeric_cols = ["Količina", "Znesek", "Rabat (%)", "Neto po rabatu"]
