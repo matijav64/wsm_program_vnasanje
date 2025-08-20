@@ -821,7 +821,10 @@ def review_links(
                     "Količina": float(row.get("kolicina_norm", 0) or 0),
                     "Znesek": float(row.get("vrednost", 0) or 0),
                     "Rabat (%)": row.get("eff_discount_pct", Decimal("0.00")),
-                    "Neto po rabatu": float(row.get("vrednost", 0) or 0),
+                    "Neto po rabatu": float(
+                        (row.get("vrednost", 0) or 0)
+                        - (row.get("rabata", 0) or 0)
+                    ),
                 }
             )
 
