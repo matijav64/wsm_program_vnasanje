@@ -3,7 +3,6 @@ import textwrap
 from decimal import Decimal
 
 import pandas as pd
-import pytest
 
 import wsm.ui.review.gui as rl
 from wsm.ui.review.helpers import first_existing
@@ -57,5 +56,5 @@ def test_update_summary_uses_discounted_net(monkeypatch):
 
     records = records_holder["records"]
     assert len(records) == 1
-    assert records[0]["Znesek"] == pytest.approx(150.0)
-    assert records[0]["Neto po rabatu"] == pytest.approx(125.0)
+    assert records[0]["Znesek"] == Decimal("150")
+    assert records[0]["Neto po rabatu"] == Decimal("125")

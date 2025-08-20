@@ -24,14 +24,14 @@ def summary_df_from_records(records: Sequence[dict] | None) -> pd.DataFrame:
     df = df.reindex(columns=SUMMARY_COLS)
 
     numeric_cols = ["Količina", "Znesek", "Rabat (%)", "Neto po rabatu"]
+
+    def _to_decimal(x):
+        if isinstance(x, Decimal):
+            return x
+        return Decimal(str(x)) if not pd.isna(x) and x != "" else Decimal("0")
+
     for col in numeric_cols:
-        df[col] = df[col].apply(
-            lambda x: (
-                x
-                if isinstance(x, Decimal)
-                else Decimal(str(x)) if not pd.isna(x) and x != "" else Decimal("0")
-            )
-        )
+        df[col] = df[col].map(_to_decimal)
     text_cols = ["WSM šifra", "WSM Naziv"]
     df = _safe_set_block(df, text_cols, df[text_cols].fillna(""))
     return df
