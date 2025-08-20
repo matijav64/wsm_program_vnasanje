@@ -555,7 +555,7 @@ def review_links(
     ).grid(row=1, column=0, sticky="w", padx=(0, 4))
     tk.Button(
         info_frame,
-        text="Kopiraj datum storitve",
+        text="Datum storitve",
         command=lambda: _copy(date_var.get()),
     ).grid(row=1, column=1, sticky="w", padx=(0, 4))
 
