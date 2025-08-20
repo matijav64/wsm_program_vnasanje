@@ -537,6 +537,56 @@ def first_existing(df: pd.DataFrame, columns: Sequence[str]) -> pd.Series:
     return pd.Series(0, index=df.index)
 
 
+def compute_eff_discount_pct_from_df(
+    df: pd.DataFrame,
+    pct_candidates: Sequence[str],
+    value_candidates: Sequence[str],
+    amt_candidates: Sequence[str],
+) -> pd.Series:
+    """Return effective discount percentages for rows in ``df``.
+
+    ``pct_candidates`` lists columns that may already contain the percentage.
+    When none are present, the percentage is derived from the discount and
+    value amounts using ``100 * rabat / (rabat + vrednost)``. The result is
+    normalised to :class:`~decimal.Decimal` with two decimals; negative values
+    are clamped to ``0`` and values of ``99.5`` or more are rounded up to
+    ``100``.
+    """
+
+    pct_series = None
+    for col in pct_candidates:
+        if col in df.columns:
+            pct_series = pd.to_numeric(df[col], errors="coerce")
+            break
+
+    if pct_series is None:
+        val = pd.to_numeric(
+            first_existing(df, value_candidates), errors="coerce"
+        ).fillna(0)
+        disc = pd.to_numeric(
+            first_existing(df, amt_candidates), errors="coerce"
+        ).fillna(0)
+        denom = val + disc
+        pct_series = pd.Series(
+            np.where(denom > 0, (disc / denom) * 100.0, 0.0), index=df.index
+        )
+
+    pct_series = pct_series.fillna(0.0)
+    pct_series[pct_series < 0] = 0.0
+    pct_series[pct_series >= float(GRATIS_THRESHOLD)] = 100.0
+    pct_series = pct_series.round(2)
+
+    def _to_dec(x: float) -> Decimal:
+        try:
+            return Decimal(str(x)).quantize(
+                Decimal("0.00"), rounding=ROUND_HALF_UP
+            )
+        except Exception:
+            return Decimal("0.00")
+
+    return pct_series.apply(_to_dec)
+
+
 def compute_eff_discount_pct(
     data: pd.DataFrame | pd.Series,
 ) -> pd.Series | Decimal:
