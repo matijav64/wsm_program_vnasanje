@@ -19,7 +19,7 @@ from wsm.constants import PRICE_DIFF_THRESHOLD
 from wsm.parsing.eslog import get_supplier_info, XML_PARSER
 from wsm.supplier_store import _norm_vat
 from wsm.ui.review.helpers import (
-    first_existing,
+    first_existing_series,
     compute_eff_discount_pct_robust,
 )
 from .helpers import (
@@ -747,19 +747,24 @@ def review_links(
         """Povzetek po WSM šifrah: loči tudi po efektivnem rabatu (%)"""
         from wsm.ui.review.summary_utils import summary_df_from_records
 
-        if df is None or df.empty or "wsm_sifra" not in df:
+        try:  # compatibility for test harnesses providing only ``first_existing``
+            fes = first_existing_series
+        except NameError:  # pragma: no cover - executed only in tests
+            fes = first_existing  # type: ignore
+
+        wsm_series = fes(df, ["wsm_sifra", "WSM šifra", "WSM"])
+        if df is None or df.empty or wsm_series.isna().all():
             _render_summary(summary_df_from_records([]))
             return
 
-        valid = df["wsm_sifra"].notna() & (
-            df["wsm_sifra"].astype(str).str.strip() != ""
-        )
+        valid = wsm_series.notna() & (wsm_series.astype(str).str.strip() != "")
         df_valid = df.loc[valid].copy()
+        df_valid["wsm_sifra"] = wsm_series.loc[valid]
         if df_valid.empty:
             _render_summary(summary_df_from_records([]))
             return
 
-        val_s = first_existing(
+        val_s = fes(
             df_valid,
             [
                 "vrednost",
@@ -768,13 +773,42 @@ def review_links(
                 "neto",
                 "neto_po",
             ],
-            fill_value=0,
         )
-        disc_s = first_existing(
-            df_valid, ["rabata", "rabat_znesek", "popust_znesek"], fill_value=0
+        disc_s = fes(df_valid, ["rabata", "rabat_znesek", "popust_znesek"])
+        qty_s = fes(df_valid, ["kolicina_norm", "kolicina"])
+
+        unit_gross = pd.to_numeric(
+            fes(
+                df_valid,
+                ["cena_pred_rabatom", "cena_bruto", "Cena pred rabatom", "Cena bruto"],
+            ),
+            errors="coerce",
         )
-        qty_s = first_existing(
-            df_valid, ["kolicina_norm", "kolicina"], fill_value=0
+        unit_net = pd.to_numeric(
+            fes(
+                df_valid,
+                ["cena_po_rabatu", "cena_netto", "Cena po rabatu", "Cena neto"],
+            ),
+            errors="coerce",
+        )
+
+        val_s = val_s.copy()
+        disc_s = disc_s.copy()
+        mask = val_s.isna() & qty_s.notna() & unit_net.notna()
+        val_s.loc[mask] = qty_s.loc[mask] * unit_net.loc[mask]
+        mask2 = (
+            val_s.isna()
+            & qty_s.notna()
+            & unit_gross.notna()
+            & disc_s.notna()
+        )
+        val_s.loc[mask2] = (
+            qty_s.loc[mask2] * unit_gross.loc[mask2] - disc_s.loc[mask2]
+        )
+
+        mask_disc = disc_s.isna() & qty_s.notna() & unit_gross.notna() & unit_net.notna()
+        disc_s.loc[mask_disc] = qty_s.loc[mask_disc] * (
+            unit_gross.loc[mask_disc] - unit_net.loc[mask_disc]
         )
 
         df_valid["vrednost"] = pd.to_numeric(val_s, errors="coerce").fillna(
