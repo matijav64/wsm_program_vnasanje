@@ -21,7 +21,6 @@ from wsm.parsing.eslog import get_supplier_info, XML_PARSER
 from wsm.supplier_store import _norm_vat
 from wsm.ui.review.helpers import (
     first_existing_series,
-    compute_eff_discount_pct_robust,
     series_to_dec,
     to_dec,
     q2,
@@ -161,6 +160,8 @@ def review_links(
         The reviewed invoice lines including any document-level correction
         rows.
     """
+    from .helpers import ensure_eff_discount_col
+
     df = df.copy()
     log.debug("Initial invoice DataFrame:\n%s", df.to_string())
     if {"cena_bruto", "cena_netto"}.issubset(df.columns):
@@ -448,6 +449,9 @@ def review_links(
                 _apply_multiplier(df, idx, mult)
     df["warning"] = pd.NA
     log.debug("df po normalizaciji: %s", df.head().to_dict())
+
+    # Ensure effective discount column exists before merging
+    df = ensure_eff_discount_col(df)
 
     # Combine duplicate invoice lines except for gratis items
     df = _merge_same_items(df)
@@ -753,7 +757,6 @@ def review_links(
         Nova, robustna verzija:
           * poišče stolpce po sinonimih,
           * izpelje manjkajoče bruto/neto,
-          * računa efektivni rabat (%) kot Decimal(2),
           * agregira v Decimal (brez pretvorbe v float),
           * grupira po (wsm_sifra, wsm_naziv, eff_discount_pct).
         """
@@ -789,17 +792,8 @@ def review_links(
         m = need_bruto & net_line_d.notna() & rabat_d.notna()
         bruto_d.loc[m] = (net_line_d.loc[m] + rabat_d.loc[m]).map(to_dec)
 
-        # efektivni rabat (%) kot Decimal(2)
-        eff_pct = compute_eff_discount_pct_robust(
-            pd.DataFrame(
-                {
-                    "Rabat (%)": first_existing_series(df, ["Rabat (%)", "rabat %", "rabat_pct", "discount_pct"], np.nan),
-                    "vrednost": bruto_d,
-                    "rabata": rabat_d,
-                    "Skupna neto": net_line_d,
-                }
-            )
-        )
+        # Uporabi že izračunan efektivni rabat
+        eff_pct = df["eff_discount_pct"].map(to_dec)
 
         # če bruto še 0, ga izpelji iz net/(1-p)
         p = eff_pct.map(lambda d: (d / Decimal("100")).quantize(Decimal("0.0001")))
@@ -838,8 +832,9 @@ def review_links(
                 total += dv
             return total
 
+        group_keys = [k for k in ["wsm_sifra", "wsm_naziv", "eff_discount_pct"] if k in work.columns]
         g = (
-            work.groupby(["wsm_sifra", "wsm_naziv", "eff_discount_pct"], dropna=False)
+            work.groupby(group_keys, dropna=False)
                 .agg(qty=("qty", dsum), net=("net_line", dsum), bruto=("bruto_line", dsum))
                 .reset_index()
         )
