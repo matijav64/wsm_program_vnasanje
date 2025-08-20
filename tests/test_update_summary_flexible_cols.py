@@ -5,7 +5,7 @@ from decimal import Decimal
 import pandas as pd
 
 import wsm.ui.review.gui as rl
-from wsm.ui.review.helpers import first_existing
+from wsm.ui.review.helpers import first_existing, first_existing_series
 import wsm.ui.review.summary_utils as summary_utils
 
 
@@ -25,6 +25,10 @@ def _extract_update_summary():
         "compute_eff_discount_pct_robust":
             lambda df, *a, **k: pd.Series([Decimal("0.00")] * len(df)),
         "log": rl.log,
+        "first_existing_series": first_existing_series,
+        "series_to_dec": lambda s: s,
+        "to_dec": lambda x: x,
+        "np": __import__('numpy'),
     }
     exec(snippet, ns)
     return ns["_update_summary"], ns

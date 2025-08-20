@@ -9,6 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import builtins
@@ -21,6 +22,9 @@ from wsm.supplier_store import _norm_vat
 from wsm.ui.review.helpers import (
     first_existing_series,
     compute_eff_discount_pct_robust,
+    series_to_dec,
+    to_dec,
+    q2,
 )
 from .helpers import (
     _fmt,
@@ -743,131 +747,109 @@ def review_links(
             )
         log.debug(f"Povzetek posodobljen: {len(df_summary)} WSM šifer")
 
+
     def _update_summary():
-        """Povzetek po WSM šifrah: loči tudi po efektivnem rabatu (%)"""
-        from wsm.ui.review.summary_utils import summary_df_from_records
-
-        try:  # compatibility for test harnesses providing only ``first_existing``
-            fes = first_existing_series
-        except NameError:  # pragma: no cover - executed only in tests
-            fes = first_existing  # type: ignore
-
-        wsm_series = fes(df, ["wsm_sifra", "WSM šifra", "WSM"])
-        if df is None or df.empty or wsm_series.isna().all():
+        """
+        Nova, robustna verzija:
+          * poišče stolpce po sinonimih,
+          * izpelje manjkajoče bruto/neto,
+          * računa efektivni rabat (%) kot Decimal(2),
+          * agregira v Decimal (brez pretvorbe v float),
+          * grupira po (wsm_sifra, wsm_naziv, eff_discount_pct).
+        """
+        global df
+        if df is None or len(df) == 0:
             _render_summary(summary_df_from_records([]))
             return
 
-        valid = wsm_series.notna() & (wsm_series.astype(str).str.strip() != "")
-        df_valid = df.loc[valid].copy()
-        df_valid["wsm_sifra"] = wsm_series.loc[valid]
-        if df_valid.empty:
-            _render_summary(summary_df_from_records([]))
-            return
+        # ------ pick columns (robust) -------------------------------------------
+        wsm_sifra = first_existing_series(df, ["wsm_sifra", "WSM šifra", "WSM sifra", "WSM", "wsm"], "")
+        wsm_naziv = first_existing_series(df, ["wsm_naziv", "WSM Naziv", "Naziv artikla", "naziv"], "")
+        qty_raw   = first_existing_series(df, ["kolicina_norm", "Količina", "kolicina", "qty"], 0)
+        net_unit  = first_existing_series(df, ["Neto po rab.", "net_po_rabatu", "cena_po_rabatu"], np.nan)
+        net_line  = first_existing_series(df, ["Skupna neto", "net_line", "vrednost_neto", "znesek_neto"], np.nan)
+        bruto     = first_existing_series(df, ["vrednost", "Bruto", "Net. pred rab.", "bruto_line"], np.nan)
+        rabat     = first_existing_series(df, ["rabata", "rabat", "discount_amount", "rabat_znesek"], np.nan)
 
-        def _parse_decimal(x):
-            if isinstance(x, Decimal):
-                return x
-            if x is None or (isinstance(x, float) and pd.isna(x)) or pd.isna(x) or x == "":
-                return None
-            try:
-                return Decimal(str(x))
-            except Exception:
-                return None
+        # ------ to Decimal ------------------------------------------------------
+        qty = series_to_dec(pd.to_numeric(qty_raw, errors="coerce").fillna(0))
+        net_unit_d = series_to_dec(pd.to_numeric(net_unit, errors="coerce"))
+        net_line_d = series_to_dec(pd.to_numeric(net_line, errors="coerce"))
+        bruto_d    = series_to_dec(pd.to_numeric(bruto, errors="coerce"))
+        rabat_d    = series_to_dec(pd.to_numeric(rabat, errors="coerce"))
 
-        val_s = fes(
-            df_valid,
-            [
-                "vrednost",
-                "skupna_neto",
-                "neto_po_rabatu",
-                "neto",
-                "neto_po",
-            ],
-        ).map(_parse_decimal)
-        disc_s = fes(df_valid, ["rabata", "rabat_znesek", "popust_znesek"]).map(
-            _parse_decimal
-        )
-        qty_s = fes(df_valid, ["kolicina_norm", "kolicina"]).map(_parse_decimal)
+        # net_line: če manjka, iz net_unit * qty
+        need_net = net_line_d.map(lambda x: x == 0)
+        if need_net.any():
+            m = need_net & net_unit_d.notna()
+            net_line_d.loc[m] = (net_unit_d.loc[m] * qty.loc[m]).map(to_dec)
 
-        unit_gross = fes(
-            df_valid,
-            ["cena_pred_rabatom", "cena_bruto", "Cena pred rabatom", "Cena bruto"],
-        ).map(_parse_decimal)
-        unit_net = fes(
-            df_valid,
-            ["cena_po_rabatu", "cena_netto", "Cena po rabatu", "Cena neto"],
-        ).map(_parse_decimal)
+        # bruto: če manjka, iz net + rabat
+        need_bruto = bruto_d.map(lambda x: x == 0)
+        m = need_bruto & net_line_d.notna() & rabat_d.notna()
+        bruto_d.loc[m] = (net_line_d.loc[m] + rabat_d.loc[m]).map(to_dec)
 
-        val_s = val_s.copy()
-        disc_s = disc_s.copy()
-        mask = val_s.isna() & qty_s.notna() & unit_net.notna()
-        val_s.loc[mask] = qty_s.loc[mask] * unit_net.loc[mask]
-        mask2 = (
-            val_s.isna()
-            & qty_s.notna()
-            & unit_gross.notna()
-            & disc_s.notna()
-        )
-        val_s.loc[mask2] = (
-            qty_s.loc[mask2] * unit_gross.loc[mask2] - disc_s.loc[mask2]
-        )
-
-        mask_disc = disc_s.isna() & qty_s.notna() & unit_gross.notna() & unit_net.notna()
-        disc_s.loc[mask_disc] = qty_s.loc[mask_disc] * (
-            unit_gross.loc[mask_disc] - unit_net.loc[mask_disc]
-        )
-
-        df_valid["vrednost"] = val_s.fillna(Decimal("0"))
-        df_valid["rabata"] = disc_s.fillna(Decimal("0"))
-        df_valid["kolicina_norm"] = qty_s.fillna(Decimal("0"))
-
-        eff_discount_pct = compute_eff_discount_pct_robust(
-            df_valid,
-            ["Rabat (%)", "rabat", "rabat_pct"],
-            [
-                "neto_brez_popusta",
-                "skupna_bruto",
-                "bruto",
-                "bruto_znesek",
-                "znesek",
-            ],
-            ["vrednost", "skupna_neto", "neto_po_rabatu", "neto", "neto_po"],
-            ["rabata", "rabat_znesek", "popust_znesek"],
-        ).fillna(Decimal("0.00"))
-        df_valid["eff_discount_pct"] = eff_discount_pct
-
-        group_keys = ["wsm_sifra"]
-        if "wsm_naziv" in df_valid.columns:
-            group_keys.append("wsm_naziv")
-        group_keys.append("eff_discount_pct")
-
-        agg = (
-            df_valid.groupby(group_keys, dropna=False)
-            .agg({"vrednost": "sum", "rabata": "sum", "kolicina_norm": "sum"})
-            .reset_index()
-        )
-
-        def _to_decimal(x):
-            return x if isinstance(x, Decimal) else Decimal(str(x or 0))
-
-        records = []
-        for _, row in agg.iterrows():
-            vrednost = _to_decimal(row.get("vrednost", 0))
-            rabata = _to_decimal(row.get("rabata", 0))
-            records.append(
+        # efektivni rabat (%) kot Decimal(2)
+        eff_pct = compute_eff_discount_pct_robust(
+            pd.DataFrame(
                 {
-                    "WSM šifra": row["wsm_sifra"],
-                    "WSM Naziv": row.get("wsm_naziv", ""),
-                    "Količina": _to_decimal(row.get("kolicina_norm", 0)),
-                    "Znesek": vrednost,
-                    "Rabat (%)": row.get("eff_discount_pct", Decimal("0.00")),
-                    "Neto po rabatu": vrednost - rabata,
+                    "Rabat (%)": first_existing_series(df, ["Rabat (%)", "rabat %", "rabat_pct", "discount_pct"], np.nan),
+                    "vrednost": bruto_d,
+                    "rabata": rabat_d,
+                    "Skupna neto": net_line_d,
                 }
             )
+        )
 
+        # če bruto še 0, ga izpelji iz net/(1-p)
+        p = eff_pct.map(lambda d: (d / Decimal("100")).quantize(Decimal("0.0001")))
+        m = bruto_d.map(lambda x: x == 0)
+        safe = m & p.map(lambda x: x < Decimal("1")) & net_line_d.notna()
+        bruto_d.loc[safe] = (net_line_d.loc[safe] / (1 - p.loc[safe])).map(to_dec)
+
+        # izloči prazne šifre
+        work = pd.DataFrame(
+            {
+                "wsm_sifra": wsm_sifra.astype(str).str.strip(),
+                "wsm_naziv": wsm_naziv.astype(str),
+                "eff_discount_pct": eff_pct,
+                "qty": qty,
+                "net_line": net_line_d,
+                "bruto_line": bruto_d,
+            }
+        )
+        work = work[work["wsm_sifra"] != ""]
+        if work.empty:
+            _render_summary(summary_df_from_records([]))
+            return
+
+        # Decimal-safe agregacija
+        def dsum(s: pd.Series) -> Decimal:
+            total = Decimal("0")
+            for v in s:
+                total += to_dec(v)
+            return total
+
+        g = (
+            work.groupby(["wsm_sifra", "wsm_naziv", "eff_discount_pct"], dropna=False)
+                .agg(qty=("qty", dsum), net=("net_line", dsum), bruto=("bruto_line", dsum))
+                .reset_index()
+        )
+
+        records = []
+        for _, r in g.iterrows():
+            records.append(
+                {
+                    "WSM šifra": r["wsm_sifra"],
+                    "WSM Naziv": r["wsm_naziv"],
+                    "Količina": r["qty"],
+                    "Znesek": r["bruto"],
+                    "Rabat (%)": r["eff_discount_pct"],
+                    "Neto po rabatu": r["net"],
+                }
+            )
         df_summary = summary_df_from_records(records)
         _render_summary(df_summary)
-
     # Skupni zneski pod povzetkom
     total_frame = tk.Frame(root)
     total_frame.pack(fill="x", pady=5)
