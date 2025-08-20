@@ -5,7 +5,7 @@ import math
 import os
 import re
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Sequence, Tuple
+from typing import Any, Sequence, Tuple
 
 from wsm.constants import (
     WEIGHTS_PER_PIECE,
@@ -501,7 +501,9 @@ def _apply_price_warning(
 GRATIS_THRESHOLD = Decimal("99.5")
 
 
-def first_existing(df: pd.DataFrame, columns: Sequence[str]) -> pd.Series:
+def first_existing(
+    df: pd.DataFrame, columns: Sequence[str], fill_value=0
+) -> pd.Series:
     """Return the first available column from ``df``.
 
     Parameters
@@ -510,31 +512,24 @@ def first_existing(df: pd.DataFrame, columns: Sequence[str]) -> pd.Series:
         Source table.
     columns : sequence[str]
         Candidate column names ordered by preference.
+    fill_value : Any, optional
+        Value used when no candidate column exists. Missing values within
+        the chosen column are also replaced by this value. Defaults to ``0``.
 
     Returns
     -------
     pandas.Series
-        Series taken from the first existing column. Numeric columns are
-        coerced to numbers with missing values replaced by ``0`` while
-        textual columns fall back to empty strings.
+        Series taken from the first existing column with missing values
+        replaced by ``fill_value``. When none of the columns exist a
+        new :class:`~pandas.Series` filled with ``fill_value`` is returned.
     """
+
     for col in columns:
         if col in df:
-            s = df[col]
-            num = pd.to_numeric(s, errors="coerce")
-            if num.notna().any():
-                return num.fillna(0)
-            return s.fillna("")
+            return df[col].fillna(fill_value)
 
-    if columns:
-        first = columns[0]
-        if first in df:
-            s = df[first]
-            num = pd.to_numeric(s, errors="coerce")
-            if num.notna().any():
-                return pd.Series(0, index=df.index)
-            return pd.Series("", index=df.index, dtype=object)
-    return pd.Series(0, index=df.index)
+    # No column found – return a default series
+    return pd.Series(fill_value, index=df.index)
 
 
 def compute_eff_discount_pct_from_df(

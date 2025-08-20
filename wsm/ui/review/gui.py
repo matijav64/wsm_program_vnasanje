@@ -760,26 +760,23 @@ def review_links(
             _render_summary(summary_df_from_records([]))
             return
 
-        val_s = (
-            first_existing(
-                df_valid,
-                [
-                    "vrednost",
-                    "skupna_neto",
-                    "neto_po_rabatu",
-                    "neto",
-                    "neto_po",
-                ],
-            )
-            or 0
+        val_s = first_existing(
+            df_valid,
+            [
+                "vrednost",
+                "skupna_neto",
+                "neto_po_rabatu",
+                "neto",
+                "neto_po",
+            ],
+            fill_value=0,
         )
-        disc_s = (
-            first_existing(
-                df_valid, ["rabata", "rabat_znesek", "popust_znesek"]
-            )
-            or 0
+        disc_s = first_existing(
+            df_valid, ["rabata", "rabat_znesek", "popust_znesek"], fill_value=0
         )
-        qty_s = first_existing(df_valid, ["kolicina_norm", "kolicina"]) or 0
+        qty_s = first_existing(
+            df_valid, ["kolicina_norm", "kolicina"], fill_value=0
+        )
 
         df_valid["vrednost"] = pd.to_numeric(val_s, errors="coerce").fillna(
             0.0
