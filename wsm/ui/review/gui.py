@@ -792,8 +792,9 @@ def review_links(
         m = need_bruto & net_line_d.notna() & rabat_d.notna()
         bruto_d.loc[m] = (net_line_d.loc[m] + rabat_d.loc[m]).map(to_dec)
 
-        # Uporabi že izračunan efektivni rabat
-        eff_pct = df["eff_discount_pct"].map(to_dec)
+        # Uporabi že izračunan efektivni rabat iz delovnega DF
+        eff_pct_raw = first_existing_series(df, ["eff_discount_pct"], 0)
+        eff_pct = series_to_dec(pd.to_numeric(eff_pct_raw, errors="coerce"))
 
         # če bruto še 0, ga izpelji iz net/(1-p)
         p = eff_pct.map(lambda d: (d / Decimal("100")).quantize(Decimal("0.0001")))
