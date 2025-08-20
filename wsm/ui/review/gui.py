@@ -817,13 +817,11 @@ def review_links(
                 {
                     "WSM šifra": row["wsm_sifra"],
                     "WSM Naziv": row.get("wsm_naziv", ""),
-                    "Količina": float(row.get("kolicina_norm", 0) or 0),
-                    "Znesek": float(row.get("vrednost", 0) or 0),
+                    "Količina": Decimal(str(row.get("kolicina_norm", 0) or 0)),
+                    "Znesek": Decimal(str(row.get("vrednost", 0) or 0)),
                     "Rabat (%)": row.get("eff_discount_pct", Decimal("0.00")),
-                    "Neto po rabatu": float(
-                        (row.get("vrednost", 0) or 0)
-                        - (row.get("rabata", 0) or 0)
-                    ),
+                    "Neto po rabatu": Decimal(str(row.get("vrednost", 0) or 0))
+                    - Decimal(str(row.get("rabata", 0) or 0)),
                 }
             )
 
