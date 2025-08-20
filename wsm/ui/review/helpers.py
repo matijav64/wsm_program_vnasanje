@@ -532,6 +532,26 @@ def first_existing(
     return pd.Series(fill_value, index=df.index)
 
 
+def first_existing_series(df: pd.DataFrame, columns: Sequence[str]) -> pd.Series:
+    """Return the first existing Series from ``columns``.
+
+    Parameters
+    ----------
+    df:
+        Source table.
+    columns:
+        Candidate column names ordered by preference.
+
+    Returns
+    -------
+    pandas.Series
+        The series from the first available column or an empty
+        series of ``pd.NA`` when none exist.
+    """
+
+    return first_existing(df, columns, fill_value=pd.NA)
+
+
 def compute_eff_discount_pct_from_df(
     df: pd.DataFrame,
     pct_candidates: Sequence[str],
