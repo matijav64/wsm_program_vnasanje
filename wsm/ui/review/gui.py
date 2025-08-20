@@ -34,7 +34,7 @@ from .helpers import (
 )
 from .io import _save_and_close, _load_supplier_map
 from .summary_columns import SUMMARY_COLS, SUMMARY_KEYS, SUMMARY_HEADS
-from .summary_utils import vectorized_discount_pct
+from .summary_utils import vectorized_discount_pct, summary_df_from_records
 
 builtins.tk = tk
 builtins.simpledialog = simpledialog
@@ -807,18 +807,20 @@ def review_links(
         safe = m & p.map(lambda x: x < Decimal("1")) & net_line_d.notna()
         bruto_d.loc[safe] = (net_line_d.loc[safe] / (1 - p.loc[safe])).map(to_dec)
 
-        # izloči prazne šifre
+        # izloči prazne šifre – manjkajoče označi kot "UNKNOWN"
+        sifra = wsm_sifra.astype(str).str.strip().replace("", "UNKNOWN")
+        naziv = wsm_naziv.astype(str)
+
         work = pd.DataFrame(
             {
-                "wsm_sifra": wsm_sifra.astype(str).str.strip(),
-                "wsm_naziv": wsm_naziv.astype(str),
+                "wsm_sifra": sifra,
+                "wsm_naziv": naziv,
                 "eff_discount_pct": eff_pct,
                 "qty": qty,
                 "net_line": net_line_d,
                 "bruto_line": bruto_d,
             }
         )
-        work = work[work["wsm_sifra"] != ""]
         if work.empty:
             _render_summary(summary_df_from_records([]))
             return
@@ -827,7 +829,13 @@ def review_links(
         def dsum(s: pd.Series) -> Decimal:
             total = Decimal("0")
             for v in s:
-                total += to_dec(v)
+                dv = to_dec(v)
+                if not isinstance(dv, Decimal):
+                    try:
+                        dv = Decimal(str(dv))
+                    except Exception:
+                        dv = Decimal("0")
+                total += dv
             return total
 
         g = (
