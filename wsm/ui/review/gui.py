@@ -195,7 +195,6 @@ def review_links(
 
     log.info("Resolved supplier code: %s", supplier_code)
     supplier_info = sup_map.get(supplier_code, {})
-    default_name = short_supplier_name(supplier_info.get("ime", supplier_code))
     supplier_vat = supplier_info.get("vat")
 
     service_date = None
@@ -244,10 +243,13 @@ def review_links(
             inv_name = get_supplier_name_from_pdf(invoice_path)
         except Exception:
             inv_name = None
-    if inv_name:
-        default_name = short_supplier_name(inv_name)
 
-    log.info(f"Default name retrieved: {default_name}")
+    full_supplier_name = (
+        supplier_info.get("ime") or inv_name or supplier_code
+    )
+    supplier_name = short_supplier_name(full_supplier_name)
+
+    log.info(f"Default name retrieved: {supplier_name}")
     log.debug(f"Supplier info: {supplier_info}")
 
     header_totals = _build_header_totals(
@@ -303,7 +305,6 @@ def review_links(
             if isinstance(n, str) and n.strip()
         }
     )
-    supplier_name = short_supplier_name(default_name)
     if supplier_name and supplier_name not in existing_names:
         existing_names.insert(0, supplier_name)
     supplier_name = existing_names[0] if existing_names else supplier_code
@@ -458,7 +459,7 @@ def review_links(
 
     # Window title shows the full supplier name while the on-screen
     # header can be a bit shorter for readability.
-    root.title(f"Ročna revizija – {supplier_name}")
+    root.title(f"Ročna revizija – {full_supplier_name}")
 
     closing = False
     _after_totals_id: str | None = None
@@ -487,7 +488,7 @@ def review_links(
     invoice_var = tk.StringVar()
 
     def _refresh_header():
-        parts_full = [supplier_name]
+        parts_full = [full_supplier_name]
         parts_display = [display_name]
         if service_date:
             date_txt = str(service_date)
@@ -511,7 +512,7 @@ def review_links(
         else:
             # Preserve any existing invoice number displayed in the entry.
             pass
-        supplier_var.set(supplier_name)
+        supplier_var.set(full_supplier_name)
         header_var.set(" – ".join(parts_display))
         root.title(f"Ročna revizija – {' – '.join(parts_full)}")
         log.debug(
@@ -534,18 +535,16 @@ def review_links(
     # Keep the buttons tight to the header but leave extra room below
     info_frame.pack(anchor="w", padx=8, pady=(0, 12))
 
+    tk.Label(info_frame, text=full_supplier_name).grid(
+        row=0, column=0, columnspan=3, sticky="w"
+    )
+
     def _copy(val: str) -> None:
         root.clipboard_clear()
         root.clipboard_append(val)
 
     def copy_supplier_name() -> None:
-        name = (
-            supplier_name
-            or supplier_info.get("ime")
-            or supplier_vat
-            or supplier_code
-            or ""
-        )
+        name = full_supplier_name or supplier_vat or supplier_code or ""
         if name:
             _copy(str(name))
 
@@ -553,12 +552,12 @@ def review_links(
         info_frame,
         text="Kopiraj dobavitelja",
         command=copy_supplier_name,
-    ).grid(row=0, column=0, sticky="w", padx=(0, 4))
+    ).grid(row=1, column=0, sticky="w", padx=(0, 4))
     tk.Button(
         info_frame,
         text="Kopiraj datum storitve",
         command=lambda: _copy(date_var.get()),
-    ).grid(row=0, column=1, sticky="w", padx=(0, 4))
+    ).grid(row=1, column=1, sticky="w", padx=(0, 4))
 
     def copy_invoice_number() -> None:
         _copy(invoice_var.get())
@@ -567,7 +566,7 @@ def review_links(
         info_frame,
         text="Kopiraj številko računa",
         command=copy_invoice_number,
-    ).grid(row=0, column=2, sticky="w", padx=(0, 4))
+    ).grid(row=1, column=2, sticky="w", padx=(0, 4))
 
     # Refresh header once widgets exist. ``after_idle`` ensures widgets are
     # fully initialized before values are set so the entries show up
