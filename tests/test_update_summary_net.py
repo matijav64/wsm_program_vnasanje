@@ -21,12 +21,11 @@ def _extract_update_summary():
         "pd": pd,
         "Decimal": Decimal,
         "first_existing": first_existing,
-        "compute_eff_discount_pct_robust":
-            lambda df, *a, **k: pd.Series([Decimal("0.00")] * len(df)),
         "log": rl.log,
         "first_existing_series": first_existing_series,
-        "series_to_dec": lambda s: s,
-        "to_dec": lambda x: x,
+        "series_to_dec": lambda s: s.map(Decimal),
+        "to_dec": Decimal,
+        "summary_df_from_records": summary_utils.summary_df_from_records,
         "np": __import__('numpy'),
     }
     exec(snippet, ns)
@@ -52,6 +51,8 @@ def test_update_summary_uses_discounted_net(monkeypatch):
             "vrednost": [100, 50],
             "rabata": [20, 5],
             "kolicina_norm": [1, 1],
+            "Skupna neto": [80, 45],
+            "eff_discount_pct": [Decimal("0"), Decimal("0")],
         }
     )
     ns.update({"df": df, "_render_summary": lambda df: None})

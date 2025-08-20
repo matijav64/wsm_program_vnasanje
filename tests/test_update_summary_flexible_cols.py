@@ -1,4 +1,5 @@
 import inspect
+import inspect
 import textwrap
 from decimal import Decimal
 
@@ -22,12 +23,11 @@ def _extract_update_summary():
         "pd": pd,
         "Decimal": Decimal,
         "first_existing": first_existing,
-        "compute_eff_discount_pct_robust":
-            lambda df, *a, **k: pd.Series([Decimal("0.00")] * len(df)),
         "log": rl.log,
         "first_existing_series": first_existing_series,
-        "series_to_dec": lambda s: s,
-        "to_dec": lambda x: x,
+        "series_to_dec": lambda s: s.map(Decimal),
+        "to_dec": Decimal,
+        "summary_df_from_records": summary_utils.summary_df_from_records,
         "np": __import__('numpy'),
     }
     exec(snippet, ns)
@@ -52,6 +52,7 @@ def test_update_summary_handles_flexible_columns(monkeypatch):
             "WSM šifra": ["1", "1"],
             "Skupna neto": [80, 45],
             "Bruto": [100, 50],
+            "eff_discount_pct": [Decimal("20.00"), Decimal("10.00")],
         }
     )
 
@@ -70,31 +71,24 @@ def test_update_summary_handles_flexible_columns(monkeypatch):
     def fake_render_summary(df_summary: pd.DataFrame) -> None:
         captured["df_summary"] = df_summary
 
-    def fake_compute_eff_discount_pct(df, *a, **k):
-        res = []
-        for bruto, net in zip(df["Bruto"], df["Skupna neto"]):
-            b = Decimal(str(bruto))
-            n = Decimal(str(net))
-            pct = ((b - n) / b * Decimal("100")).quantize(Decimal("0.01"))
-            res.append(pct)
-        return pd.Series(res)
-
     ns.update({
         "df": df,
         "_render_summary": fake_render_summary,
         "first_existing": flexible_first_existing,
     })
-    ns["compute_eff_discount_pct_robust"] = fake_compute_eff_discount_pct
-
     _update_summary()
 
     df_summary = captured["df_summary"]
     assert len(df_summary) == 2
-    totals = {
+    net_totals = {
+        (row["WSM šifra"], row["Rabat (%)"]): row["Neto po rabatu"]
+        for _, row in df_summary.iterrows()
+    }
+    bruto_totals = {
         (row["WSM šifra"], row["Rabat (%)"]): row["Znesek"]
         for _, row in df_summary.iterrows()
     }
-    assert totals[("1", Decimal("20.00"))] == Decimal("80")
-    assert totals[("1", Decimal("10.00"))] == Decimal("45")
-    for _, row in df_summary.iterrows():
-        assert row["Neto po rabatu"] == row["Znesek"]
+    assert net_totals[("1", Decimal("20.00"))] == Decimal("80")
+    assert net_totals[("1", Decimal("10.00"))] == Decimal("45")
+    assert bruto_totals[("1", Decimal("20.00"))] == Decimal("100")
+    assert bruto_totals[("1", Decimal("10.00"))] == Decimal("50")
