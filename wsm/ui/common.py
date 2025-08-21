@@ -82,9 +82,13 @@ def open_invoice_gui(
             }
             if keep_lines:
                 try:
-                    # parse_eslog_invoice vrne SAMO DataFrame (surove vrstice)
-                    df = parse_eslog_invoice(invoice_path)
-                    if df.empty:
+                    # parse_eslog_invoice lahko vrne DataFrame ALI (DataFrame, meta)
+                    parsed = parse_eslog_invoice(invoice_path)
+                    if isinstance(parsed, tuple):
+                        df = parsed[0]
+                    else:
+                        df = parsed
+                    if getattr(df, "empty", True):
                         raise ValueError("no lines parsed")
                     # parse_invoice_totals pričakuje XML root (_Element)
                     totals = parse_invoice_totals(
