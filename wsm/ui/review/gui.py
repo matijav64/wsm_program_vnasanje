@@ -583,9 +583,12 @@ def review_links(
         )
         df.loc[(q > 0) & (t == 0), "is_gratis"] = True
 
-    # 2) po potrebi pripravi 'discount bucket' za stabilno grupiranje
+    # 2) pripravimo 'discount bucket' za stabilno grupiranje
     if GROUP_BY_DISCOUNT:
-        df["_discount_bucket"] = df.apply(_discount_bucket, axis=1)
+        if "line_bucket" in df.columns:
+            df["_discount_bucket"] = df["line_bucket"]
+        else:
+            df["_discount_bucket"] = df.apply(_discount_bucket, axis=1)
 
     if os.getenv("WSM_DEBUG_BUCKET") == "1":
         for i, r in df.iterrows():
@@ -890,7 +893,10 @@ def review_links(
             tree.item(str(i), tags=("gratis",) + current_tags)
 
             #  ➜ besedilo v stolpcu »Opozorilo«
-            tree.set(str(i), "warning", "GRATIS")
+            df.at[i, "warning"] = (
+                (df.at[i, "warning"] + " · ") if df.at[i, "warning"] else ""
+            ) + "GRATIS"
+            tree.set(str(i), "warning", df.at[i, "warning"])
     tree.focus("0")
     tree.selection_set("0")
 
