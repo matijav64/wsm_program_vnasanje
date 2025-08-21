@@ -2088,8 +2088,10 @@ def parse_invoice_totals(
         meta["supplier_name"] = _first_text(
             xml_root,
             [
-                "//es:S_NAD[es:D_3035='SU']//es:D_3036",
-                "//e:S_NAD[e:D_3035='SU']//e:D_3036",
+                ".//e:G_SG2[e:S_NAD/e:D_3035='SE']/e:S_NAD/e:C_C080/e:D_3036",
+                ".//e:G_SG2[e:S_NAD/e:D_3035='SE']/e:S_NAD/e:C_C082/e:D_3039",
+                ".//e:G_SG2[e:S_NAD/e:D_3035='SU']/e:S_NAD/e:C_C080/e:D_3036",
+                ".//e:G_SG2[e:S_NAD/e:D_3035='SU']/e:S_NAD/e:C_C082/e:D_3039",
             ],
         ) or ""
 
@@ -2097,8 +2099,8 @@ def parse_invoice_totals(
         meta["service_date"] = _first_text(
             xml_root,
             [
-                "//es:S_DTM[.//es:D_2005='35']//es:D_2380",
-                "//e:S_DTM[.//e:D_2005='35']//e:D_2380",
+                ".//e:S_DTM[e:C_C507/e:D_2005='35']/e:C_C507/e:D_2380",
+                ".//e:S_DTM[e:C_C507/e:D_2005='137']/e:C_C507/e:D_2380",
             ],
         ) or meta.get("delivery_date") or meta.get("document_date") or ""
 
