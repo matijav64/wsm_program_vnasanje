@@ -433,6 +433,8 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         and "_discount_bucket" not in group_cols
     ):
         group_cols.append("_discount_bucket")
+    if "line_bucket" in to_merge.columns and "line_bucket" not in group_cols:
+        group_cols.append("line_bucket")
 
     to_merge[existing_numeric] = to_merge[existing_numeric].fillna(
         Decimal("0")

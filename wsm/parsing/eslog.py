@@ -71,6 +71,7 @@ XML_PARSER = LET.XMLParser(resolve_entities=False)
 # Use higher precision to avoid premature rounding when summing values.
 decimal.getcontext().prec = 28  # Python's default precision
 DEC2 = Decimal("0.01")
+DEC4 = Decimal("0.0001")
 TOL = Decimal("0.01")
 
 
@@ -1659,8 +1660,8 @@ def parse_eslog_invoice(
             else:
                 rabata_pct = Decimal("0.00")
 
-        is_gratis = rabata_pct >= Decimal("99.9")
-
+        eff_discount_pct = rabata_pct
+        is_gratis = (qty > 0 and net_amount == 0) or rabata_pct >= Decimal("99.9")
         item.update(
             {
                 "sifra_dobavitelja": supplier_code,
@@ -1671,6 +1672,11 @@ def parse_eslog_invoice(
                 "cena_netto": cena_post,
                 "rabata": rebate,
                 "rabata_pct": rabata_pct,
+                "eff_discount_pct": eff_discount_pct,
+                "line_bucket": (
+                    eff_discount_pct,
+                    cena_post.quantize(DEC4, rounding=ROUND_HALF_UP),
+                ),
                 "is_gratis": is_gratis,
                 "vrednost": net_amount,
                 "ddv_stopnja": vat_rate,
