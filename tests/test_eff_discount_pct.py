@@ -47,14 +47,7 @@ def test_summary_distinguishes_discounts_without_pct_column():
             "kolicina_norm": [1, 1, 1],
         }
     )
-
-    pct = compute_eff_discount_pct_robust(
-        df,
-        ["Rabat (%)"],
-        ["neto_brez_popusta"],
-        ["vrednost"],
-        ["rabata"],
-    )
+    pct = compute_eff_discount_pct_robust(df)
     df["pct"] = pct
     agg = (
         df.groupby(["wsm_sifra", "pct"], dropna=False)
@@ -73,29 +66,23 @@ def test_summary_distinguishes_discounts_without_pct_column():
 def test_discount_from_gross_and_net_only():
     df = pd.DataFrame(
         {
-            "gross": [Decimal("10"), Decimal("5")],
-            "net": [Decimal("7.18"), Decimal("0")],
+            "Bruto": [Decimal("10"), Decimal("5")],
+            "Neto po rabatu": [Decimal("7.18"), Decimal("0")],
         }
     )
-    pct = compute_eff_discount_pct_robust(
-        df,
-        ["pct"],
-        ["gross"],
-        ["net"],
-        ["disc"],
-    )
-    expected = pd.Series([Decimal("28.20"), Decimal("100.00")])
+    pct = compute_eff_discount_pct_robust(df)
+    expected = pd.Series([Decimal("28.20"), Decimal("100.00")], index=df.index)
     pd.testing.assert_series_equal(pct, expected)
 
 
 def test_detects_100pct_discount_from_amounts():
-    df = pd.DataFrame({"net": [Decimal("0")], "rabata": [Decimal("5")]})
-    pct = compute_eff_discount_pct_robust(
-        df,
-        ["pct"],
-        ["gross"],
-        ["net"],
-        ["rabata"],
+    df = pd.DataFrame(
+        {
+            "Neto po rabatu": [Decimal("10"), Decimal("0")],
+            "rabata": [Decimal("5"), Decimal("5")],
+        },
+        index=[2, 5],
     )
-    expected = pd.Series([Decimal("100.00")])
+    pct = compute_eff_discount_pct_robust(df)
+    expected = pd.Series([Decimal("33.33"), Decimal("100.00")], index=[2, 5])
     pd.testing.assert_series_equal(pct, expected)

@@ -5,7 +5,7 @@ import math
 import os
 import re
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
-from typing import Any, Sequence, Tuple
+from typing import Sequence, Tuple
 
 from wsm.constants import (
     WEIGHTS_PER_PIECE,
@@ -17,8 +17,10 @@ import pandas as pd
 
 DEC2 = Decimal("0.01")
 
+
 def q2(x: Decimal) -> Decimal:
     return x.quantize(DEC2, rounding=ROUND_HALF_UP)
+
 
 def to_dec(x) -> Decimal:
     try:
@@ -29,6 +31,7 @@ def to_dec(x) -> Decimal:
         return Decimal(str(x))
     except Exception:
         return Decimal("0")
+
 
 def series_to_dec(s: pd.Series) -> pd.Series:
     return s.map(to_dec)
@@ -375,15 +378,24 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     num_candidates = [
-        "Količina", "kolicina", "kolicina_norm",
-        "vrednost", "rabata", "Neto po rabatu", "cena_po_rabatu",
-        "total_net", "ddv"
+        "Količina",
+        "kolicina",
+        "kolicina_norm",
+        "vrednost",
+        "rabata",
+        "Neto po rabatu",
+        "cena_po_rabatu",
+        "total_net",
+        "ddv",
     ]
     existing_numeric = [c for c in num_candidates if c in to_merge.columns]
     group_cols = [c for c in to_merge.columns if c not in existing_numeric]
 
     # POSKRBI, da je rabat vedno del ključa
-    if "eff_discount_pct" in to_merge.columns and "eff_discount_pct" not in group_cols:
+    if (
+        "eff_discount_pct" in to_merge.columns
+        and "eff_discount_pct" not in group_cols
+    ):
         group_cols.append("eff_discount_pct")
 
     merged = (
@@ -552,7 +564,9 @@ def first_existing(
     return pd.Series(fill_value, index=df.index)
 
 
-def first_existing_series(df: pd.DataFrame, columns: Sequence[str], fill_value=0) -> pd.Series:
+def first_existing_series(
+    df: pd.DataFrame, columns: Sequence[str], fill_value=0
+) -> pd.Series:
     """Return the first existing Series from ``columns``.
 
     Parameters
@@ -610,10 +624,6 @@ def compute_eff_discount_pct_from_df(
     pct_series[pct_series < 0] = 0.0
     pct_series[pct_series >= float(GRATIS_THRESHOLD)] = 100.0
     pct_series = pct_series.round(2)
-
-
-
-
 
 
 def compute_eff_discount_pct(
@@ -736,24 +746,50 @@ def compute_eff_discount_pct_robust(df: pd.DataFrame) -> pd.Series:
                 break
         # ➊ če imamo bruto in neto → (gross - net) / gross
         if gross is not None and net is not None:
-            pct = pd.Series([
-                None if (g is None or g == 0 or n is None)
-                else ((g - n) * Decimal(100)) / g
-                for g, n in zip(gross, net)
-            ], index=df.index, dtype=object)
+            pct = pd.Series(
+                [
+                    (
+                        None
+                        if (g is None or g == 0 or n is None)
+                        else ((g - n) * Decimal(100)) / g
+                    )
+                    for g, n in zip(gross, net)
+                ],
+                index=df.index,
+                dtype=object,
+            )
         # ➋ sicer probaj net + rabat → rabat / (net + rabat)
         elif net is not None and disc is not None:
-            denom = [(n or Decimal(0)) + (d or Decimal(0)) for n, d in zip(net, disc)]
-            pct = pd.Series([
-                None if den == 0 or disc[i] is None else (disc[i] * Decimal(100)) / den
-                for i, den in enumerate(denom)
-            ], index=df.index, dtype=object)
+            pct = pd.Series(
+                [
+                    (
+                        None
+                        if (
+                            (n is None and d is None)
+                            or (((n or Decimal(0)) + (d or Decimal(0))) == 0)
+                        )
+                        else (d * Decimal(100))
+                        / ((n or Decimal(0)) + (d or Decimal(0)))
+                    )
+                    for n, d in zip(net, disc)
+                ],
+                index=df.index,
+                dtype=object,
+            )
         # ➌ ali gross + rabat → rabat / gross
         elif gross is not None and disc is not None:
-            pct = pd.Series([
-                None if (g is None or g == 0 or d is None) else (d * Decimal(100)) / g
-                for g, d in zip(gross, disc)
-            ], index=df.index, dtype=object)
+            pct = pd.Series(
+                [
+                    (
+                        None
+                        if (g is None or g == 0 or d is None)
+                        else (d * Decimal(100)) / g
+                    )
+                    for g, d in zip(gross, disc)
+                ],
+                index=df.index,
+                dtype=object,
+            )
         else:
             pct = pd.Series([None] * len(df), index=df.index, dtype=object)
         pct = pct.map(_q2)
@@ -773,9 +809,9 @@ def compute_eff_discount_pct_robust(df: pd.DataFrame) -> pd.Series:
     return pct.map(_norm)
 
 
-def ensure_eff_discount_col(df: pd.DataFrame, col_name: str = "eff_discount_pct") -> pd.DataFrame:
+def ensure_eff_discount_col(
+    df: pd.DataFrame, col_name: str = "eff_discount_pct"
+) -> pd.DataFrame:
     eff = compute_eff_discount_pct_robust(df)
     df[col_name] = eff.astype(object)
     return df
-
-
