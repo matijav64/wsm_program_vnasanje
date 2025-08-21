@@ -427,7 +427,16 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     ):
         group_cols.append("eff_discount_pct")
 
-    to_merge[existing_numeric] = to_merge[existing_numeric].fillna(Decimal("0"))
+    # Respect discount/price bucket when present
+    if (
+        "_discount_bucket" in to_merge.columns
+        and "_discount_bucket" not in group_cols
+    ):
+        group_cols.append("_discount_bucket")
+
+    to_merge[existing_numeric] = to_merge[existing_numeric].fillna(
+        Decimal("0")
+    )
     merged = (
         to_merge.groupby(group_cols, dropna=False)
         .agg({c: "sum" for c in existing_numeric})
