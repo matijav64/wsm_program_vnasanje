@@ -587,6 +587,26 @@ def review_links(
     if GROUP_BY_DISCOUNT:
         df["_discount_bucket"] = df.apply(_discount_bucket, axis=1)
 
+    if os.getenv("WSM_DEBUG_BUCKET") == "1":
+        for i, r in df.iterrows():
+            log.warning(
+                "DBG key=(%s, %s, %s) eff=%s bucket=%s qty=%s "
+                "total=%s gratis=%s",
+                r.get("sifra_dobavitelja"),
+                r.get("naziv_ckey"),
+                r.get("enota_norm"),
+                r.get("eff_discount_pct"),
+                _discount_bucket(r),
+                r.get("Količina")
+                or r.get("kolicina_norm")
+                or r.get("kolicina"),
+                r.get("Skupna neto")
+                or r.get("vrednost")
+                or r.get("Neto po rabatu")
+                or r.get("total_net"),
+                r.get("is_gratis"),
+            )
+
     # 3) šele zdaj združi enake postavke (ključ vključuje eff_discount_pct)
     df = _merge_same_items(df)
 
