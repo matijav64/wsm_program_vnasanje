@@ -8,13 +8,13 @@ from collections.abc import Callable
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Tuple
-import os
 
 import pandas as pd
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import builtins
 from lxml import etree as LET
+import os
 
 from wsm.utils import short_supplier_name, _clean, _build_header_totals
 from wsm.constants import PRICE_DIFF_THRESHOLD
@@ -145,6 +145,15 @@ def _discount_bucket(row: dict) -> Tuple[Decimal, Decimal]:
 
 # Logger setup
 log = logging.getLogger(__name__)
+TRACE = os.getenv("WSM_TRACE", "0") not in {"0", "false", "False"}
+if TRACE:
+    logging.getLogger().setLevel(logging.DEBUG)
+
+
+def _t(msg, *args):
+    if TRACE:
+        log.warning("[TRACE GUI] " + msg, *args)
+
 
 _CURRENT_GRID_DF: pd.DataFrame | None = None
 
@@ -559,9 +568,50 @@ def review_links(
                 _apply_multiplier(df, idx, mult)
     df["warning"] = pd.NA
     log.debug("df po normalizaciji: %s", df.head().to_dict())
+    # STEP0: surovi podatki
+    try:
+        cols_dbg = [
+            c
+            for c in (
+                "sifra_dobavitelja",
+                "naziv",
+                "naziv_ckey",
+                "enota",
+                "enota_norm",
+                "Količina",
+                "kolicina_norm",
+                "vrednost",
+                "Skupna neto",
+                "Neto po rabatu",
+                "cena_po_rabatu",
+                "rabata",
+                "rabata_pct",
+                "eff_discount_pct",
+                "line_bucket",
+                "is_gratis",
+            )
+            if c in df.columns
+        ]
+        _t("STEP0 rows=%d, cols=%d -> %s", len(df), len(df.columns), cols_dbg)
+        _t("STEP0 head=%s", df[cols_dbg].head(10).to_dict("records"))
+    except Exception:
+        pass
 
     # 1) obvezno: zagotovimo eff_discount_pct še pred merge
     df = ensure_eff_discount_col(df)
+    _t(
+        "STEP1 after ensure_eff_discount_pct: nulls=%s sample=%s",
+        (
+            df["eff_discount_pct"].isna().sum()
+            if "eff_discount_pct" in df.columns
+            else "n/a"
+        ),
+        (
+            df[["eff_discount_pct"]].head(5).to_dict("records")
+            if "eff_discount_pct" in df.columns
+            else "n/a"
+        ),
+    )
 
     # Označi GRATIS vrstice (količina > 0 in neto = 0), da se ne izgubijo
     from wsm.ui.review.helpers import first_existing_series
@@ -582,6 +632,10 @@ def review_links(
             lambda v: Decimal(str(v)) if v not in (None, "") else Decimal("0")
         )
         df.loc[(q > 0) & (t == 0), "is_gratis"] = True
+    _t(
+        "STEP2 is_gratis count=%s",
+        int(df["is_gratis"].sum()) if "is_gratis" in df.columns else "n/a",
+    )
 
     # 2) pripravimo 'discount bucket' za stabilno grupiranje
     if GROUP_BY_DISCOUNT:
@@ -609,6 +663,59 @@ def review_links(
         # nikoli ne dovoli implicitne pretvorbe v float (npr. zaradi NaN)
         df["_discount_bucket"] = df["_discount_bucket"].astype(object)
 
+        try:
+            bad = (
+                df["_discount_bucket"]
+                .apply(
+                    lambda v: not (
+                        isinstance(v, (tuple, list)) and len(v) == 2
+                    )
+                )
+                .sum()
+            )
+            _t(
+                "STEP3 bucket ready: rows=%d, invalid=%d, uniq=%s",
+                len(df),
+                int(bad),
+                (
+                    df["_discount_bucket"].nunique(dropna=False)
+                    if "_discount_bucket" in df.columns
+                    else "n/a"
+                ),
+            )
+        except Exception:
+            pass
+
+        # Koliko unikatnih ključev (brez in z bucketom)
+        try:
+            base_cols = [
+                c
+                for c in (
+                    "sifra_dobavitelja",
+                    "naziv_ckey",
+                    "enota_norm",
+                )
+                if c in df.columns
+            ]
+            base = (
+                df[base_cols].drop_duplicates().shape[0]
+                if base_cols
+                else "n/a"
+            )
+            with_b = (
+                df[base_cols + ["_discount_bucket"]].drop_duplicates().shape[0]
+                if base_cols and "_discount_bucket" in df.columns
+                else "n/a"
+            )
+            _t(
+                "STEP3 unique groups base=%s, base+bucket=%s using %s",
+                base,
+                with_b,
+                base_cols,
+            )
+        except Exception:
+            pass
+
     if os.getenv("WSM_DEBUG_BUCKET") == "1":
         for i, r in df.iterrows():
             log.warning(
@@ -630,7 +737,28 @@ def review_links(
             )
 
     # 3) šele zdaj združi enake postavke (ključ vključuje eff_discount_pct)
+    _t("STEP4 call _merge_same_items on %d rows", len(df))
     df = _merge_same_items(df)
+    _t(
+        "STEP5 after merge: rows=%d head=%s",
+        len(df),
+        df[
+            [
+                c
+                for c in (
+                    "naziv",
+                    "enota_norm",
+                    "Količina",
+                    "Skupna neto",
+                    "_discount_bucket",
+                    "is_gratis",
+                )
+                if c in df.columns
+            ]
+        ]
+        .head(10)
+        .to_dict("records"),
+    )
 
     total_s = first_existing_series(
         df, ["total_net", "Neto po rabatu", "vrednost", "Skupna neto"]
