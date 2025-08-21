@@ -472,6 +472,11 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     if not group_cols:
         return df
 
+    if "_discount_bucket" in to_merge.columns:
+        to_merge["_discount_bucket"] = to_merge["_discount_bucket"].astype(
+            object
+        )
+
     to_merge[existing_numeric] = to_merge[existing_numeric].fillna(
         Decimal("0")
     )
