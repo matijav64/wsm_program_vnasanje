@@ -547,6 +547,7 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     if distinct_keys_before and distinct_keys_before > 1 and len(merged) <= 1:
         return pd.concat([to_merge, gratis], ignore_index=True)
 
+    # Append gratis (free) rows back to the merged paid lines
     return pd.concat([merged, gratis], ignore_index=True)
 
 
