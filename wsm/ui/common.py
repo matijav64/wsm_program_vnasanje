@@ -82,10 +82,14 @@ def open_invoice_gui(
             }
             if keep_lines:
                 try:
-                    df, _ = parse_eslog_invoice(invoice_path)
+                    # parse_eslog_invoice vrne SAMO DataFrame (surove vrstice)
+                    df = parse_eslog_invoice(invoice_path)
                     if df.empty:
                         raise ValueError("no lines parsed")
-                    totals = parse_invoice_totals(LET.parse(invoice_path))
+                    # parse_invoice_totals pričakuje XML root (_Element)
+                    totals = parse_invoice_totals(
+                        LET.parse(invoice_path).getroot()
+                    )
                     header_total = totals.get("net") or Decimal("0")
                     _ = totals.get("doc_discount", Decimal("0"))
                     gross = totals.get("gross") or (
