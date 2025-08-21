@@ -481,9 +481,12 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         Decimal("0")
     )
 
+    # približen originalni vrstni red
+    to_merge["_first_idx"] = to_merge.index
+
     # seštej samo numeriko; prikazne stolpce ohrani kot 'first'
     agg_dict = {c: "sum" for c in existing_numeric}
-    for keep in ("naziv", "enota"):
+    for keep in ("naziv", "enota", "warning"):
         if keep in to_merge.columns and keep not in group_cols:
             agg_dict[keep] = "first"
     # enotno ceno ohrani (ne seštevaj)
@@ -492,9 +495,15 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         and "cena_po_rabatu" not in agg_dict
     ):
         agg_dict["cena_po_rabatu"] = "first"
+    # minimalni indeks za ohranjanje vrstnega reda
+    agg_dict["_first_idx"] = "min"
 
     merged = (
-        to_merge.groupby(group_cols, dropna=False).agg(agg_dict).reset_index()
+        to_merge.groupby(group_cols, dropna=False)
+        .agg(agg_dict)
+        .reset_index()
+        .sort_values("_first_idx", kind="stable")
+        .drop(columns="_first_idx")
     )
 
     # če je na voljo bucket, nastavi/poravna enotno ceno iz njega
