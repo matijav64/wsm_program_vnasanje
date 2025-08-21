@@ -20,6 +20,7 @@ from wsm.constants import PRICE_DIFF_THRESHOLD
 from wsm.parsing.eslog import get_supplier_info, XML_PARSER
 from wsm.supplier_store import _norm_vat
 from wsm.ui.review.helpers import (
+    ensure_eff_discount_col,
     first_existing_series,
     series_to_dec,
     to_dec,
@@ -40,6 +41,8 @@ builtins.simpledialog = simpledialog
 
 # Logger setup
 log = logging.getLogger(__name__)
+
+_CURRENT_GRID_DF: pd.DataFrame | None = None
 
 
 def _apply_multiplier(
@@ -160,7 +163,6 @@ def review_links(
         The reviewed invoice lines including any document-level correction
         rows.
     """
-    from .helpers import ensure_eff_discount_col
 
     df = df.copy()
     log.debug("Initial invoice DataFrame:\n%s", df.to_string())
@@ -259,6 +261,12 @@ def review_links(
 
     header_totals = _build_header_totals(
         invoice_path, invoice_total, invoice_gross
+    )
+
+    service_date = (
+        header_totals.get("service_date")
+        or supplier_info.get("service_date")
+        or ""
     )
 
     try:
@@ -450,12 +458,26 @@ def review_links(
     df["warning"] = pd.NA
     log.debug("df po normalizaciji: %s", df.head().to_dict())
 
-    # Ensure effective discount column exists before merging
+    # 1) obvezno: zagotovimo eff_discount_pct še pred merge
     df = ensure_eff_discount_col(df)
 
-    # Combine duplicate invoice lines except for gratis items
+    # 2) šele zdaj združi enake postavke (ključ vključuje eff_discount_pct)
     df = _merge_same_items(df)
-    net_total = df["total_net"].sum().quantize(Decimal("0.01"))
+    from wsm.ui.review.helpers import first_existing_series
+    total_s = first_existing_series(
+        df, ["total_net", "Neto po rabatu", "vrednost", "Skupna neto"]
+    )
+    if total_s is None:
+        total_s = pd.Series([Decimal("0")] * len(df))
+    net_total = (
+        total_s.map(lambda v: Decimal(str(v)) if v not in (None, "") else Decimal("0"))
+        .sum()
+        .quantize(Decimal("0.01"))
+    )
+
+    # 3) shrani grid za povzetek
+    global _CURRENT_GRID_DF
+    _CURRENT_GRID_DF = df
 
     base_root = tk._default_root
     if base_root is not None:
@@ -468,6 +490,9 @@ def review_links(
     # Window title shows the full supplier name while the on-screen
     # header can be a bit shorter for readability.
     root.title(f"Ročna revizija – {full_supplier_name}")
+    root.supplier_name = full_supplier_name
+    root.supplier_code = supplier_code
+    root.service_date = service_date
 
     closing = False
     _after_totals_id: str | None = None
@@ -493,6 +518,7 @@ def review_links(
     header_var = tk.StringVar()
     supplier_var = tk.StringVar()
     date_var = tk.StringVar()
+    date_var.set(service_date or "")
     invoice_var = tk.StringVar()
 
     def _refresh_header():
@@ -547,28 +573,33 @@ def review_links(
         row=0, column=0, columnspan=3, sticky="w"
     )
 
-    def _copy(val: str) -> None:
+    def _copy_to_clipboard(val: str) -> None:
         root.clipboard_clear()
         root.clipboard_append(val)
 
-    def copy_supplier_name() -> None:
-        name = full_supplier_name or supplier_vat or supplier_code or ""
-        if name:
-            _copy(str(name))
+    def _copy_supplier():
+        text = (root.supplier_name or root.supplier_code or "").strip()
+        if text:
+            _copy_to_clipboard(text)
+
+    def _copy_service_date():
+        dt = (root.service_date or "").strip()
+        if dt:
+            _copy_to_clipboard(dt)
 
     tk.Button(
         info_frame,
         text="Kopiraj dobavitelja",
-        command=copy_supplier_name,
+        command=_copy_supplier,
     ).grid(row=1, column=0, sticky="w", padx=(0, 4))
     tk.Button(
         info_frame,
-        text="Datum storitve",
-        command=lambda: _copy(date_var.get()),
+        text="Kopiraj datum storitve",
+        command=_copy_service_date,
     ).grid(row=1, column=1, sticky="w", padx=(0, 4))
 
     def copy_invoice_number() -> None:
-        _copy(invoice_var.get())
+        _copy_to_clipboard(invoice_var.get())
 
     tk.Button(
         info_frame,
@@ -753,107 +784,74 @@ def review_links(
 
 
     def _update_summary():
-        """
-        Nova, robustna verzija:
-          * poišče stolpce po sinonimih,
-          * izpelje manjkajoče bruto/neto,
-          * agregira v Decimal (brez pretvorbe v float),
-          * grupira po (wsm_sifra, wsm_naziv, eff_discount_pct).
-        """
-        global df
-        if df is None or len(df) == 0:
+        import pandas as pd
+        from decimal import Decimal
+        from wsm.ui.review.helpers import ensure_eff_discount_col, first_existing_series
+
+        df = globals().get("_CURRENT_GRID_DF")
+        if df is None:
+            df = globals().get("df")
+        if df is None or df.empty:
             _render_summary(summary_df_from_records([]))
             return
 
-        # ------ pick columns (robust) -------------------------------------------
-        wsm_sifra = first_existing_series(df, ["wsm_sifra", "WSM šifra", "WSM sifra", "WSM", "wsm"], "")
-        wsm_naziv = first_existing_series(df, ["wsm_naziv", "WSM Naziv", "Naziv artikla", "naziv"], "")
-        qty_raw   = first_existing_series(df, ["kolicina_norm", "Količina", "kolicina", "qty"], 0)
-        net_unit  = first_existing_series(df, ["Neto po rab.", "net_po_rabatu", "cena_po_rabatu"], np.nan)
-        net_line  = first_existing_series(df, ["Skupna neto", "net_line", "vrednost_neto", "znesek_neto"], np.nan)
-        bruto     = first_existing_series(df, ["vrednost", "Bruto", "Net. pred rab.", "bruto_line"], np.nan)
-        rabat     = first_existing_series(df, ["rabata", "rabat", "discount_amount", "rabat_znesek"], np.nan)
+        # že zagotovljen v review_links; če ni, ga dodamo
+        ensure_eff_discount_col(df)
 
-        # ------ to Decimal ------------------------------------------------------
-        qty = series_to_dec(pd.to_numeric(qty_raw, errors="coerce").fillna(0))
-        net_unit_d = series_to_dec(pd.to_numeric(net_unit, errors="coerce"))
-        net_line_d = series_to_dec(pd.to_numeric(net_line, errors="coerce"))
-        bruto_d    = series_to_dec(pd.to_numeric(bruto, errors="coerce"))
-        rabat_d    = series_to_dec(pd.to_numeric(rabat, errors="coerce"))
+        # Vzemi potrebne stolpce čim bolj robustno
+        val_s   = first_existing_series(df, ["Neto po rabatu", "vrednost", "Skupna neto", "total_net"])
+        bruto_s = first_existing_series(df, ["Bruto", "vrednost_bruto", "Skupna bruto"])
+        qty_s   = first_existing_series(df, ["Količina", "kolicina_norm"])
+        wsm_s   = first_existing_series(df, ["wsm_sifra", "WSM šifra"])
+        name_s  = df["wsm_naziv"] if "wsm_naziv" in df.columns else pd.Series([""] * len(df), index=df.index, dtype=object)
+        eff_s   = df["eff_discount_pct"]  # točno ta, ki je bil izračunan pred merge
 
-        # net_line: če manjka, iz net_unit * qty
-        need_net = net_line_d.map(lambda x: x == 0)
-        if need_net.any():
-            m = need_net & net_unit_d.notna()
-            net_line_d.loc[m] = (net_unit_d.loc[m] * qty.loc[m]).map(to_dec)
-
-        # bruto: če manjka, iz net + rabat
-        need_bruto = bruto_d.map(lambda x: x == 0)
-        m = need_bruto & net_line_d.notna() & rabat_d.notna()
-        bruto_d.loc[m] = (net_line_d.loc[m] + rabat_d.loc[m]).map(to_dec)
-
-        # Uporabi že izračunan efektivni rabat iz delovnega DF
-        eff_pct_raw = first_existing_series(df, ["eff_discount_pct"], 0)
-        eff_pct = series_to_dec(pd.to_numeric(eff_pct_raw, errors="coerce"))
-
-        # če bruto še 0, ga izpelji iz net/(1-p)
-        p = eff_pct.map(lambda d: (d / Decimal("100")).quantize(Decimal("0.0001")))
-        m = bruto_d.map(lambda x: x == 0)
-        safe = m & p.map(lambda x: x < Decimal("1")) & net_line_d.notna()
-        bruto_d.loc[safe] = (net_line_d.loc[safe] / (1 - p.loc[safe])).map(to_dec)
-
-        # izloči prazne šifre – manjkajoče označi kot "UNKNOWN"
-        sifra = wsm_sifra.astype(str).str.strip().replace("", "UNKNOWN")
-        naziv = wsm_naziv.astype(str)
-
-        work = pd.DataFrame(
-            {
-                "wsm_sifra": sifra,
-                "wsm_naziv": naziv,
-                "eff_discount_pct": eff_pct,
-                "qty": qty,
-                "net_line": net_line_d,
-                "bruto_line": bruto_d,
-            }
-        )
-        if work.empty:
+        # Če ključni stolpci manjkajo, izpiši prazen povzetek
+        if wsm_s is None or val_s is None:
             _render_summary(summary_df_from_records([]))
             return
 
-        # Decimal-safe agregacija
-        def dsum(s: pd.Series) -> Decimal:
-            total = Decimal("0")
+        work = pd.DataFrame({
+            "wsm_sifra":        wsm_s.astype(str).replace("", "UNKNOWN"),
+            "wsm_naziv":        name_s.astype(str),
+            "eff_discount_pct": eff_s,
+            "znesek":           val_s,
+            "bruto":            (
+                bruto_s
+                if bruto_s is not None
+                else pd.Series([Decimal("0")] * len(df), index=df.index, dtype=object)
+            ),
+            "kolicina":         qty_s if qty_s is not None else Decimal("0"),
+        })
+
+        # Decimal-varno seštevanje
+        def dsum(s):
+            tot = Decimal("0")
             for v in s:
-                dv = to_dec(v)
-                if not isinstance(dv, Decimal):
-                    try:
-                        dv = Decimal(str(dv))
-                    except Exception:
-                        dv = Decimal("0")
-                total += dv
-            return total
+                try:
+                    tot += v if isinstance(v, Decimal) else Decimal(str(v))
+                except Exception:
+                    pass
+            return tot
 
-        group_keys = [k for k in ["wsm_sifra", "wsm_naziv", "eff_discount_pct"] if k in work.columns]
-        g = (
-            work.groupby(group_keys, dropna=False)
-                .agg(qty=("qty", dsum), net=("net_line", dsum), bruto=("bruto_line", dsum))
-                .reset_index()
-        )
+        g = work.groupby(
+            ["wsm_sifra", "wsm_naziv", "eff_discount_pct"],
+            dropna=False,
+            as_index=False
+        ).agg({"znesek": dsum, "kolicina": dsum, "bruto": dsum})
 
         records = []
         for _, r in g.iterrows():
-            records.append(
-                {
-                    "WSM šifra": r["wsm_sifra"],
-                    "WSM Naziv": r["wsm_naziv"],
-                    "Količina": r["qty"],
-                    "Znesek": r["bruto"],
-                    "Rabat (%)": r["eff_discount_pct"],
-                    "Neto po rabatu": r["net"],
-                }
-            )
-        df_summary = summary_df_from_records(records)
-        _render_summary(df_summary)
+            records.append({
+                "WSM šifra":       r["wsm_sifra"],
+                "WSM Naziv":       r["wsm_naziv"],
+                "Količina":        r["kolicina"],
+                "Znesek":          r["bruto"] if bruto_s is not None else r["znesek"],
+                "Rabat (%)":       r["eff_discount_pct"],  # Decimal s 2 decimalkama
+                "Neto po rabatu":  r["znesek"],
+            })
+
+        _render_summary(summary_df_from_records(records))
     # Skupni zneski pod povzetkom
     total_frame = tk.Frame(root)
     total_frame.pack(fill="x", pady=5)
