@@ -99,3 +99,42 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
 
     # VAT should sum across merged rows as expected
     assert result["ddv"].sum() == Decimal("13.2")
+
+
+def test_merge_same_items_handles_none_in_numeric_columns():
+    df = pd.DataFrame(
+        [
+            {
+                "code": "A",
+                "naziv": "ItemA",
+                "kolicina": None,
+                "kolicina_norm": None,
+                "vrednost": Decimal("10"),
+                "rabata": Decimal("0"),
+                "total_net": Decimal("10"),
+                "ddv": Decimal("2.2"),
+                "is_gratis": False,
+            },
+            {
+                "code": "A",
+                "naziv": "ItemA",
+                "kolicina": Decimal("1"),
+                "kolicina_norm": Decimal("1"),
+                "vrednost": Decimal("10"),
+                "rabata": Decimal("0"),
+                "total_net": Decimal("10"),
+                "ddv": Decimal("2.2"),
+                "is_gratis": False,
+            },
+        ]
+    )
+
+    result = _merge_same_items(df)
+
+    assert len(result) == 1
+    merged = result.iloc[0]
+    assert merged["kolicina"] == Decimal("1")
+    assert merged["kolicina_norm"] == Decimal("1")
+    assert merged["vrednost"] == Decimal("20")
+    assert merged["total_net"] == Decimal("20")
+    assert merged["ddv"] == Decimal("4.4")

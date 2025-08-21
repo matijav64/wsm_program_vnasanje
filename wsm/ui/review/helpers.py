@@ -48,6 +48,35 @@ PRICE_DIFF_THRESHOLD = (
 )
 
 
+NET_CANDIDATES = [
+    "Neto po rabatu",
+    "vrednost",
+    "Skupna neto",
+    "vrednost_po_rabatu",
+    "total_net",
+    "net_line",
+    "neto",
+    "cena_po_rabatu",
+]
+
+DISC_CANDIDATES = [
+    "rabata",
+    "rabat",
+    "discount_amount",
+    "rabat_znesek",
+    "znesek_rabata",
+    "moa204",
+]
+
+GROSS_CANDIDATES = [
+    "Bruto",
+    "vrednost_bruto",
+    "bruto_line",
+    "Skupna bruto",
+    "cena_bruto",
+]
+
+
 def _fmt(v) -> str:
     """Return a human-friendly representation of ``v``.
 
@@ -398,6 +427,7 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     ):
         group_cols.append("eff_discount_pct")
 
+    to_merge[existing_numeric] = to_merge[existing_numeric].fillna(Decimal("0"))
     merged = (
         to_merge.groupby(group_cols, dropna=False)
         .agg({c: "sum" for c in existing_numeric})
@@ -707,40 +737,18 @@ def compute_eff_discount_pct_robust(df: pd.DataFrame) -> pd.Series:
     if pct is None:
         # 2) kandidati za neto, rabat in bruto
         net = None
-        for c in [
-            "Neto po rabatu",
-            "vrednost",
-            "Skupna neto",
-            "vrednost_po_rabatu",
-            "total_net",
-            "net_line",
-            "neto",
-            "cena_po_rabatu",
-        ]:
+        for c in NET_CANDIDATES:
             if c in df.columns:
                 net = df[c].map(_to_dec)
                 break
         # 3) znesek rabata
         disc = None
-        for c in [
-            "rabata",
-            "rabat",
-            "discount_amount",
-            "rabat_znesek",
-            "znesek_rabata",
-            "moa204",
-        ]:
+        for c in DISC_CANDIDATES:
             if c in df.columns:
                 disc = df[c].map(_to_dec)
                 break
         gross = None
-        for c in [
-            "Bruto",
-            "vrednost_bruto",
-            "bruto_line",
-            "Skupna bruto",
-            "cena_bruto",
-        ]:
+        for c in GROSS_CANDIDATES:
             if c in df.columns:
                 gross = df[c].map(_to_dec)
                 break
