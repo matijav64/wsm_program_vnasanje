@@ -11,14 +11,28 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from wsm.analyze import analyze_invoice
-from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf
-from wsm.parsing.eslog import get_supplier_name, extract_grand_total
+from lxml import etree as LET
+from wsm.parsing.pdf import parse_pdf, get_supplier_name_from_pdf  # noqa: F401
+from wsm.parsing.eslog import (  # noqa: F401
+    get_supplier_name,
+    extract_grand_total,
+    parse_eslog_invoice,
+    parse_invoice_totals,
+)
 import pandas as pd
 from wsm.io import load_catalog, load_keywords_map
 from wsm.io.wsm_catalog import KEYWORD_ALIAS_MAP, _rename_with_aliases
 from wsm.utils import sanitize_folder_name, _load_supplier_map
-from wsm.supplier_store import _norm_vat, choose_supplier_key
+from wsm.supplier_store import choose_supplier_key
 from wsm.ui.review.gui import review_links
+
+TRACE = os.getenv("WSM_TRACE", "0") not in {"0", "false", "False"}
+_log = logging.getLogger(__name__)
+
+
+def _t(msg, *args):
+    if TRACE:
+        _log.warning("[TRACE COMMON] " + msg, *args)
 
 
 def select_invoice() -> Path | None:
@@ -61,8 +75,42 @@ def open_invoice_gui(
         )
     try:
         if invoice_path.suffix.lower() == ".xml":
-            df, total, _ = analyze_invoice(str(invoice_path), str(suppliers))
-            gross = extract_grand_total(invoice_path)
+            keep_lines = os.getenv("WSM_GUI_KEEP_LINES", "1") not in {
+                "0",
+                "false",
+                "False",
+            }
+            if keep_lines:
+                try:
+                    # parse_eslog_invoice vrne SAMO DataFrame (surove vrstice)
+                    df = parse_eslog_invoice(invoice_path)
+                    if df.empty:
+                        raise ValueError("no lines parsed")
+                    # parse_invoice_totals pričakuje XML root (_Element)
+                    totals = parse_invoice_totals(
+                        LET.parse(invoice_path).getroot()
+                    )
+                    header_total = totals.get("net") or Decimal("0")
+                    _ = totals.get("doc_discount", Decimal("0"))
+                    gross = totals.get("gross") or (
+                        totals.get("net", Decimal("0"))
+                        + totals.get("vat", Decimal("0"))
+                    )
+                    _t("keep_lines=1 rows=%d", len(df))
+                except Exception as exc:
+                    logging.getLogger(__name__).warning(
+                        "GUI fallback to analyze_invoice (reason: %s)", exc
+                    )
+                    df, header_total, _ = analyze_invoice(
+                        str(invoice_path), str(suppliers)
+                    )
+                    gross = extract_grand_total(invoice_path)
+            else:
+                df, header_total, _ = analyze_invoice(
+                    str(invoice_path), str(suppliers)
+                )
+                gross = extract_grand_total(invoice_path)
+                _t("keep_lines=0 rows=%d", len(df))
 
             if "rabata" in df.columns:
                 df["rabata"] = df["rabata"].fillna(Decimal("0"))
@@ -73,8 +121,8 @@ def open_invoice_gui(
             df = parse_pdf(str(invoice_path))
             if "rabata" not in df.columns:
                 df["rabata"] = Decimal("0")
-            total = df["vrednost"].sum()
-            gross = total
+            header_total = df["vrednost"].sum()
+            gross = header_total
         else:
             messagebox.showerror(
                 "Napaka", f"Nepodprta datoteka: {invoice_path}"
@@ -90,12 +138,6 @@ def open_invoice_gui(
     sup_map = _load_supplier_map(Path(suppliers))
     map_vat = sup_map.get(supplier_code, {}).get("vat") if sup_map else None
     vat = map_vat
-    if invoice_path.suffix.lower() == ".xml":
-        name = get_supplier_name(invoice_path) or supplier_code
-    elif invoice_path.suffix.lower() == ".pdf":
-        name = get_supplier_name_from_pdf(invoice_path) or supplier_code
-    else:
-        name = supplier_code
     # Če je koda še "unknown" in VAT obstaja, uporabi kar davčno številko
     if supplier_code == "unknown" and vat:
         supplier_code = vat
@@ -143,9 +185,11 @@ def open_invoice_gui(
             )
             missing = {"wsm_sifra", "wsm_naziv"} - set(wsm_df.columns)
             if missing:
-                raise ValueError(
-                    f"Manjkajoči stolpci {missing}. Najdeni: {list(wsm_df.columns)}"
+                msg = (
+                    f"Manjkajoči stolpci {missing}. "
+                    f"Najdeni: {list(wsm_df.columns)}"
                 )
+                raise ValueError(msg)
         except Exception as exc:
             logging.warning(f"Napaka pri branju {sifre_file}: {exc}")
             wsm_df = pd.DataFrame(columns=["wsm_sifra", "wsm_naziv"])
@@ -168,9 +212,11 @@ def open_invoice_gui(
                 sorted(kw_df.columns),
             )
             if not {"wsm_sifra", "keyword"} <= set(kw_df.columns):
-                raise ValueError(
-                    f"Manjkajoči stolpci v ključnih besedah. Najdeni: {list(kw_df.columns)}"
+                msg = (
+                    "Manjkajoči stolpci v ključnih besedah. "
+                    f"Najdeni: {list(kw_df.columns)}"
                 )
+                raise ValueError(msg)
             _ = load_keywords_map(kw_file)
         except Exception as exc:
             logging.warning(f"Napaka pri branju {kw_file}: {exc}")
@@ -186,4 +232,6 @@ def open_invoice_gui(
     except Exception as exc:
         logging.warning(f"Napaka pri samodejnem povezovanju: {exc}")
 
-    review_links(df, wsm_df, links_file, total, invoice_path, invoice_gross=gross)
+    review_links(
+        df, wsm_df, links_file, header_total, invoice_path, invoice_gross=gross
+    )
