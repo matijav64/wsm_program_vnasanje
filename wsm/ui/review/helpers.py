@@ -814,18 +814,29 @@ def compute_eff_discount_pct_robust(df: pd.DataFrame) -> pd.Series:
         pct = pct.map(_q2)
 
     def _norm(p):
-        p = _to_dec(p)
-        if p is None:
+        try:
+            d = _to_dec(p)
+        except Exception:
             return Decimal("0.00")
-        if p < 0:
+        if d is None:
             return Decimal("0.00")
-        if p >= Decimal("99.5"):
-            return Decimal("100.00")
-        if p > 100:
-            return Decimal("100.00")
-        return _q2(p)
+        try:
+            if hasattr(d, "is_nan") and d.is_nan():
+                return Decimal("0.00")
+        except Exception:
+            return Decimal("0.00")
+        try:
+            if d < 0:
+                return Decimal("0.00")
+            if d >= Decimal("99.5"):
+                return Decimal("100.00")
+            if d > 100:
+                return Decimal("100.00")
+        except Exception:
+            return Decimal("0.00")
+        return _q2(d)
 
-    return pct.map(_norm)
+    return pct.map(_norm).astype(object)
 
 
 def ensure_eff_discount_col(
