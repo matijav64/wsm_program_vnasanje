@@ -681,32 +681,74 @@ def _q2(x: Decimal | None) -> Decimal | None:
 
 def compute_eff_discount_pct_robust(df: pd.DataFrame) -> pd.Series:
     pct = None
-    for c in ["eff_discount_pct", "Rabat (%)", "rabat_pct", "discount_pct", "line_pct_discount"]:
+    # 1) najprej poskusi že podane odstotke (dodaj še rabata_pct, rabat %)
+    for c in [
+        "eff_discount_pct",
+        "Rabat (%)",
+        "rabat %",
+        "rabat_pct",
+        "rabata_pct",
+        "discount_pct",
+        "line_pct_discount",
+    ]:
         if c in df.columns:
             pct = df[c].map(_to_dec).map(_q2)
             break
     if pct is None:
+        # 2) kandidati za neto, rabat in bruto
         net = None
-        for c in ["Neto po rabatu", "vrednost", "Skupna neto", "vrednost_po_rabatu"]:
+        for c in [
+            "Neto po rabatu",
+            "vrednost",
+            "Skupna neto",
+            "vrednost_po_rabatu",
+            "total_net",
+            "net_line",
+            "neto",
+            "cena_po_rabatu",
+        ]:
             if c in df.columns:
                 net = df[c].map(_to_dec)
                 break
+        # 3) znesek rabata
         disc = None
-        for c in ["rabata", "discount_amount", "rabat_znesek", "moa204"]:
+        for c in [
+            "rabata",
+            "rabat",
+            "discount_amount",
+            "rabat_znesek",
+            "znesek_rabata",
+            "moa204",
+        ]:
             if c in df.columns:
                 disc = df[c].map(_to_dec)
                 break
         gross = None
-        for c in ["Bruto", "vrednost_bruto", "bruto_line", "Skupna bruto"]:
+        for c in [
+            "Bruto",
+            "vrednost_bruto",
+            "bruto_line",
+            "Skupna bruto",
+            "cena_bruto",
+        ]:
             if c in df.columns:
                 gross = df[c].map(_to_dec)
                 break
-        if net is not None and disc is not None:
+        # ➊ če imamo bruto in neto → (gross - net) / gross
+        if gross is not None and net is not None:
+            pct = pd.Series([
+                None if (g is None or g == 0 or n is None)
+                else ((g - n) * Decimal(100)) / g
+                for g, n in zip(gross, net)
+            ], index=df.index, dtype=object)
+        # ➋ sicer probaj net + rabat → rabat / (net + rabat)
+        elif net is not None and disc is not None:
             denom = [(n or Decimal(0)) + (d or Decimal(0)) for n, d in zip(net, disc)]
             pct = pd.Series([
                 None if den == 0 or disc[i] is None else (disc[i] * Decimal(100)) / den
                 for i, den in enumerate(denom)
             ], index=df.index, dtype=object)
+        # ➌ ali gross + rabat → rabat / gross
         elif gross is not None and disc is not None:
             pct = pd.Series([
                 None if (g is None or g == 0 or d is None) else (d * Decimal(100)) / g
