@@ -589,6 +589,22 @@ def review_links(
             df["_discount_bucket"] = df["line_bucket"]
         else:
             df["_discount_bucket"] = df.apply(_discount_bucket, axis=1)
+        # Sanacija: poskrbi, da je na VSAKI vrstici tuple (pct, unit)
+        def _is_valid_bucket(val):
+            return (
+                isinstance(val, (tuple, list))
+                and len(val) == 2
+                and all(not pd.isna(x) for x in val)
+            )
+
+        def _coerce_bucket(row):
+            val = row.get("_discount_bucket", None)
+            if _is_valid_bucket(val):
+                return tuple(val)
+            # fallback iz trenutno vidnih polj (robustno)
+            return _discount_bucket(row)
+
+        df["_discount_bucket"] = df.apply(_coerce_bucket, axis=1)
 
     if os.getenv("WSM_DEBUG_BUCKET") == "1":
         for i, r in df.iterrows():
@@ -853,7 +869,12 @@ def review_links(
         tree.item(str(i), tags=("price_warn",) if warn else ())
         df.at[i, "warning"] = tooltip
         if GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
-            pct, ua = df.at[i, "_discount_bucket"]
+            val = df.at[i, "_discount_bucket"]
+            if _is_valid_bucket(val):
+                pct, ua = val
+            else:
+                # Fallback, če je karkoli ušlo (npr. NaN)
+                pct, ua = _discount_bucket(row)
             tag = f"rabat {pct}% @ {ua}"
             existing = df.at[i, "warning"]
             if existing is None or pd.isna(existing):
