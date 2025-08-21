@@ -4,7 +4,7 @@ import logging
 import math
 import os
 import re
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from typing import Any, Sequence, Tuple
 
 from wsm.constants import (
@@ -374,16 +374,17 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     if to_merge.empty:
         return df
 
-    numeric_cols = {
-        "kolicina",
-        "kolicina_norm",
-        "vrednost",
-        "rabata",
-        "total_net",
-        "ddv",
-    }
-    existing_numeric = [c for c in numeric_cols if c in to_merge.columns]
+    num_candidates = [
+        "Količina", "kolicina", "kolicina_norm",
+        "vrednost", "rabata", "Neto po rabatu", "cena_po_rabatu",
+        "total_net", "ddv"
+    ]
+    existing_numeric = [c for c in num_candidates if c in to_merge.columns]
     group_cols = [c for c in to_merge.columns if c not in existing_numeric]
+
+    # POSKRBI, da je rabat vedno del ključa
+    if "eff_discount_pct" in to_merge.columns and "eff_discount_pct" not in group_cols:
+        group_cols.append("eff_discount_pct")
 
     merged = (
         to_merge.groupby(group_cols, dropna=False)
@@ -612,60 +613,6 @@ def compute_eff_discount_pct_from_df(
 
 
 
-def compute_eff_discount_pct_robust(
-    df: pd.DataFrame,
-    pct_candidates: Sequence[str] | None = None,
-    gross_candidates: Sequence[str] | None = None,
-    net_candidates: Sequence[str] | None = None,
-    amt_candidates: Sequence[str] | None = None,
-) -> pd.Series:
-    """Return effective discount percentages for rows in ``df``.
-
-    ``pct_candidates`` lists columns that may already contain the percentage.
-    When none are present, the percentage is derived from available amount
-    columns. All candidate lists are optional; when omitted, a default set of
-    common column names is used. The result is normalised to
-    :class:`~decimal.Decimal` with two decimals; negative values are clamped to
-    ``0`` and values of ``99.5`` or more are rounded up to ``100``.
-    """
-
-    if pct_candidates is None:
-        pct_candidates = ["Rabat (%)", "rabat %", "rabat_pct", "discount_pct"]
-    if gross_candidates is None:
-        gross_candidates = ["vrednost", "Bruto", "Net. pred rab.", "bruto_line"]
-    if net_candidates is None:
-        net_candidates = ["Skupna neto", "net_line", "vrednost_neto", "Neto po rab.", "net_po_rabatu"]
-    if amt_candidates is None:
-        amt_candidates = ["rabata", "rabat", "discount_amount", "rabat_znesek"]
-
-    pct_series = None
-    for col in pct_candidates:
-        if col in df.columns:
-            pct_series = pd.to_numeric(df[col], errors="coerce")
-            break
-    if pct_series is None:
-        pct_series = pd.Series(np.nan, index=df.index)
-
-    gross = pd.to_numeric(first_existing(df, gross_candidates, fill_value=np.nan), errors="coerce")
-    net = pd.to_numeric(first_existing(df, net_candidates, fill_value=np.nan), errors="coerce")
-    disc = pd.to_numeric(first_existing(df, amt_candidates, fill_value=np.nan), errors="coerce")
-
-    mask = pct_series.isna()
-    mask_gross = mask & gross.notna() & net.notna() & (gross > 0)
-    pct_series.loc[mask_gross] = ((gross.loc[mask_gross] - net.loc[mask_gross]) / gross.loc[mask_gross]) * 100.0
-
-    mask = pct_series.isna()
-    if mask.any():
-        denom = disc + net
-        mask_valid = mask & denom.gt(0)
-        pct_series.loc[mask_valid] = (disc.loc[mask_valid] / denom.loc[mask_valid]) * 100.0
-
-    pct_series = pct_series.fillna(0.0)
-    pct_series[pct_series < 0] = 0.0
-    pct_series[pct_series >= float(GRATIS_THRESHOLD)] = 100.0
-    pct_series = pct_series.round(2)
-
-    return pct_series.apply(lambda x: Decimal(str(x)).quantize(Decimal("0.00"), rounding=ROUND_HALF_UP))
 
 
 
@@ -717,28 +664,76 @@ def compute_eff_discount_pct(
     return pct.iloc[0] if is_series else pct
 
 
-def ensure_eff_discount_col(df: pd.DataFrame) -> pd.DataFrame:
-    """Ensure an ``eff_discount_pct`` column with quantized ``Decimal`` values.
+def _to_dec(x):
+    if x is None:
+        return None
+    try:
+        return x if isinstance(x, Decimal) else Decimal(str(x))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
 
-    If the column is missing, it is calculated via
-    :func:`compute_eff_discount_pct_robust`.  When present, all existing values
-    are coerced to :class:`~decimal.Decimal` and quantized to two decimal places.
 
-    Parameters
-    ----------
-    df:
-        DataFrame to operate on. Modified in-place and returned for
-        convenience.
+def _q2(x: Decimal | None) -> Decimal | None:
+    if x is None:
+        return None
+    return x.quantize(DEC2, rounding=ROUND_HALF_UP)
 
-    Returns
-    -------
-    pandas.DataFrame
-        The input ``df`` with a normalised ``eff_discount_pct`` column.
-    """
 
-    col = "eff_discount_pct"
-    if col not in df.columns:
-        df.loc[:, col] = compute_eff_discount_pct_robust(df)
-    else:
-        df.loc[:, col] = df[col].map(lambda v: q2(to_dec(v)))
+def compute_eff_discount_pct_robust(df: pd.DataFrame) -> pd.Series:
+    pct = None
+    for c in ["eff_discount_pct", "Rabat (%)", "rabat_pct", "discount_pct", "line_pct_discount"]:
+        if c in df.columns:
+            pct = df[c].map(_to_dec).map(_q2)
+            break
+    if pct is None:
+        net = None
+        for c in ["Neto po rabatu", "vrednost", "Skupna neto", "vrednost_po_rabatu"]:
+            if c in df.columns:
+                net = df[c].map(_to_dec)
+                break
+        disc = None
+        for c in ["rabata", "discount_amount", "rabat_znesek", "moa204"]:
+            if c in df.columns:
+                disc = df[c].map(_to_dec)
+                break
+        gross = None
+        for c in ["Bruto", "vrednost_bruto", "bruto_line", "Skupna bruto"]:
+            if c in df.columns:
+                gross = df[c].map(_to_dec)
+                break
+        if net is not None and disc is not None:
+            denom = [(n or Decimal(0)) + (d or Decimal(0)) for n, d in zip(net, disc)]
+            pct = pd.Series([
+                None if den == 0 or disc[i] is None else (disc[i] * Decimal(100)) / den
+                for i, den in enumerate(denom)
+            ], index=df.index, dtype=object)
+        elif gross is not None and disc is not None:
+            pct = pd.Series([
+                None if (g is None or g == 0 or d is None) else (d * Decimal(100)) / g
+                for g, d in zip(gross, disc)
+            ], index=df.index, dtype=object)
+        else:
+            pct = pd.Series([None] * len(df), index=df.index, dtype=object)
+        pct = pct.map(_q2)
+
+    def _norm(p):
+        p = _to_dec(p)
+        if p is None:
+            return Decimal("0.00")
+        if p < 0:
+            return Decimal("0.00")
+        if p >= Decimal("99.5"):
+            return Decimal("100.00")
+        if p > 100:
+            return Decimal("100.00")
+        return _q2(p)
+
+    return pct.map(_norm)
+
+
+def ensure_eff_discount_col(df: pd.DataFrame, col_name: str = "eff_discount_pct") -> pd.DataFrame:
+    eff = compute_eff_discount_pct_robust(df)
+    df[col_name] = eff.astype(object)
     return df
+
+
