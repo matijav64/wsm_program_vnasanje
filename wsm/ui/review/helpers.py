@@ -38,6 +38,14 @@ def series_to_dec(s: pd.Series) -> pd.Series:
 
 
 log = logging.getLogger(__name__)
+_TRACE = os.getenv("WSM_TRACE", "0") not in {"0", "false", "False"}
+_LOG = logging.getLogger(__name__)
+
+
+def _t(msg, *args):
+    if _TRACE:
+        _LOG.warning("[TRACE MERGE] " + msg, *args)
+
 
 # Threshold for price change warnings in percent used by GUI
 _env_threshold = os.getenv("WSM_PRICE_WARN_PCT")
@@ -419,6 +427,7 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     ]
     existing_numeric = [c for c in num_candidates if c in to_merge.columns]
     group_cols = [c for c in to_merge.columns if c not in existing_numeric]
+    _t("start rows=%d numeric=%s", len(to_merge), existing_numeric)
 
     # ➊ Vedno poskrbi za osnovne “identitetne” ključe (če so prisotni)
     base_keys = [
@@ -450,6 +459,7 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         group_cols.append("_discount_bucket")
     if "line_bucket" in to_merge.columns and "line_bucket" not in group_cols:
         group_cols.append("line_bucket")
+    _t("group_cols=%s", group_cols)
 
     to_merge[existing_numeric] = to_merge[existing_numeric].fillna(
         Decimal("0")
@@ -459,6 +469,31 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         .agg({c: "sum" for c in existing_numeric})
         .reset_index()
     )
+    try:
+        base_cols = [
+            c
+            for c in ("sifra_dobavitelja", "naziv_ckey", "enota_norm")
+            if c in to_merge.columns
+        ]
+        base = (
+            to_merge[base_cols].drop_duplicates().shape[0]
+            if base_cols
+            else "n/a"
+        )
+        buckets = (
+            to_merge["_discount_bucket"].nunique(dropna=False)
+            if "_discount_bucket" in to_merge.columns
+            else "n/a"
+        )
+        _t(
+            "merged: before=%d, after=%d, distinct base=%s, uniq buckets=%s",
+            len(to_merge),
+            len(merged),
+            base,
+            buckets,
+        )
+    except Exception:
+        pass
 
     # ➋ Varovalo: če je pred-merge več različnih artiklov/enot,
     #    po merge pa samo ena vrstica → raje pusti original (brez merge).

@@ -15,6 +15,7 @@ from __future__ import annotations
 import decimal
 import io
 import logging
+import os
 import re
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
@@ -88,7 +89,9 @@ def _first_text(root, xpaths: list[str]) -> str | None:
             nodes = root.xpath(xp, namespaces=ns)
             if nodes:
                 el = nodes[0]
-                txt = (el.text if isinstance(el, etree._Element) else str(el)) or ""
+                txt = (
+                    el.text if isinstance(el, etree._Element) else str(el)
+                ) or ""
                 txt = txt.strip()
                 if txt:
                     return txt
@@ -97,9 +100,15 @@ def _first_text(root, xpaths: list[str]) -> str | None:
 
     for xp in xpaths:
         parts = [p for p in xp.split("/") if p]
-        loc = ".//*[" + " and ".join(
-            f"local-name()='{p.split(':')[-1].split('[')[0]}'" for p in parts if p not in (".", "..")
-        ) + "]"
+        loc = (
+            ".//*["
+            + " and ".join(
+                f"local-name()='{p.split(':')[-1].split('[')[0]}'"
+                for p in parts
+                if p not in (".", "..")
+            )
+            + "]"
+        )
         try:
             nodes = root.xpath(loc)
             if nodes:
@@ -109,6 +118,7 @@ def _first_text(root, xpaths: list[str]) -> str | None:
         except Exception:
             pass
     return None
+
 
 # MOA qualifiers used for discounts and base amounts
 DISCOUNT_MOA_LINE = {"204"}
@@ -120,6 +130,12 @@ _INFO_DISCOUNTS = False
 
 # module logger
 log = logging.getLogger(__name__)
+TRACE = os.getenv("WSM_TRACE", "0") not in {"0", "false", "False"}
+
+
+def _t(msg, *args):
+    if TRACE:
+        log.warning("[TRACE PARSE] " + msg, *args)
 
 
 # ────────────────────────── pomožne funkcije ──────────────────────────
@@ -708,7 +724,10 @@ def _invoice_total(
 
 
 def _apply_doc_allowances_sequential(
-    sum_line_net: Decimal, header_node: LET._Element, *, discount_codes: set[str] | None = None
+    sum_line_net: Decimal,
+    header_node: LET._Element,
+    *,
+    discount_codes: set[str] | None = None,
 ) -> tuple[Decimal, Decimal, Decimal]:
     """Apply document-level allowances/charges sequentially."""
     base = sum_line_net
@@ -1218,12 +1237,19 @@ def _line_amount_after_allowances(seg: LET._Element) -> Decimal:
     return _dec2(run)
 
 
-def _line_discount_components(sg26: LET._Element) -> tuple[Decimal, Decimal, Decimal]:
-    """Return line discount components with MOA 204 preferred over matching PCD."""
+def _line_discount_components(
+    sg26: LET._Element,
+) -> tuple[Decimal, Decimal, Decimal]:
+    """Return line discount components with MOA 204 preferred over
+    matching PCD."""
     disc_direct = _line_discount(sg26)
     disc_moa = _line_amount_discount(sg26)
     pct_disc = _line_pct_discount(sg26)
-    if disc_direct != 0 and pct_disc != 0 and abs(disc_direct - pct_disc) <= TOL:
+    if (
+        disc_direct != 0
+        and pct_disc != 0
+        and abs(disc_direct - pct_disc) <= TOL
+    ):
         pct_disc = Decimal("0")
     return disc_direct, disc_moa, pct_disc
 
@@ -1661,7 +1687,9 @@ def parse_eslog_invoice(
                 rabata_pct = Decimal("0.00")
 
         eff_discount_pct = rabata_pct
-        is_gratis = (qty > 0 and net_amount == 0) or rabata_pct >= Decimal("99.9")
+        is_gratis = (qty > 0 and net_amount == 0) or rabata_pct >= Decimal(
+            "99.9"
+        )
         item.update(
             {
                 "sifra_dobavitelja": supplier_code,
@@ -1687,6 +1715,18 @@ def parse_eslog_invoice(
         if "ddv" not in item:
             item["ddv"] = Decimal("0")
 
+        _t(
+            "line desc=%r qty=%s net=%s gross?=%s "
+            "rabat=%s pct=%s gratis=%s bucket=%s",
+            desc,
+            qty,
+            net_amount,
+            net_before,
+            rebate,
+            eff_discount_pct,
+            is_gratis,
+            item.get("line_bucket"),
+        )
         items.append(item)
 
         for ac in sg26.findall(".//e:AllowanceCharge", NS) + sg26.findall(
@@ -1904,8 +1944,10 @@ def parse_eslog_invoice(
 
     # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
     discount_set = set(discount_codes or DEFAULT_DOC_DISCOUNT_CODES)
-    net_after_doc, doc_allow_header, doc_charge_total = _apply_doc_allowances_sequential(
-        sum_line_net, root, discount_codes=discount_set
+    net_after_doc, doc_allow_header, doc_charge_total = (
+        _apply_doc_allowances_sequential(
+            sum_line_net, root, discount_codes=discount_set
+        )
     )
     doc_allow_total = doc_allow_header + doc_discount_from_lines
     net_total = net_after_doc + doc_discount_from_lines
@@ -2091,24 +2133,36 @@ def parse_invoice_totals(
     }
 
     if not meta.get("supplier_name"):
-        meta["supplier_name"] = _first_text(
-            xml_root,
-            [
-                ".//e:G_SG2[e:S_NAD/e:D_3035='SE']/e:S_NAD/e:C_C080/e:D_3036",
-                ".//e:G_SG2[e:S_NAD/e:D_3035='SE']/e:S_NAD/e:C_C082/e:D_3039",
-                ".//e:G_SG2[e:S_NAD/e:D_3035='SU']/e:S_NAD/e:C_C080/e:D_3036",
-                ".//e:G_SG2[e:S_NAD/e:D_3035='SU']/e:S_NAD/e:C_C082/e:D_3039",
-            ],
-        ) or ""
+        meta["supplier_name"] = (
+            _first_text(
+                xml_root,
+                [
+                    ".//e:G_SG2[e:S_NAD/e:D_3035='SE']/e:S_NAD/"
+                    "e:C_C080/e:D_3036",
+                    ".//e:G_SG2[e:S_NAD/e:D_3035='SE']/e:S_NAD/"
+                    "e:C_C082/e:D_3039",
+                    ".//e:G_SG2[e:S_NAD/e:D_3035='SU']/e:S_NAD/"
+                    "e:C_C080/e:D_3036",
+                    ".//e:G_SG2[e:S_NAD/e:D_3035='SU']/e:S_NAD/"
+                    "e:C_C082/e:D_3039",
+                ],
+            )
+            or ""
+        )
 
     if not meta.get("service_date"):
-        meta["service_date"] = _first_text(
-            xml_root,
-            [
-                ".//e:S_DTM[e:C_C507/e:D_2005='35']/e:C_C507/e:D_2380",
-                ".//e:S_DTM[e:C_C507/e:D_2005='137']/e:C_C507/e:D_2380",
-            ],
-        ) or meta.get("delivery_date") or meta.get("document_date") or ""
+        meta["service_date"] = (
+            _first_text(
+                xml_root,
+                [
+                    ".//e:S_DTM[e:C_C507/e:D_2005='35']/e:C_C507/e:D_2380",
+                    ".//e:S_DTM[e:C_C507/e:D_2005='137']/e:C_C507/e:D_2380",
+                ],
+            )
+            or meta.get("delivery_date")
+            or meta.get("document_date")
+            or ""
+        )
 
     return meta
 
