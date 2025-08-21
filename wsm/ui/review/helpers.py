@@ -408,11 +408,13 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     if "is_gratis" not in df.columns:
         return df
 
+    df = df.copy()
+    df["_first_idx"] = df.index  # ohrani globalni vrstni red
     gratis = df[df["is_gratis"]].copy()
     to_merge = df[~df["is_gratis"]].copy()
 
     if to_merge.empty:
-        return df
+        return df.drop(columns="_first_idx", errors="ignore")
 
     # Numerični stolpci, ki se naj seštevajo (nikoli del ključa)
     num_candidates = [
@@ -470,7 +472,7 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     _t("group_cols(final)=%s", group_cols)
 
     if not group_cols:
-        return df
+        return df.drop(columns="_first_idx", errors="ignore")
 
     if "_discount_bucket" in to_merge.columns:
         to_merge["_discount_bucket"] = to_merge["_discount_bucket"].astype(
@@ -481,9 +483,6 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         Decimal("0")
     )
 
-    # približen originalni vrstni red
-    to_merge["_first_idx"] = to_merge.index
-
     # seštej samo numeriko; prikazne stolpce ohrani kot 'first'
     agg_dict = {c: "sum" for c in existing_numeric}
     for keep in ("naziv", "enota", "warning"):
@@ -492,18 +491,14 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     # enotno ceno ohrani (ne seštevaj)
     if (
         "cena_po_rabatu" in to_merge.columns
-        and "cena_po_rabatu" not in agg_dict
+        and "cena_po_rabatu" not in group_cols
     ):
         agg_dict["cena_po_rabatu"] = "first"
     # minimalni indeks za ohranjanje vrstnega reda
     agg_dict["_first_idx"] = "min"
 
     merged = (
-        to_merge.groupby(group_cols, dropna=False)
-        .agg(agg_dict)
-        .reset_index()
-        .sort_values("_first_idx", kind="stable")
-        .drop(columns="_first_idx")
+        to_merge.groupby(group_cols, dropna=False).agg(agg_dict).reset_index()
     )
 
     # če je na voljo bucket, nastavi/poravna enotno ceno iz njega
@@ -554,10 +549,14 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     except Exception:
         distinct_keys_before = None
     if distinct_keys_before and distinct_keys_before > 1 and len(merged) <= 1:
-        return pd.concat([to_merge, gratis], ignore_index=True)
-
-    # Append gratis (free) rows back to the merged paid lines
-    return pd.concat([merged, gratis], ignore_index=True)
+        out = pd.concat([to_merge, gratis], ignore_index=True)
+    else:
+        out = pd.concat([merged, gratis], ignore_index=True)
+    if "_first_idx" in out.columns:
+        out = out.sort_values("_first_idx", kind="stable").drop(
+            columns="_first_idx"
+        )
+    return out
 
 
 def _split_totals(
