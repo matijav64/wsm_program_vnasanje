@@ -57,21 +57,33 @@ def _to_dec(v: object) -> Decimal:
 
 
 def _discount_bucket(row: dict) -> Tuple[Decimal, Decimal]:
-    """Return a tuple identifying discount percent and net price.
-
-    The discount is rounded to two decimals and the net price after discount to
-    four decimals to ensure stable grouping.
     """
-
+    Vrni podpis rabata: (rabat_%, enotna_neto_po_rabatu).
+    – rabat% zaokrožimo na 2 dec,
+    – enotno ceno po rabatu na 4 dec.
+    Robustno poiščemo stolpce tudi z GUI imeni:
+    'Net. pred rab.', 'Net. po rab.'.
+    Če je mogoče, unit_after preračunamo iz Skupna neto / Količina.
+    """
     rab_keys = ("rabata_pct", "eff_discount_pct", "Rabat (%)", "rabat_pct")
-    before_keys = ("cena_pred_rabatom", "net_pred_rab", "unit_net_before")
+    before_keys = (
+        "cena_pred_rabatom",
+        "net_pred_rab",
+        "unit_net_before",
+        "Net. pred rab.",
+        "Net. pred rab",
+    )
     after_keys = (
         "cena_po_rabatu",
-        "Net. po rabatu",
         "net_po_rab",
         "unit_net_after",
         "unit_price_net",
+        "Net. po rabatu",
+        "Net. po rab.",
+        "Net. po rab",
     )
+    qty_keys = ("Količina", "kolicina_norm", "kolicina")
+    total_net_keys = ("Skupna neto", "vrednost", "Neto po rabatu", "total_net")
 
     pct = None
     for k in rab_keys:
@@ -90,6 +102,28 @@ def _discount_bucket(row: dict) -> Tuple[Decimal, Decimal]:
         if k in row and row.get(k) not in (None, ""):
             unit_after = _to_dec(row.get(k))
             break
+
+    # ❶ Poskusi bolj zanesljivo izračunati enotno ceno po rabatu iz total/qty
+    qty = None
+    for k in qty_keys:
+        if k in row and row.get(k) not in (None, ""):
+            qty = _to_dec(row.get(k))
+            break
+    total_net = None
+    for k in total_net_keys:
+        if k in row and row.get(k) not in (None, ""):
+            total_net = _to_dec(row.get(k))
+            break
+    if qty and qty > 0 and total_net is not None:
+        ua_calc = total_net / qty
+        # Uporabi izračunano enotno ceno, če unit_after manjka ali
+        # očitno ne ustreza
+        if (
+            unit_after is None
+            or unit_after == 0
+            or (ua_calc - (unit_after or 0)).copy_abs() > Decimal("0.00005")
+        ):
+            unit_after = ua_calc
 
     if (
         pct is None
@@ -529,13 +563,32 @@ def review_links(
     # 1) obvezno: zagotovimo eff_discount_pct še pred merge
     df = ensure_eff_discount_col(df)
 
+    # Označi GRATIS vrstice (količina > 0 in neto = 0), da se ne izgubijo
+    from wsm.ui.review.helpers import first_existing_series
+
+    if "is_gratis" not in df.columns:
+        df["is_gratis"] = False
+    qty_s = first_existing_series(
+        df, ["Količina", "kolicina_norm", "kolicina"]
+    )
+    total_s = first_existing_series(
+        df, ["Skupna neto", "vrednost", "Neto po rabatu", "total_net"]
+    )
+    if qty_s is not None and total_s is not None:
+        q = qty_s.map(
+            lambda v: Decimal(str(v)) if v not in (None, "") else Decimal("0")
+        )
+        t = total_s.map(
+            lambda v: Decimal(str(v)) if v not in (None, "") else Decimal("0")
+        )
+        df.loc[(q > 0) & (t == 0), "is_gratis"] = True
+
     # 2) po potrebi pripravi 'discount bucket' za stabilno grupiranje
     if GROUP_BY_DISCOUNT:
         df["_discount_bucket"] = df.apply(_discount_bucket, axis=1)
 
     # 3) šele zdaj združi enake postavke (ključ vključuje eff_discount_pct)
     df = _merge_same_items(df)
-    from wsm.ui.review.helpers import first_existing_series
 
     total_s = first_existing_series(
         df, ["total_net", "Neto po rabatu", "vrednost", "Skupna neto"]
