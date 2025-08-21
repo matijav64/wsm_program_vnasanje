@@ -420,6 +420,21 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     existing_numeric = [c for c in num_candidates if c in to_merge.columns]
     group_cols = [c for c in to_merge.columns if c not in existing_numeric]
 
+    # ➊ Vedno poskrbi za osnovne “identitetne” ključe (če so prisotni)
+    base_keys = [
+        "sifra_dobavitelja",
+        "naziv_ckey",
+        "naziv",
+        "enota_norm",
+        "enota",
+        "ean",
+        "sifra_artikla",
+        "wsm_sifra",
+    ]
+    for k in base_keys:
+        if k in to_merge.columns and k not in group_cols:
+            group_cols.append(k)
+
     # POSKRBI, da je rabat vedno del ključa
     if (
         "eff_discount_pct" in to_merge.columns
@@ -444,6 +459,19 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         .agg({c: "sum" for c in existing_numeric})
         .reset_index()
     )
+
+    # ➋ Varovalo: če je pred-merge več različnih artiklov/enot,
+    #    po merge pa samo ena vrstica → raje pusti original (brez merge).
+    try:
+        distinct_keys_before = (
+            to_merge[["sifra_dobavitelja", "naziv_ckey", "enota_norm"]]
+            .drop_duplicates()
+            .shape[0]
+        )
+    except Exception:
+        distinct_keys_before = None
+    if distinct_keys_before and distinct_keys_before > 1 and len(merged) <= 1:
+        return pd.concat([to_merge, gratis], ignore_index=True)
 
     return pd.concat([merged, gratis], ignore_index=True)
 

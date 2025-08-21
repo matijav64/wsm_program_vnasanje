@@ -589,6 +589,7 @@ def review_links(
             df["_discount_bucket"] = df["line_bucket"]
         else:
             df["_discount_bucket"] = df.apply(_discount_bucket, axis=1)
+
         # Sanacija: poskrbi, da je na VSAKI vrstici tuple (pct, unit)
         def _is_valid_bucket(val):
             return (
@@ -605,6 +606,8 @@ def review_links(
             return _discount_bucket(row)
 
         df["_discount_bucket"] = df.apply(_coerce_bucket, axis=1)
+        # nikoli ne dovoli implicitne pretvorbe v float (npr. zaradi NaN)
+        df["_discount_bucket"] = df["_discount_bucket"].astype(object)
 
     if os.getenv("WSM_DEBUG_BUCKET") == "1":
         for i, r in df.iterrows():
