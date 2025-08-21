@@ -5,11 +5,12 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
+from typing import Tuple
+import os
 
 import pandas as pd
-import numpy as np
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import builtins
@@ -19,13 +20,7 @@ from wsm.utils import short_supplier_name, _clean, _build_header_totals
 from wsm.constants import PRICE_DIFF_THRESHOLD
 from wsm.parsing.eslog import get_supplier_info, XML_PARSER
 from wsm.supplier_store import _norm_vat
-from wsm.ui.review.helpers import (
-    ensure_eff_discount_col,
-    first_existing_series,
-    series_to_dec,
-    to_dec,
-    q2,
-)
+from wsm.ui.review.helpers import ensure_eff_discount_col
 from .helpers import (
     _fmt,
     _norm_unit,
@@ -38,6 +33,81 @@ from .summary_utils import vectorized_discount_pct, summary_df_from_records
 
 builtins.tk = tk
 builtins.simpledialog = simpledialog
+
+# Feature flag controlling whether items are grouped by discount/price
+GROUP_BY_DISCOUNT = os.getenv("WSM_GROUP_BY_DISCOUNT", "1") not in {
+    "0",
+    "false",
+    "False",
+}
+
+DEC2 = Decimal("0.01")
+
+
+def _to_dec(v: object) -> Decimal:
+    """Best-effort conversion to :class:`Decimal`."""
+    try:
+        if isinstance(v, Decimal):
+            return v
+        if v is None or v == "":
+            return Decimal("0")
+        return Decimal(str(v))
+    except Exception:  # pragma: no cover - defensive
+        return Decimal("0")
+
+
+def _discount_bucket(row: dict) -> Tuple[Decimal, Decimal]:
+    """Return a tuple identifying discount percent and net price.
+
+    The discount is rounded to two decimals and the net price after discount to
+    four decimals to ensure stable grouping.
+    """
+
+    rab_keys = ("rabata_pct", "eff_discount_pct", "Rabat (%)", "rabat_pct")
+    before_keys = ("cena_pred_rabatom", "net_pred_rab", "unit_net_before")
+    after_keys = (
+        "cena_po_rabatu",
+        "Net. po rabatu",
+        "net_po_rab",
+        "unit_net_after",
+        "unit_price_net",
+    )
+
+    pct = None
+    for k in rab_keys:
+        if k in row and row.get(k) not in (None, ""):
+            pct = _to_dec(row.get(k))
+            break
+
+    unit_before = None
+    for k in before_keys:
+        if k in row and row.get(k) not in (None, ""):
+            unit_before = _to_dec(row.get(k))
+            break
+
+    unit_after = None
+    for k in after_keys:
+        if k in row and row.get(k) not in (None, ""):
+            unit_after = _to_dec(row.get(k))
+            break
+
+    if (
+        pct is None
+        and unit_before
+        and unit_before > 0
+        and unit_after is not None
+    ):
+        pct = (Decimal("1") - (unit_after / unit_before)) * Decimal("100")
+
+    if pct is None:
+        pct = Decimal("0")
+
+    pct = pct.quantize(DEC2, rounding=ROUND_HALF_UP)
+    ua4 = (unit_after if unit_after is not None else Decimal("0")).quantize(
+        Decimal("0.0001"), rounding=ROUND_HALF_UP
+    )
+    return (pct, ua4)
+
 
 # Logger setup
 log = logging.getLogger(__name__)
@@ -251,9 +321,7 @@ def review_links(
         except Exception:
             inv_name = None
 
-    full_supplier_name = (
-        supplier_info.get("ime") or inv_name or supplier_code
-    )
+    full_supplier_name = supplier_info.get("ime") or inv_name or supplier_code
     supplier_name = short_supplier_name(full_supplier_name)
 
     log.info(f"Default name retrieved: {supplier_name}")
@@ -461,16 +529,23 @@ def review_links(
     # 1) obvezno: zagotovimo eff_discount_pct še pred merge
     df = ensure_eff_discount_col(df)
 
-    # 2) šele zdaj združi enake postavke (ključ vključuje eff_discount_pct)
+    # 2) po potrebi pripravi 'discount bucket' za stabilno grupiranje
+    if GROUP_BY_DISCOUNT:
+        df["_discount_bucket"] = df.apply(_discount_bucket, axis=1)
+
+    # 3) šele zdaj združi enake postavke (ključ vključuje eff_discount_pct)
     df = _merge_same_items(df)
     from wsm.ui.review.helpers import first_existing_series
+
     total_s = first_existing_series(
         df, ["total_net", "Neto po rabatu", "vrednost", "Skupna neto"]
     )
     if total_s is None:
         total_s = pd.Series([Decimal("0")] * len(df))
     net_total = (
-        total_s.map(lambda v: Decimal(str(v)) if v not in (None, "") else Decimal("0"))
+        total_s.map(
+            lambda v: Decimal(str(v)) if v not in (None, "") else Decimal("0")
+        )
         .sum()
         .quantize(Decimal("0.01"))
     )
@@ -701,6 +776,18 @@ def review_links(
         )
         tree.item(str(i), tags=("price_warn",) if warn else ())
         df.at[i, "warning"] = tooltip
+        if GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
+            pct, ua = df.at[i, "_discount_bucket"]
+            tag = f"rabat {pct}% @ {ua}"
+            existing = df.at[i, "warning"]
+            if existing is None or pd.isna(existing):
+                existing = ""
+            else:
+                existing = str(existing)
+            df.at[i, "warning"] = (
+                (existing + " · ") if existing else ""
+            ) + tag
+            tree.set(str(i), "warning", df.at[i, "warning"])
         key = (str(row["sifra_dobavitelja"]), row["naziv_ckey"])
         if key not in booked_keys:
             if "multiplier" in row:
@@ -782,11 +869,13 @@ def review_links(
             )
         log.debug(f"Povzetek posodobljen: {len(df_summary)} WSM šifer")
 
-
     def _update_summary():
         import pandas as pd
         from decimal import Decimal
-        from wsm.ui.review.helpers import ensure_eff_discount_col, first_existing_series
+        from wsm.ui.review.helpers import (
+            ensure_eff_discount_col,
+            first_existing_series,
+        )
 
         df = globals().get("_CURRENT_GRID_DF")
         if df is None:
@@ -799,30 +888,47 @@ def review_links(
         ensure_eff_discount_col(df)
 
         # Vzemi potrebne stolpce čim bolj robustno
-        val_s   = first_existing_series(df, ["Neto po rabatu", "vrednost", "Skupna neto", "total_net"])
-        bruto_s = first_existing_series(df, ["Bruto", "vrednost_bruto", "Skupna bruto"])
-        qty_s   = first_existing_series(df, ["Količina", "kolicina_norm"])
-        wsm_s   = first_existing_series(df, ["wsm_sifra", "WSM šifra"])
-        name_s  = df["wsm_naziv"] if "wsm_naziv" in df.columns else pd.Series([""] * len(df), index=df.index, dtype=object)
-        eff_s   = df["eff_discount_pct"]  # točno ta, ki je bil izračunan pred merge
+        val_s = first_existing_series(
+            df, ["Neto po rabatu", "vrednost", "Skupna neto", "total_net"]
+        )
+        bruto_s = first_existing_series(
+            df, ["Bruto", "vrednost_bruto", "Skupna bruto"]
+        )
+        qty_s = first_existing_series(df, ["Količina", "kolicina_norm"])
+        wsm_s = first_existing_series(df, ["wsm_sifra", "WSM šifra"])
+        name_s = (
+            df["wsm_naziv"]
+            if "wsm_naziv" in df.columns
+            else pd.Series([""] * len(df), index=df.index, dtype=object)
+        )
+        eff_s = df[
+            "eff_discount_pct"
+        ]  # točno ta, ki je bil izračunan pred merge
 
         # Če ključni stolpci manjkajo, izpiši prazen povzetek
         if wsm_s is None or val_s is None:
             _render_summary(summary_df_from_records([]))
             return
 
-        work = pd.DataFrame({
-            "wsm_sifra":        wsm_s.astype(str).replace("", "UNKNOWN"),
-            "wsm_naziv":        name_s.astype(str),
-            "eff_discount_pct": eff_s,
-            "znesek":           val_s,
-            "bruto":            (
-                bruto_s
-                if bruto_s is not None
-                else pd.Series([Decimal("0")] * len(df), index=df.index, dtype=object)
-            ),
-            "kolicina":         qty_s if qty_s is not None else Decimal("0"),
-        })
+        work = pd.DataFrame(
+            {
+                "wsm_sifra": wsm_s.astype(str).replace("", "UNKNOWN"),
+                "wsm_naziv": name_s.astype(str),
+                "eff_discount_pct": eff_s,
+                "znesek": val_s,
+                "bruto": (
+                    bruto_s
+                    if bruto_s is not None
+                    else pd.Series(
+                        [Decimal("0")] * len(df), index=df.index, dtype=object
+                    )
+                ),
+                "kolicina": qty_s if qty_s is not None else Decimal("0"),
+            }
+        )
+        group_by_discount = globals().get("GROUP_BY_DISCOUNT", True)
+        if group_by_discount and "_discount_bucket" in df.columns:
+            work["_discount_bucket"] = df["_discount_bucket"]
 
         # Decimal-varno seštevanje
         def dsum(s):
@@ -834,24 +940,32 @@ def review_links(
                     pass
             return tot
 
-        g = work.groupby(
-            ["wsm_sifra", "wsm_naziv", "eff_discount_pct"],
-            dropna=False,
-            as_index=False
-        ).agg({"znesek": dsum, "kolicina": dsum, "bruto": dsum})
+        group_cols = ["wsm_sifra", "wsm_naziv", "eff_discount_pct"]
+        if group_by_discount and "_discount_bucket" in work.columns:
+            group_cols.append("_discount_bucket")
+        g = work.groupby(group_cols, dropna=False, as_index=False).agg(
+            {"znesek": dsum, "kolicina": dsum, "bruto": dsum}
+        )
 
         records = []
         for _, r in g.iterrows():
-            records.append({
-                "WSM šifra":       r["wsm_sifra"],
-                "WSM Naziv":       r["wsm_naziv"],
-                "Količina":        r["kolicina"],
-                "Znesek":          r["bruto"] if bruto_s is not None else r["znesek"],
-                "Rabat (%)":       r["eff_discount_pct"],  # Decimal s 2 decimalkama
-                "Neto po rabatu":  r["znesek"],
-            })
+            records.append(
+                {
+                    "WSM šifra": r["wsm_sifra"],
+                    "WSM Naziv": r["wsm_naziv"],
+                    "Količina": r["kolicina"],
+                    "Znesek": (
+                        r["bruto"] if bruto_s is not None else r["znesek"]
+                    ),
+                    "Rabat (%)": r[
+                        "eff_discount_pct"
+                    ],  # Decimal s 2 decimalkama
+                    "Neto po rabatu": r["znesek"],
+                }
+            )
 
         _render_summary(summary_df_from_records(records))
+
     # Skupni zneski pod povzetkom
     total_frame = tk.Frame(root)
     total_frame.pack(fill="x", pady=5)
@@ -1534,5 +1648,7 @@ def review_links(
         root.destroy()
     except Exception:
         pass
+    if GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
+        df = df.drop(columns=["_discount_bucket"])
 
     return pd.concat([df, df_doc], ignore_index=True)
