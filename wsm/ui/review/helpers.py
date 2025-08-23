@@ -421,19 +421,13 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     _t("start rows=%d numeric=%s", len(df), existing_numeric)
 
     # ➊ Minimalni identitetni ključ + rabatni bucket
-    base_keys = [
-        k
-        for k in ("sifra_dobavitelja","naziv_ckey","enota_norm","wsm_sifra")
-        if k in df.columns
-    ]
-    bucket_keys = [k for k in ("_discount_bucket","line_bucket","eff_discount_pct") if k in df.columns]
+    # fmt: off
+    base_keys = [k for k in ("sifra_dobavitelja", "naziv_ckey", "enota_norm", "wsm_sifra") if k in df.columns]  # noqa: E501
+    bucket_keys = [k for k in ("_discount_bucket", "line_bucket", "eff_discount_pct") if k in df.columns]  # noqa: E501
     # ➌ Končni ključ = identitetni + bucket/rabat (brez “šuma”)
-    noise = {
-        "naziv","enota","warning","status","dobavitelj","wsm_naziv",
-        "cena_bruto","cena_netto","cena_pred_rabatom","rabata_pct",
-        "sifra_artikla","ean","ddv_stopnja","multiplier",
-    }
-    group_cols = [c for c in list(dict.fromkeys(base_keys + bucket_keys + ["is_gratis"])) if c not in noise]
+    noise = {"naziv", "enota", "warning", "status", "dobavitelj", "wsm_naziv", "cena_bruto", "cena_netto", "cena_pred_rabatom", "rabata_pct", "sifra_artikla", "ean", "ddv_stopnja", "multiplier", }  # noqa: E501
+    group_cols = [c for c in list(dict.fromkeys(base_keys + bucket_keys + ["is_gratis"])) if c not in noise]  # noqa: E501
+    # fmt: on
     _t("group_cols(final)=%s", group_cols)
 
     if not group_cols:
@@ -448,7 +442,7 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
 
     # seštej samo numeriko; prikazne stolpce ohrani kot 'first'
     agg_dict = {c: "sum" for c in existing_numeric}
-    for keep in ("naziv","enota","warning"):
+    for keep in ("naziv", "enota", "warning", "rabata_pct"):
         if keep in df.columns and keep not in group_cols:
             agg_dict[keep] = "first"
     if "cena_po_rabatu" in df.columns and "cena_po_rabatu" not in agg_dict:
@@ -462,25 +456,43 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         merged["cena_po_rabatu"] = merged.apply(
             lambda r: (
                 r["_discount_bucket"][1]
-                if isinstance(r["_discount_bucket"], (tuple, list)) and len(r["_discount_bucket"]) == 2
+                if isinstance(r["_discount_bucket"], (tuple, list))
+                and len(r["_discount_bucket"]) == 2
                 else r.get("cena_po_rabatu")
             ),
             axis=1,
         )
 
-    # eksplicitno nastavi is_gratis: plačljive → False, gratis → True (že v ključu)
+    # eksplicitno nastavi is_gratis:
+    # plačljive → False, gratis → True (že v ključu)
     merged["is_gratis"] = merged["is_gratis"].fillna(False).astype(bool)
 
     try:
-        base_cols = [c for c in ("sifra_dobavitelja","naziv_ckey","enota_norm") if c in df.columns]
+        base_cols = [
+            c
+            for c in ("sifra_dobavitelja", "naziv_ckey", "enota_norm")
+            if c in df.columns
+        ]
         base = df[base_cols].drop_duplicates().shape[0] if base_cols else "n/a"
-        buckets = (df["_discount_bucket"].nunique(dropna=False) if "_discount_bucket" in df.columns else "n/a")
-        _t("merged: before=%d, after=%d, distinct base=%s, uniq buckets=%s", len(df), len(merged), base, buckets)
+        buckets = (
+            df["_discount_bucket"].nunique(dropna=False)
+            if "_discount_bucket" in df.columns
+            else "n/a"
+        )
+        _t(
+            "merged: before=%d, after=%d, distinct base=%s, uniq buckets=%s",
+            len(df),
+            len(merged),
+            base,
+            buckets,
+        )
     except Exception:
         pass
 
     # ohrani približen prvotni vrstni red
-    return merged.sort_values("_first_idx", kind="stable").drop(columns="_first_idx")
+    return merged.sort_values("_first_idx", kind="stable").drop(
+        columns="_first_idx"
+    )
 
 
 def _split_totals(
