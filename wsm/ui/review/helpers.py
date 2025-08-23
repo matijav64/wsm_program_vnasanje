@@ -501,6 +501,12 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         to_merge.groupby(group_cols, dropna=False).agg(agg_dict).reset_index()
     )
 
+    # plačljive (ne-gratis) vrstice po merge naj bodo eksplicitno False
+    if "is_gratis" not in merged.columns:
+        merged["is_gratis"] = False
+    else:
+        merged["is_gratis"] = merged["is_gratis"].fillna(False)
+
     # če je na voljo bucket, nastavi/poravna enotno ceno iz njega
     if "_discount_bucket" in merged.columns:
         merged["cena_po_rabatu"] = merged.apply(

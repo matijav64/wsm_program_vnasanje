@@ -155,6 +155,33 @@ def _t(msg, *args):
         log.warning("[TRACE GUI] " + msg, *args)
 
 
+# --- robust Decimal coercion (prevents InvalidOperation on NaN/None/strings)
+def _as_dec(x, default: str = "1") -> Decimal:
+    """
+    Convert value to Decimal safely. Any NaN/None/empty/invalid → Decimal(default).
+    Also normalizes comma decimals.
+    """
+    try:
+        if isinstance(x, Decimal):
+            return x if x.is_finite() else Decimal(default)
+        # pandas/numpy NaN or None
+        try:
+            import pandas as pd  # local import to avoid hard dep at module import
+            if x is None or pd.isna(x):
+                return Decimal(default)
+        except Exception:
+            if x is None:
+                return Decimal(default)
+        s = str(x).strip()
+        if not s:
+            return Decimal(default)
+        s = s.replace(",", ".")
+        d = Decimal(s)
+        return d if d.is_finite() else Decimal(default)
+    except Exception:
+        return Decimal(default)
+
+
 _CURRENT_GRID_DF: pd.DataFrame | None = None
 
 
@@ -568,6 +595,11 @@ def review_links(
                 _apply_multiplier(df, idx, mult)
     df["warning"] = pd.NA
     log.debug("df po normalizaciji: %s", df.head().to_dict())
+    # Ensure 'multiplier' column is always a sane Decimal for later comparisons/UI
+    if "multiplier" not in df.columns:
+        df["multiplier"] = Decimal("1")
+    else:
+        df["multiplier"] = df["multiplier"].map(lambda v: _as_dec(v, "1"))
     # STEP0: surovi podatki
     try:
         cols_dbg = [
