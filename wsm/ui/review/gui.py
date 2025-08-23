@@ -154,6 +154,7 @@ def _t(msg, *args):
     if TRACE:
         log.warning("[TRACE GUI] " + msg, *args)
 
+
 # Lepo formatirano opozorilo za grid
 def _format_opozorilo(row: pd.Series) -> str:
     try:
@@ -163,6 +164,7 @@ def _format_opozorilo(row: pd.Series) -> str:
         if not isinstance(pct, Decimal):
             try:
                 import pandas as pd
+
                 if pd.isna(pct):
                     pct = Decimal("0")
                 else:
@@ -175,7 +177,9 @@ def _format_opozorilo(row: pd.Series) -> str:
             unit = db[1]
         if unit is None:
             unit = row.get("cena_po_rabatu", 0)
-        unit = Decimal(str(unit or "0")).quantize(Decimal("0.0000"), rounding=ROUND_HALF_UP)
+        unit = Decimal(str(unit or "0")).quantize(
+            Decimal("0.0000"), rounding=ROUND_HALF_UP
+        )
         pct = pct.quantize(DEC2, rounding=ROUND_HALF_UP)
         return f"rabat {pct}% @ {unit}"
     except Exception:
@@ -185,7 +189,8 @@ def _format_opozorilo(row: pd.Series) -> str:
 # --- robust Decimal coercion (prevents InvalidOperation on NaN/None/strings)
 def _as_dec(x, default: str = "1") -> Decimal:
     """
-    Convert value to Decimal safely. Any NaN/None/empty/invalid → Decimal(default).
+    Convert value to Decimal safely.
+    Any NaN/None/empty/invalid → Decimal(default).
     Also normalizes comma decimals.
     """
     try:
@@ -193,7 +198,8 @@ def _as_dec(x, default: str = "1") -> Decimal:
             return x if x.is_finite() else Decimal(default)
         # pandas/numpy NaN or None
         try:
-            import pandas as pd  # local import to avoid hard dep at module import
+            import pandas as pd  # local import to avoid hard dep
+
             if x is None or pd.isna(x):
                 return Decimal(default)
         except Exception:
@@ -622,7 +628,7 @@ def review_links(
                 _apply_multiplier(df, idx, mult)
     df["warning"] = pd.NA
     log.debug("df po normalizaciji: %s", df.head().to_dict())
-    # Ensure 'multiplier' column is always a sane Decimal for later comparisons/UI
+    # Ensure 'multiplier' is a sane Decimal for later comparisons/UI
     if "multiplier" not in df.columns:
         df["multiplier"] = Decimal("1")
     else:
@@ -801,6 +807,13 @@ def review_links(
     _t("STEP4 call _merge_same_items on %d rows", len(df))
     # STEP4: združi iste artikle po bucketu/rabatu (GRATIS ostane ločeno)
     df = _merge_same_items(df)
+
+    # GUI še pričakuje 'rabata_pct'; poravnaj ga z 'eff_discount_pct'
+    if "eff_discount_pct" in df.columns:
+        df["rabata_pct"] = df["eff_discount_pct"]
+    elif "rabata_pct" not in df.columns:
+        df["rabata_pct"] = Decimal("0")
+    df["rabata_pct"] = df["rabata_pct"].map(lambda v: Decimal(str(v or "0")))
 
     # Zdaj izračunaj opozorila na KONČNI (po-merge) tabeli
     try:
