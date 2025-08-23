@@ -154,6 +154,33 @@ def _t(msg, *args):
     if TRACE:
         log.warning("[TRACE GUI] " + msg, *args)
 
+# Lepo formatirano opozorilo za grid
+def _format_opozorilo(row: pd.Series) -> str:
+    try:
+        if bool(row.get("is_gratis")):
+            return "GRATIS"
+        pct = row.get("eff_discount_pct", Decimal("0"))
+        if not isinstance(pct, Decimal):
+            try:
+                import pandas as pd
+                if pd.isna(pct):
+                    pct = Decimal("0")
+                else:
+                    pct = Decimal(str(pct))
+            except Exception:
+                pct = Decimal(str(pct or "0"))
+        unit = None
+        db = row.get("_discount_bucket")
+        if isinstance(db, (tuple, list)) and len(db) == 2:
+            unit = db[1]
+        if unit is None:
+            unit = row.get("cena_po_rabatu", 0)
+        unit = Decimal(str(unit or "0")).quantize(Decimal("0.0000"), rounding=ROUND_HALF_UP)
+        pct = pct.quantize(DEC2, rounding=ROUND_HALF_UP)
+        return f"rabat {pct}% @ {unit}"
+    except Exception:
+        return ""
+
 
 # --- robust Decimal coercion (prevents InvalidOperation on NaN/None/strings)
 def _as_dec(x, default: str = "1") -> Decimal:
@@ -629,6 +656,8 @@ def review_links(
     except Exception:
         pass
 
+    # (premaknjeno) opozorila bomo preračunali po združevanju
+
     # 1) obvezno: zagotovimo eff_discount_pct še pred merge
     df = ensure_eff_discount_col(df)
     _t(
@@ -770,7 +799,14 @@ def review_links(
 
     # 3) šele zdaj združi enake postavke (ključ vključuje eff_discount_pct)
     _t("STEP4 call _merge_same_items on %d rows", len(df))
+    # STEP4: združi iste artikle po bucketu/rabatu (GRATIS ostane ločeno)
     df = _merge_same_items(df)
+
+    # Zdaj izračunaj opozorila na KONČNI (po-merge) tabeli
+    try:
+        df["warning"] = df.apply(_format_opozorilo, axis=1)
+    except Exception as exc:
+        log.debug("warning format (post-merge) failed: %s", exc)
     _t(
         "STEP5 after merge: rows=%d head=%s",
         len(df),
