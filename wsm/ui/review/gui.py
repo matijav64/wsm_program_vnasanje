@@ -1058,6 +1058,8 @@ def review_links(
                 multiplier = Decimal(str(multiplier_raw))
             except Exception:
                 multiplier = Decimal("1")
+            if not multiplier.is_finite():
+                multiplier = Decimal("1")
             if multiplier <= 1:
                 current_tags = tree.item(str(i)).get("tags", ())
                 if not isinstance(current_tags, tuple):
