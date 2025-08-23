@@ -390,7 +390,7 @@ def _norm_unit(
 
 
 def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
-    """Merge identical rows while keeping ``is_gratis`` lines separate.
+    """Merge identical rows (tudi GRATIS med sabo), ločeno po rabatnem bucketu.
 
     Parameters
     ----------
@@ -400,21 +400,11 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     Returns
     -------
     pandas.DataFrame
-        New DataFrame where duplicate rows (excluding ``is_gratis``) are
-        combined by summing numeric columns. Rows marked with ``is_gratis`` are
-        left untouched.
+        New DataFrame where duplicate rows are combined by summing numeric
+        columns while keeping GRATIS lines separate from paid ones.
     """
-
     if "is_gratis" not in df.columns:
         return df
-
-    df = df.copy()
-    df["_first_idx"] = df.index  # ohrani globalni vrstni red
-    gratis = df[df["is_gratis"]].copy()
-    to_merge = df[~df["is_gratis"]].copy()
-
-    if to_merge.empty:
-        return df.drop(columns="_first_idx", errors="ignore")
 
     # Numerični stolpci, ki se naj seštevajo (nikoli del ključa)
     num_candidates = [
@@ -427,142 +417,70 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         "total_net",
         "ddv",
     ]
-    existing_numeric = [c for c in num_candidates if c in to_merge.columns]
-    _t("start rows=%d numeric=%s", len(to_merge), existing_numeric)
+    existing_numeric = [c for c in num_candidates if c in df.columns]
+    _t("start rows=%d numeric=%s", len(df), existing_numeric)
 
-    # ➊ Minimalni identitetni ključ (brez količin/cen)
+    # ➊ Minimalni identitetni ključ + rabatni bucket
     base_keys = [
         k
-        for k in (
-            "sifra_dobavitelja",
-            "naziv_ckey",
-            "enota_norm",
-            "wsm_sifra",
-        )
-        if k in to_merge.columns
+        for k in ("sifra_dobavitelja","naziv_ckey","enota_norm","wsm_sifra")
+        if k in df.columns
     ]
-    # ➋ Ločevanje po rabatu/ceni samo prek bucketov/eff. rabata
-    bucket_keys = [
-        k
-        for k in ("_discount_bucket", "line_bucket", "eff_discount_pct")
-        if k in to_merge.columns
-    ]
-    # ➌ Končni ključ = minimalni identitetni + bucket/rabat (brez “šuma”)
+    bucket_keys = [k for k in ("_discount_bucket","line_bucket","eff_discount_pct") if k in df.columns]
+    # ➌ Končni ključ = identitetni + bucket/rabat (brez “šuma”)
     noise = {
-        "naziv",
-        "enota",
-        "warning",
-        "status",
-        "dobavitelj",
-        "wsm_naziv",
-        "cena_bruto",
-        "cena_netto",
-        "cena_pred_rabatom",
-        "rabata_pct",
-        "sifra_artikla",
-        "ean",
-        "ddv_stopnja",
-        "multiplier",
+        "naziv","enota","warning","status","dobavitelj","wsm_naziv",
+        "cena_bruto","cena_netto","cena_pred_rabatom","rabata_pct",
+        "sifra_artikla","ean","ddv_stopnja","multiplier",
     }
-    group_cols = [
-        c
-        for c in list(dict.fromkeys(base_keys + bucket_keys))
-        if c not in noise
-    ]
+    group_cols = [c for c in list(dict.fromkeys(base_keys + bucket_keys + ["is_gratis"])) if c not in noise]
     _t("group_cols(final)=%s", group_cols)
 
     if not group_cols:
-        return df.drop(columns="_first_idx", errors="ignore")
+        return df
 
-    if "_discount_bucket" in to_merge.columns:
-        to_merge["_discount_bucket"] = to_merge["_discount_bucket"].astype(
-            object
-        )
+    df = df.copy()
+    if "_discount_bucket" in df.columns:
+        df["_discount_bucket"] = df["_discount_bucket"].astype(object)
 
-    to_merge[existing_numeric] = to_merge[existing_numeric].fillna(
-        Decimal("0")
-    )
+    df[existing_numeric] = df[existing_numeric].fillna(Decimal("0"))
+    df["_first_idx"] = df.index
 
     # seštej samo numeriko; prikazne stolpce ohrani kot 'first'
     agg_dict = {c: "sum" for c in existing_numeric}
-    for keep in ("naziv", "enota", "warning"):
-        if keep in to_merge.columns and keep not in group_cols:
+    for keep in ("naziv","enota","warning"):
+        if keep in df.columns and keep not in group_cols:
             agg_dict[keep] = "first"
-    # enotno ceno ohrani (ne seštevaj)
-    if (
-        "cena_po_rabatu" in to_merge.columns
-        and "cena_po_rabatu" not in group_cols
-    ):
+    if "cena_po_rabatu" in df.columns and "cena_po_rabatu" not in agg_dict:
         agg_dict["cena_po_rabatu"] = "first"
-    # minimalni indeks za ohranjanje vrstnega reda
     agg_dict["_first_idx"] = "min"
 
-    merged = (
-        to_merge.groupby(group_cols, dropna=False).agg(agg_dict).reset_index()
-    )
+    merged = df.groupby(group_cols, dropna=False).agg(agg_dict).reset_index()
 
-    # plačljive (ne-gratis) vrstice po merge naj bodo eksplicitno False
-    if "is_gratis" not in merged.columns:
-        merged["is_gratis"] = False
-    else:
-        merged["is_gratis"] = merged["is_gratis"].fillna(False)
-
-    # če je na voljo bucket, nastavi/poravna enotno ceno iz njega
+    # poravnaj ceno iz bucket-a, če je na voljo
     if "_discount_bucket" in merged.columns:
         merged["cena_po_rabatu"] = merged.apply(
             lambda r: (
                 r["_discount_bucket"][1]
-                if isinstance(r["_discount_bucket"], (tuple, list))
-                and len(r["_discount_bucket"]) == 2
+                if isinstance(r["_discount_bucket"], (tuple, list)) and len(r["_discount_bucket"]) == 2
                 else r.get("cena_po_rabatu")
             ),
             axis=1,
         )
+
+    # eksplicitno nastavi is_gratis: plačljive → False, gratis → True (že v ključu)
+    merged["is_gratis"] = merged["is_gratis"].fillna(False).astype(bool)
+
     try:
-        base_cols = [
-            c
-            for c in ("sifra_dobavitelja", "naziv_ckey", "enota_norm")
-            if c in to_merge.columns
-        ]
-        base = (
-            to_merge[base_cols].drop_duplicates().shape[0]
-            if base_cols
-            else "n/a"
-        )
-        buckets = (
-            to_merge["_discount_bucket"].nunique(dropna=False)
-            if "_discount_bucket" in to_merge.columns
-            else "n/a"
-        )
-        _t(
-            "merged: before=%d, after=%d, distinct base=%s, uniq buckets=%s",
-            len(to_merge),
-            len(merged),
-            base,
-            buckets,
-        )
+        base_cols = [c for c in ("sifra_dobavitelja","naziv_ckey","enota_norm") if c in df.columns]
+        base = df[base_cols].drop_duplicates().shape[0] if base_cols else "n/a"
+        buckets = (df["_discount_bucket"].nunique(dropna=False) if "_discount_bucket" in df.columns else "n/a")
+        _t("merged: before=%d, after=%d, distinct base=%s, uniq buckets=%s", len(df), len(merged), base, buckets)
     except Exception:
         pass
 
-    # ➋ Varovalo: če je pred-merge več različnih artiklov/enot,
-    #    po merge pa samo ena vrstica → raje pusti original (brez merge).
-    try:
-        distinct_keys_before = (
-            to_merge[["sifra_dobavitelja", "naziv_ckey", "enota_norm"]]
-            .drop_duplicates()
-            .shape[0]
-        )
-    except Exception:
-        distinct_keys_before = None
-    if distinct_keys_before and distinct_keys_before > 1 and len(merged) <= 1:
-        out = pd.concat([to_merge, gratis], ignore_index=True)
-    else:
-        out = pd.concat([merged, gratis], ignore_index=True)
-    if "_first_idx" in out.columns:
-        out = out.sort_values("_first_idx", kind="stable").drop(
-            columns="_first_idx"
-        )
-    return out
+    # ohrani približen prvotni vrstni red
+    return merged.sort_values("_first_idx", kind="stable").drop(columns="_first_idx")
 
 
 def _split_totals(
