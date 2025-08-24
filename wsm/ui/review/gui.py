@@ -808,12 +808,70 @@ def review_links(
     # STEP4: združi iste artikle po bucketu/rabatu (GRATIS ostane ločeno)
     df = _merge_same_items(df)
 
-    # GUI še pričakuje 'rabata_pct'; poravnaj ga z 'eff_discount_pct'
-    if "eff_discount_pct" in df.columns:
-        df["rabata_pct"] = df["eff_discount_pct"]
-    elif "rabata_pct" not in df.columns:
-        df["rabata_pct"] = Decimal("0")
-    df["rabata_pct"] = df["rabata_pct"].map(lambda v: Decimal(str(v or "0")))
+    # --- Po MERGE: zagotovimo vse prikazne stolpce, ki jih GUI bere ---
+    # 1) 'rabata_pct' – če ga ni, vzemi eff_discount_pct (ali 0)
+    if "rabata_pct" not in df.columns:
+        if "eff_discount_pct" in df.columns:
+            df["rabata_pct"] = df["eff_discount_pct"].map(
+                lambda v: Decimal(str(v or "0"))
+            )
+        else:
+            df["rabata_pct"] = Decimal("0")
+    else:
+        # normaliziraj v Decimal
+        df["rabata_pct"] = df["rabata_pct"].map(
+            lambda v: Decimal(str(v or "0"))
+        )
+
+    # 2) 'cena_pred_rabatom' – enotna neto pred rabatom
+    #    če ni na voljo, izračunaj iz 'cena_po_rabatu' in 'eff_discount_pct'
+    if "cena_pred_rabatom" not in df.columns:
+        if "cena_po_rabatu" in df.columns and "eff_discount_pct" in df.columns:
+
+            def _unit_before(row):
+                try:
+                    ua = Decimal(str(row.get("cena_po_rabatu", "0") or "0"))
+                    pct = Decimal(str(row.get("eff_discount_pct", "0") or "0"))
+                    # ua / (1 - pct/100); pri 0% ali 100% fallback na ua
+                    denom = Decimal("1") - (pct / Decimal("100"))
+                    if denom == 0:
+                        return ua.quantize(
+                            Decimal("0.0001"), rounding=ROUND_HALF_UP
+                        )
+                    return (ua / denom).quantize(
+                        Decimal("0.0001"), rounding=ROUND_HALF_UP
+                    )
+                except Exception:
+                    return Decimal("0")
+
+            df["cena_pred_rabatom"] = df.apply(_unit_before, axis=1)
+        else:
+            # brez podatkov o rabatu – prikaži isto kot po rabatu
+            base = (
+                df["cena_po_rabatu"]
+                if "cena_po_rabatu" in df.columns
+                else Decimal("0")
+            )
+            df["cena_pred_rabatom"] = base
+
+    # 3) 'Skupna neto' – če manjka, privzemi 'vrednost'
+    if "Skupna neto" not in df.columns and "vrednost" in df.columns:
+        df["Skupna neto"] = df["vrednost"]
+
+    # -------------------------------------------------------------------
+
+    # Mini airbag: derive 'cena_po_rabatu' from '_discount_bucket' if missing
+    if "cena_po_rabatu" not in df.columns and "_discount_bucket" in df.columns:
+
+        def _from_bucket(row: pd.Series) -> Decimal:
+            b = row.get("_discount_bucket")
+            return (
+                b[1]
+                if isinstance(b, (tuple, list)) and len(b) == 2
+                else Decimal("0")
+            )
+
+        df["cena_po_rabatu"] = df.apply(_from_bucket, axis=1)
 
     # Zdaj izračunaj opozorila na KONČNI (po-merge) tabeli
     try:
@@ -1049,15 +1107,25 @@ def review_links(
             else 80 if c == "enota_norm" else 160 if c == "warning" else 120
         )
         tree.column(c, width=width, anchor="w")
+
+    def _safe_get(row, col, default=""):
+        try:
+            return row.get(col, default)
+        except Exception:
+            return default
+
     for i, row in df.iterrows():
-        vals = [
-            (
-                _fmt(row[c])
-                if isinstance(row[c], (Decimal, float, int))
-                else ("" if pd.isna(row[c]) else str(row[c]))
-            )
-            for c in cols
-        ]
+        vals = []
+        for c in cols:
+            v = _safe_get(row, c)
+            if isinstance(v, (Decimal, float, int)):
+                vals.append(_fmt(v))
+            else:
+                vals.append(
+                    ""
+                    if v is None or (hasattr(pd, "isna") and pd.isna(v))
+                    else str(v)
+                )
         tree.insert("", "end", iid=str(i), values=vals)
         log.info(
             "GRID[%s] cena_po_rabatu=%s",
