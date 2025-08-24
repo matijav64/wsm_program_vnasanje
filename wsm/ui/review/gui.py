@@ -338,9 +338,10 @@ def review_links(
         rows.
     """
 
-    # Poskrbi, da je 'pd' vedno na voljo v tem scope-u (prepreči UnboundLocalError,
-    # če se kasneje kje pojavi lokalni 'import pandas as pd').
+    # Prepreči UnboundLocalError za 'pd' in 'Decimal' zaradi poznejših lokalnih
+    # importov v tej funkciji.
     import pandas as pd
+    from decimal import Decimal, ROUND_HALF_UP
 
     df = df.copy()
     log.debug("Initial invoice DataFrame:\n%s", df.to_string())
@@ -898,7 +899,6 @@ def review_links(
             if c in df.columns
         ]
         if qty_col and tot_col and grp_cols:
-            from decimal import Decimal, ROUND_HALF_UP
 
             def _unit_from_row(r: pd.Series) -> Decimal:
                 b = r.get("_discount_bucket")
