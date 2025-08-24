@@ -160,7 +160,8 @@ def _format_opozorilo(row: pd.Series) -> str:
     try:
         if bool(row.get("is_gratis")):
             return "GRATIS"
-        pct = row.get("eff_discount_pct", Decimal("0"))
+        # uporabi efektivni rabat, če ga imamo; sicer standardnega
+        pct = row.get("rabata_pct", row.get("eff_discount_pct", Decimal("0")))
         if not isinstance(pct, Decimal):
             try:
                 import pandas as pd
@@ -859,6 +860,90 @@ def review_links(
         df["Skupna neto"] = df["vrednost"]
 
     # -------------------------------------------------------------------
+    # Efektivni rabat (upošteva gratis) – samo za prikaz v GUI
+    try:
+        qty_col = next(
+            (
+                c
+                for c in ("Količina", "kolicina_norm", "kolicina")
+                if c in df.columns
+            ),
+            None,
+        )
+        tot_col = next(
+            (
+                c
+                for c in (
+                    "Skupna neto",
+                    "vrednost",
+                    "Neto po rabatu",
+                    "total_net",
+                )
+                if c in df.columns
+            ),
+            None,
+        )
+        grp_cols = [
+            c
+            for c in (
+                "sifra_dobavitelja",
+                "naziv_ckey",
+                "enota_norm",
+                "_discount_bucket",
+            )
+            if c in df.columns
+        ]
+        if qty_col and tot_col and grp_cols:
+            from decimal import Decimal, ROUND_HALF_UP
+
+            def _unit_from_row(r: pd.Series) -> Decimal:
+                b = r.get("_discount_bucket")
+                if isinstance(b, (tuple, list)) and len(b) == 2:
+                    return Decimal(str(b[1] or "0"))
+                return Decimal(str(r.get("cena_po_rabatu", "0") or "0"))
+
+            def _calc_group(g: pd.DataFrame) -> pd.Series:
+                unit = _unit_from_row(g.iloc[0])
+                qty_all = sum(
+                    (Decimal(str(x or "0")) for x in g[qty_col]), Decimal("0")
+                )
+                paid_tot = sum(
+                    (
+                        Decimal(str(x or "0"))
+                        for x in g.loc[~g["is_gratis"], tot_col]
+                    ),
+                    Decimal("0"),
+                )
+                denom = unit * qty_all
+                if denom == 0:
+                    eff = None
+                else:
+                    eff = (Decimal("1") - (paid_tot / denom)) * Decimal("100")
+                    eff = eff.quantize(DEC2, rounding=ROUND_HALF_UP)
+                return pd.Series({"_eff_pct_group": eff})
+
+            eff_df = (
+                df.groupby(grp_cols, dropna=False)
+                .apply(_calc_group)
+                .reset_index()
+            )
+            df = df.merge(eff_df, on=grp_cols, how="left")
+            mask_paid = ~df.get(
+                "is_gratis", pd.Series(False, index=df.index)
+            ).fillna(False)
+            # zapiši efektivni rabat, če ga imamo; sicer pusti obstoječega
+            df.loc[mask_paid & df["_eff_pct_group"].notna(), "rabata_pct"] = (
+                df["_eff_pct_group"]
+            )
+            df.drop(columns=["_eff_pct_group"], inplace=True)
+    except Exception as exc:
+        log.debug("Efektivni rabat (GUI) preskočen: %s", exc)
+
+    # po merge + po effekt. rabatu: skrij "Rabat (%)" pri GRATIS vrsticah
+    if "is_gratis" in df.columns and "rabata_pct" in df.columns:
+        import pandas as pd
+
+        df.loc[df["is_gratis"].fillna(False), "rabata_pct"] = pd.NA
 
     # Mini airbag: derive 'cena_po_rabatu' from '_discount_bucket' if missing
     if "cena_po_rabatu" not in df.columns and "_discount_bucket" in df.columns:
@@ -872,6 +957,15 @@ def review_links(
             )
 
         df["cena_po_rabatu"] = df.apply(_from_bucket, axis=1)
+
+    # Za prikaz dosledno zaokroži rabata_pct na 2 decimalni mesti
+    df["rabata_pct"] = df["rabata_pct"].map(
+        lambda v: (
+            v.quantize(DEC2, rounding=ROUND_HALF_UP)
+            if isinstance(v, Decimal)
+            else v
+        )
+    )
 
     # Zdaj izračunaj opozorila na KONČNI (po-merge) tabeli
     try:
