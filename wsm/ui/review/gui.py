@@ -338,6 +338,10 @@ def review_links(
         rows.
     """
 
+    # Poskrbi, da je 'pd' vedno na voljo v tem scope-u (prepreči UnboundLocalError,
+    # če se kasneje kje pojavi lokalni 'import pandas as pd').
+    import pandas as pd
+
     df = df.copy()
     log.debug("Initial invoice DataFrame:\n%s", df.to_string())
     if {"cena_bruto", "cena_netto"}.issubset(df.columns):
