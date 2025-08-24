@@ -159,8 +159,18 @@ def _t(msg, *args):
 def _format_opozorilo(row: pd.Series) -> str:
     try:
         if bool(row.get("is_gratis")):
-            return "GRATIS"
+            unit = None
+            db = row.get("_discount_bucket")
+            if isinstance(db, (tuple, list)) and len(db) == 2:
+                unit = db[1]
+            if unit is None:
+                unit = row.get("cena_po_rabatu", "0")
+            unit = _as_dec(unit, "0").quantize(
+                Decimal("0.0000"), rounding=ROUND_HALF_UP
+            )
+            return f"rabat 100.00% @ {unit} - GRATIS"
         # uporabi efektivni rabat, če ga imamo; sicer standardnega
+        # (negativno ničlo sproti počistimo)
         pct = row.get("rabata_pct", row.get("eff_discount_pct", Decimal("0")))
         if not isinstance(pct, Decimal):
             try:
@@ -178,17 +188,17 @@ def _format_opozorilo(row: pd.Series) -> str:
             unit = db[1]
         if unit is None:
             unit = row.get("cena_po_rabatu", 0)
-        unit = Decimal(str(unit or "0")).quantize(
+        unit = _as_dec(unit, default="0").quantize(
             Decimal("0.0000"), rounding=ROUND_HALF_UP
         )
-        pct = pct.quantize(DEC2, rounding=ROUND_HALF_UP)
+        pct = _clean_neg_zero(pct).quantize(DEC2, rounding=ROUND_HALF_UP)
         return f"rabat {pct}% @ {unit}"
     except Exception:
         return ""
 
 
 # --- robust Decimal coercion (prevents InvalidOperation on NaN/None/strings)
-def _as_dec(x, default: str = "1") -> Decimal:
+def _as_dec(x, default: str = "0") -> Decimal:
     """
     Convert value to Decimal safely.
     Any NaN/None/empty/invalid → Decimal(default).
@@ -214,6 +224,12 @@ def _as_dec(x, default: str = "1") -> Decimal:
         return d if d.is_finite() else Decimal(default)
     except Exception:
         return Decimal(default)
+
+
+def _clean_neg_zero(val):
+    """Normalize Decimal('-0') or -0.00 to plain zero."""
+    d = _as_dec(val, default="0")
+    return d if d != 0 else _as_dec("0", default="0")
 
 
 _CURRENT_GRID_DF: pd.DataFrame | None = None
@@ -339,7 +355,7 @@ def review_links(
     """
 
     # Prepreči UnboundLocalError za 'pd' in 'Decimal' zaradi poznejših lokalnih
-    # importov v tej funkciji.
+    # importov v tej funkciji ter poskrbi za Decimal util.
     import pandas as pd
     from decimal import Decimal, ROUND_HALF_UP
 
@@ -903,19 +919,16 @@ def review_links(
             def _unit_from_row(r: pd.Series) -> Decimal:
                 b = r.get("_discount_bucket")
                 if isinstance(b, (tuple, list)) and len(b) == 2:
-                    return Decimal(str(b[1] or "0"))
-                return Decimal(str(r.get("cena_po_rabatu", "0") or "0"))
+                    return _as_dec(b[1], "0")
+                return _as_dec(r.get("cena_po_rabatu", "0"), "0")
 
             def _calc_group(g: pd.DataFrame) -> pd.Series:
                 unit = _unit_from_row(g.iloc[0])
-                qty_all = sum(
-                    (Decimal(str(x or "0")) for x in g[qty_col]), Decimal("0")
-                )
+                # Robustno: pretvori vsako vrednost prek _as_dec (odpravi NaN/None/'' itd.)
+                qty_all = sum((_as_dec(x, "0") for x in g[qty_col]), Decimal("0"))
+                paid_mask = ~g.get("is_gratis", pd.Series(False, index=g.index)).fillna(False)
                 paid_tot = sum(
-                    (
-                        Decimal(str(x or "0"))
-                        for x in g.loc[~g["is_gratis"], tot_col]
-                    ),
+                    (_as_dec(x, "0") for x in g.loc[paid_mask, tot_col]),
                     Decimal("0"),
                 )
                 denom = unit * qty_all
@@ -926,11 +939,18 @@ def review_links(
                     eff = eff.quantize(DEC2, rounding=ROUND_HALF_UP)
                 return pd.Series({"_eff_pct_group": eff})
 
-            eff_df = (
-                df.groupby(grp_cols, dropna=False)
-                .apply(_calc_group)
-                .reset_index()
-            )
+            try:
+                eff_df = (
+                    df.groupby(grp_cols, dropna=False)
+                      .apply(_calc_group, include_groups=False)
+                      .reset_index()
+                )
+            except TypeError:
+                eff_df = (
+                    df.groupby(grp_cols, dropna=False)
+                      .apply(_calc_group)
+                      .reset_index()
+                )
             df = df.merge(eff_df, on=grp_cols, how="left")
             mask_paid = ~df.get(
                 "is_gratis", pd.Series(False, index=df.index)
@@ -947,26 +967,26 @@ def review_links(
     if "is_gratis" in df.columns and "rabata_pct" in df.columns:
         df.loc[df["is_gratis"].fillna(False), "rabata_pct"] = Decimal("100")
 
+    # Normaliziraj -0 na 0 v rabata_pct
+    if "rabata_pct" in df.columns:
+        df["rabata_pct"] = df["rabata_pct"].map(_clean_neg_zero)
+
     # Mini airbag: derive 'cena_po_rabatu' from '_discount_bucket' if missing
     if "cena_po_rabatu" not in df.columns and "_discount_bucket" in df.columns:
 
         def _from_bucket(row: pd.Series) -> Decimal:
             b = row.get("_discount_bucket")
-            return (
-                b[1]
-                if isinstance(b, (tuple, list)) and len(b) == 2
-                else Decimal("0")
-            )
+            if isinstance(b, (tuple, list)) and len(b) == 2:
+                return _as_dec(b[1], "0")
+            return _as_dec(row.get("cena_po_rabatu", "0"), "0")
 
         df["cena_po_rabatu"] = df.apply(_from_bucket, axis=1)
 
-    # Za prikaz dosledno zaokroži rabata_pct na 2 decimalni mesti
+    # Za prikaz dosledno zaokroži rabata_pct na 2 decimalni mesti (ustvari stolpec, če manjka)
+    if "rabata_pct" not in df.columns:
+        df["rabata_pct"] = Decimal("0")
     df["rabata_pct"] = df["rabata_pct"].map(
-        lambda v: (
-            v.quantize(DEC2, rounding=ROUND_HALF_UP)
-            if isinstance(v, Decimal)
-            else v
-        )
+        lambda v: _as_dec(v, "0").quantize(DEC2, rounding=ROUND_HALF_UP)
     )
 
     # Zdaj izračunaj opozorila na KONČNI (po-merge) tabeli
@@ -1214,14 +1234,25 @@ def review_links(
         vals = []
         for c in cols:
             v = _safe_get(row, c)
-            if isinstance(v, (Decimal, float, int)):
+            # normaliziraj številke (odpravi -0, NaN) - bool ni število
+            if (
+                isinstance(v, Decimal)
+                or isinstance(v, float)
+                or (isinstance(v, int) and not isinstance(v, bool))
+            ):
+                v = _clean_neg_zero(v)
                 vals.append(_fmt(v))
             else:
-                vals.append(
-                    ""
-                    if v is None or (hasattr(pd, "isna") and pd.isna(v))
-                    else str(v)
-                )
+                if v is None or (hasattr(pd, "isna") and pd.isna(v)):
+                    vals.append("")
+                else:
+                    # če je string '-0' ipd., ga očisti
+                    try:
+                        dv = _as_dec(v, default="0")
+                        dv = _clean_neg_zero(dv)
+                        vals.append(_fmt(dv))
+                    except Exception:
+                        vals.append(str(v))
         tree.insert("", "end", iid=str(i), values=vals)
         log.info(
             "GRID[%s] cena_po_rabatu=%s",
@@ -1323,9 +1354,25 @@ def review_links(
     vsb_summary.pack(side="right", fill="y")
     summary_tree.pack(side="left", fill="both", expand=True)
 
+    numeric_cols = {
+        # internal keys
+        "kolicina_norm",
+        "vrednost",
+        "rabata_pct",
+        "neto_po_rabatu",
+        # display heads (if summary_cols contains headers)
+        "Količina",
+        "Znesek",
+        "Rabat (%)",
+        "Neto po rabatu",
+    }
     for c, h in zip(summary_cols, summary_heads):
         summary_tree.heading(c, text=h)
-        summary_tree.column(c, width=150, anchor="w")
+        summary_tree.column(
+            c,
+            width=120 if c in numeric_cols else 200,
+            anchor="e" if c in numeric_cols else "w",
+        )
 
     def _render_summary(df_summary: pd.DataFrame) -> None:
         for item in summary_tree.get_children():
@@ -1334,10 +1381,10 @@ def review_links(
             vals = [
                 row["WSM šifra"],
                 row["WSM Naziv"],
-                _fmt(row["Količina"]),
-                _fmt(row["Znesek"]),
-                _fmt(row["Rabat (%)"]),
-                _fmt(row["Neto po rabatu"]),
+                _fmt(_clean_neg_zero(row["Količina"])),
+                _fmt(_clean_neg_zero(row["Znesek"])),
+                _fmt(_clean_neg_zero(row["Rabat (%)"])),
+                _fmt(_clean_neg_zero(row["Neto po rabatu"])),
             ]
             summary_tree.insert("", "end", values=vals)
             log.info(
