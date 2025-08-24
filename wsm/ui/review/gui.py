@@ -943,11 +943,9 @@ def review_links(
     except Exception as exc:
         log.debug("Efektivni rabat (GUI) preskočen: %s", exc)
 
-    # po merge + po effekt. rabatu: skrij "Rabat (%)" pri GRATIS vrsticah
+    # po merge + po effekt. rabatu: prikaži 100% za GRATIS vrstice
     if "is_gratis" in df.columns and "rabata_pct" in df.columns:
-        import pandas as pd
-
-        df.loc[df["is_gratis"].fillna(False), "rabata_pct"] = pd.NA
+        df.loc[df["is_gratis"].fillna(False), "rabata_pct"] = Decimal("100")
 
     # Mini airbag: derive 'cena_po_rabatu' from '_discount_bucket' if missing
     if "cena_po_rabatu" not in df.columns and "_discount_bucket" in df.columns:
