@@ -60,7 +60,7 @@ def _discount_bucket(row: dict) -> Tuple[Decimal, Decimal]:
     """
     Vrni podpis rabata: (rabat_%, enotna_neto_po_rabatu).
     – rabat% zaokrožimo na 2 dec,
-    – enotno ceno po rabatu na 4 dec.
+    – enotno ceno po rabatu na 3 dec.
     Robustno poiščemo stolpce tudi z GUI imeni:
     'Net. pred rab.', 'Net. po rab.'.
     Če je mogoče, unit_after preračunamo iz Skupna neto / Količina.
@@ -137,8 +137,9 @@ def _discount_bucket(row: dict) -> Tuple[Decimal, Decimal]:
         pct = Decimal("0")
 
     pct = pct.quantize(DEC2, rounding=ROUND_HALF_UP)
+    # manj občutljivo na drobne razlike: 3 decimalke
     ua4 = (unit_after if unit_after is not None else Decimal("0")).quantize(
-        Decimal("0.0001"), rounding=ROUND_HALF_UP
+        Decimal("0.001"), rounding=ROUND_HALF_UP
     )
     return (pct, ua4)
 
@@ -925,8 +926,12 @@ def review_links(
             def _calc_group(g: pd.DataFrame) -> pd.Series:
                 unit = _unit_from_row(g.iloc[0])
                 # Robustno: pretvori vsako vrednost prek _as_dec (odpravi NaN/None/'' itd.)
-                qty_all = sum((_as_dec(x, "0") for x in g[qty_col]), Decimal("0"))
-                paid_mask = ~g.get("is_gratis", pd.Series(False, index=g.index)).fillna(False)
+                qty_all = sum(
+                    (_as_dec(x, "0") for x in g[qty_col]), Decimal("0")
+                )
+                paid_mask = ~g.get(
+                    "is_gratis", pd.Series(False, index=g.index)
+                ).fillna(False)
                 paid_tot = sum(
                     (_as_dec(x, "0") for x in g.loc[paid_mask, tot_col]),
                     Decimal("0"),
@@ -942,14 +947,14 @@ def review_links(
             try:
                 eff_df = (
                     df.groupby(grp_cols, dropna=False)
-                      .apply(_calc_group, include_groups=False)
-                      .reset_index()
+                    .apply(_calc_group, include_groups=False)
+                    .reset_index()
                 )
             except TypeError:
                 eff_df = (
                     df.groupby(grp_cols, dropna=False)
-                      .apply(_calc_group)
-                      .reset_index()
+                    .apply(_calc_group)
+                    .reset_index()
                 )
             df = df.merge(eff_df, on=grp_cols, how="left")
             mask_paid = ~df.get(
@@ -1246,13 +1251,7 @@ def review_links(
                 if v is None or (hasattr(pd, "isna") and pd.isna(v)):
                     vals.append("")
                 else:
-                    # če je string '-0' ipd., ga očisti
-                    try:
-                        dv = _as_dec(v, default="0")
-                        dv = _clean_neg_zero(dv)
-                        vals.append(_fmt(dv))
-                    except Exception:
-                        vals.append(str(v))
+                    vals.append(str(v))
         tree.insert("", "end", iid=str(i), values=vals)
         log.info(
             "GRID[%s] cena_po_rabatu=%s",
