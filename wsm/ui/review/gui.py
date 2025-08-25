@@ -1041,13 +1041,14 @@ def review_links(
         log.debug("warning format (post-merge) failed: %s", exc)
 
     # Za prikaz poravnaj ceno na "tolerantni" bucket (3 dec) – čisto kozmetika
+    # Samo, če grupiramo po ceni/rabatu; če ne, smo že izračunali tehtano ceno.
     def _price_from_bucket(row):
         b = row.get("_discount_bucket")
         if isinstance(b, (tuple, list)) and len(b) == 2:
             return _as_dec(b[1], "0")
         return _as_dec(row.get("cena_po_rabatu", "0"), "0")
 
-    if "_discount_bucket" in df.columns:
+    if GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
         df["cena_po_rabatu"] = df.apply(_price_from_bucket, axis=1)
     _t(
         "STEP5 after merge: rows=%d head=%s",

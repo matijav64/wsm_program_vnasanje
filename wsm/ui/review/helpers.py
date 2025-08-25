@@ -16,6 +16,11 @@ import numpy as np
 import pandas as pd
 
 DEC2 = Decimal("0.01")
+GROUP_BY_DISCOUNT = os.getenv("WSM_GROUP_BY_DISCOUNT", "1") not in {
+    "0",
+    "false",
+    "False",
+}
 
 
 def q2(x: Decimal) -> Decimal:
@@ -441,8 +446,9 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     existing_numeric = [c for c in num_candidates if c in df.columns]
     _t("start rows=%d numeric=%s", len(df), existing_numeric)
 
-    # Če imamo tolerantni bucket, naredimo price-only ključ (3 dec) – brez %
-    if "_discount_bucket" in df.columns:
+    # Če SMO v načinu “group by discount”, naredimo price-only ključ
+    # (3 dec) – brez %
+    if GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
 
         def _price_from_bucket(val):
             try:
@@ -470,18 +476,19 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         )
         if k in df.columns
     ]
-    # ➋ Ključ cene/rabata za varno združevanje:
+    # ➋ Ključ cene/rabata za varno združevanje
+    # (le če je vključeno grupiranje po ceni):
     #    1) tolerantna cena (0.001) – če obstaja
     #    2) _discount_bucket (pct, cena) – če obstaja
     #    3) line_bucket
     #    4) eff_discount_pct  (zadnji izhod v sili)
-    if "_price_key" in df.columns:
+    if GROUP_BY_DISCOUNT and "_price_key" in df.columns:
         bucket_keys = ["_price_key"]
-    elif "_discount_bucket" in df.columns:
+    elif GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
         bucket_keys = ["_discount_bucket"]
-    elif "line_bucket" in df.columns:
+    elif GROUP_BY_DISCOUNT and "line_bucket" in df.columns:
         bucket_keys = ["line_bucket"]
-    elif "eff_discount_pct" in df.columns:
+    elif GROUP_BY_DISCOUNT and "eff_discount_pct" in df.columns:
         bucket_keys = ["eff_discount_pct"]
     else:
         bucket_keys = []
@@ -530,8 +537,10 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
 
     merged = df.groupby(group_cols, dropna=False).agg(agg_dict).reset_index()
 
-    # poravnaj ceno iz bucket-a, če je na voljo
-    if "_discount_bucket" in merged.columns:
+    # Poravnava cene za prikaz:
+    # - če grupiramo po ceni -> vzemi ceno iz bucket-a
+    # - sicer -> uporabi tehtano povprečje total/qty in popravi tudi bucket
+    if GROUP_BY_DISCOUNT and "_discount_bucket" in merged.columns:
         merged["cena_po_rabatu"] = merged.apply(
             lambda r: (
                 _as_dec(r["_discount_bucket"][1], "0")
@@ -543,6 +552,54 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
             ),
             axis=1,
         )
+    else:
+        qty_col = next(
+            (
+                c
+                for c in ("kolicina_norm", "Količina", "kolicina")
+                if c in merged.columns
+            ),
+            None,
+        )
+        tot_col = next(
+            (
+                c
+                for c in (
+                    "total_net",
+                    "Neto po rabatu",
+                    "vrednost",
+                    "Skupna neto",
+                )
+                if c in merged.columns
+            ),
+            None,
+        )
+        if qty_col and tot_col:
+
+            def _avg_unit(r):
+                q = _as_dec(r.get(qty_col), "0")
+                t = _as_dec(r.get(tot_col), "0")
+                return (t / q) if q else Decimal("0")
+
+            merged["cena_po_rabatu"] = merged.apply(_avg_unit, axis=1).map(
+                lambda d: d.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+            )
+            # nastavi “kozmetični” bucket na (rabat%, enotna cena)
+            if "_discount_bucket" in merged.columns:
+                merged["_discount_bucket"] = merged.apply(
+                    lambda r: (
+                        _as_dec(r.get("rabata_pct", "0"), "0").quantize(
+                            DEC2, rounding=ROUND_HALF_UP
+                        ),
+                        _as_dec(r.get("cena_po_rabatu", "0"), "0").quantize(
+                            Decimal("0.001"), rounding=ROUND_HALF_UP
+                        ),
+                    ),
+                    axis=1,
+                )
+                merged["_discount_bucket"] = merged["_discount_bucket"].astype(
+                    object
+                )
 
     # eksplicitno nastavi is_gratis:
     # plačljive → False, gratis → True (že v ključu)
