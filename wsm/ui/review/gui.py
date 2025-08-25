@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import math
 import re
 from collections.abc import Callable
 from decimal import Decimal, ROUND_HALF_UP
@@ -1043,6 +1042,7 @@ def review_links(
         df["warning"] = df.apply(_format_opozorilo, axis=1)
     except Exception as exc:
         log.debug("warning format (post-merge) failed: %s", exc)
+
     def _price_from_bucket(row):
         b = row.get("_discount_bucket")
         if isinstance(b, (tuple, list)) and len(b) == 2:
@@ -1050,7 +1050,8 @@ def review_links(
         return _as_dec(row.get("cena_po_rabatu", "0"), "0")
 
     if GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
-        # zgolj kozmetika – izračun cene iz bucket-a, dejanska teža je že v 'Skupna neto'
+        # zgolj kozmetika – izračun cene iz bucket-a,
+        # dejanska teža je že v 'Skupna neto'
         df["cena_po_rabatu"] = df.apply(_price_from_bucket, axis=1)
     _t(
         "STEP5 after merge: rows=%d head=%s",
@@ -1074,9 +1075,14 @@ def review_links(
     )
 
     # --- Povzetek po WSM šifri z varnim ključem "OSTALO" ---
-    # Ustvarimo "_summary_key" SAMO za povzetek/log, originalni `wsm_sifra` ostane nespremenjen.
+    # Ustvarimo "_summary_key" SAMO za povzetek/log,
+    # originalni `wsm_sifra` ostane nespremenjen.
     try:
-        sum_col = next(c for c in ("Skupna neto", "total_net", "vrednost") if c in df.columns)
+        sum_col = next(
+            c
+            for c in ("Skupna neto", "total_net", "vrednost")
+            if c in df.columns
+        )
     except StopIteration:
         sum_col = None
 
@@ -1088,12 +1094,22 @@ def review_links(
                 # manjkajoče -> "OSTALO"
                 key_series = key_series.where(~pd.isna(key_series), "OSTALO")
             else:
-                key_series = pd.Series(["OSTALO"] * len(df), index=df.index, dtype=object)
+                key_series = pd.Series(
+                    ["OSTALO"] * len(df), index=df.index, dtype=object
+                )
             # dodatna normalizacija (odstrani NA in literal "<NA>")
             df[summary_key_col] = (
                 key_series.astype(object)
                 .where(~pd.isna(key_series), "OSTALO")
-                .replace({None: "OSTALO", "": "OSTALO", "<NA>": "OSTALO", "nan": "OSTALO", "NaN": "OSTALO"})
+                .replace(
+                    {
+                        None: "OSTALO",
+                        "": "OSTALO",
+                        "<NA>": "OSTALO",
+                        "nan": "OSTALO",
+                        "NaN": "OSTALO",
+                    }
+                )
             )
 
         # povzetek po ključu
@@ -1103,7 +1119,9 @@ def review_links(
             .reset_index()
         )
         # "OSTALO" postavimo na konec (kozmetika)
-        summary["_is_ostalo"] = summary[summary_key_col].astype(str).eq("OSTALO")
+        summary["_is_ostalo"] = (
+            summary[summary_key_col].astype(str).eq("OSTALO")
+        )
         summary = summary.sort_values(
             by=["_is_ostalo", sum_col], ascending=[True, False]
         ).drop(columns="_is_ostalo")
@@ -1313,6 +1331,153 @@ def review_links(
     vsb.pack(side="right", fill="y")
     tree.pack(side="left", fill="both", expand=True)
 
+    # Guard flag: med programskim premikom selekcije začasno
+    # blokiramo auto-edit
+    _suspend_auto_edit = {"val": False}
+
+    def _guard_select(evt: tk.Event):
+        if _suspend_auto_edit["val"]:
+            return "break"
+
+    # Vstavi "guard" bindtag pred obstoječe bindtage, da se izvede prej
+    _GUARD_TAG = "TreeviewGuard"
+    tree.bind_class(_GUARD_TAG, "<<TreeviewSelect>>", _guard_select, add="+")
+    tree.bindtags((_GUARD_TAG, *tree.bindtags()))
+
+    # --------------------------------------------------------
+    # Urejanje: ENTER/F2 za začetek; po potrditvi NI kurzorja
+    # --------------------------------------------------------
+    _active_editor = {"widget": None}
+
+    def _remember_editor(evt: tk.Event):
+        # Vsakokrat ko Entry/Combobox dobi fokus, si ga zapomnimo
+        _active_editor["widget"] = evt.widget
+
+    root.bind_class("Entry", "<FocusIn>", _remember_editor, add="+")
+    root.bind_class("TEntry", "<FocusIn>", _remember_editor, add="+")
+    root.bind_class("Combobox", "<FocusIn>", _remember_editor, add="+")
+    root.bind_class("TCombobox", "<FocusIn>", _remember_editor, add="+")
+
+    def _move_selection(delta: int = 1):
+        cur = tree.focus()
+        if not cur:
+            # če nič ni izbrano, izberi prvo/primerno
+            children = tree.get_children("")
+            if children:
+                tree.focus(children[0])
+                tree.selection_set(children[0])
+            return
+        kids = tree.get_children("")
+        if cur in kids:
+            i = kids.index(cur) + delta
+            i = max(0, min(i, len(kids) - 1))
+            nxt = kids[i]
+            tree.focus(nxt)
+            # začasno blokiraj auto-edit, dokler ne končamo premika
+            _suspend_auto_edit["val"] = True
+            try:
+                tree.selection_set(nxt)
+            finally:
+                root.after_idle(
+                    lambda: _suspend_auto_edit.__setitem__("val", False)
+                )
+            tree.see(nxt)
+
+    def _finish_edit_and_move_next(evt: tk.Event | None = None):
+        """
+        Pokliče se, ko v editorju pritisnemo Enter ali izberemo vrednost.
+        Zaključi urejanje, vrne fokus na tree in premakne na naslednjo vrstico.
+        """
+        # 1) najprej poskusi zaključiti editor (ne uničujemo widgeta –
+        # samo fokus ven
+        try:
+            w = _active_editor.get("widget")
+            if w and w.winfo_exists():
+                # če ima editor lastno commit logiko, jo pusti
+                # (Enter jo je sprožil), nato ga odstrani, da ne
+                # ostane v "typing" načinu.
+                try:
+                    w.event_generate("<<Commit>>")
+                except Exception:
+                    pass
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+            # odmakni fokus s polja na tree (brez kurzorja)
+            tree.focus_set()
+        except Exception:
+            pass
+        finally:
+            _active_editor["widget"] = None
+
+        # 2) premakni se na naslednjo vrstico
+        _move_selection(+1)
+        return "break"
+
+    # Ko potrdiš vnos v Entry/Combobox, zaključi edit in premakni naprej
+    root.bind_class("Entry", "<Return>", _finish_edit_and_move_next, add="+")
+    root.bind_class("TEntry", "<Return>", _finish_edit_and_move_next, add="+")
+    root.bind_class(
+        "Entry", "<Escape>", lambda e: (tree.focus_set(), "break"), add="+"
+    )
+    root.bind_class(
+        "TEntry", "<Escape>", lambda e: (tree.focus_set(), "break"), add="+"
+    )
+    # podpri tudi num. Enter
+    root.bind_class("Entry", "<KP_Enter>", _finish_edit_and_move_next, add="+")
+    root.bind_class(
+        "TEntry", "<KP_Enter>", _finish_edit_and_move_next, add="+"
+    )
+    root.bind_class(
+        "Combobox", "<Return>", _finish_edit_and_move_next, add="+"
+    )
+    root.bind_class(
+        "TCombobox", "<Return>", _finish_edit_and_move_next, add="+"
+    )
+    root.bind_class(
+        "Combobox", "<Escape>", lambda e: (tree.focus_set(), "break"), add="+"
+    )
+    root.bind_class(
+        "TCombobox", "<Escape>", lambda e: (tree.focus_set(), "break"), add="+"
+    )
+    # podpri tudi num. Enter v comboboxu
+    root.bind_class(
+        "Combobox", "<KP_Enter>", _finish_edit_and_move_next, add="+"
+    )
+    root.bind_class(
+        "TCombobox", "<KP_Enter>", _finish_edit_and_move_next, add="+"
+    )
+    root.bind_class(
+        "TCombobox",
+        "<<ComboboxSelected>>",
+        _finish_edit_and_move_next,
+        add="+",
+    )
+
+    # V Treeviewu blokiraj tipkanje (da se edit ne začne sam od sebe).
+    # Urejanje dovoli samo z Enter/KP_Enter/F2.
+    def _tree_keypress_guard(evt: tk.Event):
+        if evt.keysym in ("Return", "KP_Enter", "F2"):
+            return  # to prepustimo obstoječim handlerjem za začetek edita
+        ch = getattr(evt, "char", "") or ""
+        if ch and ch.isprintable():
+            return "break"  # blokiraj direktno tipkanje
+
+    tree.bind("<Key>", _tree_keypress_guard, add="+")
+
+    # (opcijsko) če imaš obstoječi handler, ki na <<TreeviewSelect>>
+    # sam začne edit, ga tukaj preglasimo z varovalko: urejanje naj se
+    # začne le na Enter/F2.
+    def _block_auto_begin_on_select(evt: tk.Event):
+        # Če nismo eksplicitno pritisnili Enter/F2, ne začni edita.
+        # (Guard zgoraj že blokira med programskim premikom)
+        return "break"
+
+    # Če drugje potrebuješ <<TreeviewSelect>>, NE blokiraj ga globalno.
+    # Guard (_suspend_auto_edit) že blokira auto-edit med programskim premikom.
+    # Če imaš lasten handler, ki na select začne edit, ga prestavi na Enter/F2.
+
     for c, h in zip(cols, heads):
         tree.heading(c, text=h)
         width = (
@@ -1521,7 +1686,15 @@ def review_links(
             wsm_s = (
                 wsm_s.astype(object)
                 .where(~pd.isna(wsm_s), "OSTALO")
-                .replace({None: "OSTALO", "": "OSTALO", "<NA>": "OSTALO", "nan": "OSTALO", "NaN": "OSTALO"})
+                .replace(
+                    {
+                        None: "OSTALO",
+                        "": "OSTALO",
+                        "<NA>": "OSTALO",
+                        "nan": "OSTALO",
+                        "NaN": "OSTALO",
+                    }
+                )
             )
         name_s = (
             df["wsm_naziv"]
@@ -1541,9 +1714,17 @@ def review_links(
             {
                 # v povzetku prikažemo "OSTALO" za vse manjkajoče
                 # (ločeno astype(object) -> replace tudi ujame None)
-                "wsm_sifra": wsm_s.astype(object).replace(
-                    {None: "OSTALO", "": "OSTALO", "<NA>": "OSTALO", "nan": "OSTALO", "NaN": "OSTALO"}
-                ).astype(str),
+                "wsm_sifra": wsm_s.astype(object)
+                .replace(
+                    {
+                        None: "OSTALO",
+                        "": "OSTALO",
+                        "<NA>": "OSTALO",
+                        "nan": "OSTALO",
+                        "NaN": "OSTALO",
+                    }
+                )
+                .astype(str),
                 "wsm_naziv": name_s.astype(str),
                 "eff_discount_pct": eff_s,
                 "znesek": val_s,
