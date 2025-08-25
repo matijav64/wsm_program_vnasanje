@@ -1571,7 +1571,7 @@ def review_links(
             {
                 "wsm_sifra": wsm_s.astype(str).replace(
                     {
-                        "": "UNKNOWN",
+                        "": "OSTALO",
                         "<NA>": "OSTALO",
                         "nan": "OSTALO",
                         "NaN": "OSTALO",
