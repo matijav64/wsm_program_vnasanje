@@ -7,7 +7,7 @@ import re
 from collections.abc import Callable
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional
 
 import pandas as pd
 import tkinter as tk
@@ -42,6 +42,18 @@ GROUP_BY_DISCOUNT = os.getenv("WSM_GROUP_BY_DISCOUNT", "1") not in {
 }
 
 DEC2 = Decimal("0.01")
+DEC_PCT_MIN = Decimal("-100")
+DEC_PCT_MAX = Decimal("100")
+
+
+def _safe_pct(v) -> Optional[Decimal]:
+    try:
+        d = _to_dec(v)
+    except Exception:  # pragma: no cover - defensive
+        return None
+    if d < DEC_PCT_MIN or d > DEC_PCT_MAX:
+        return None
+    return d
 
 
 def _to_dec(v: object) -> Decimal:
@@ -65,7 +77,8 @@ def _discount_bucket(row: dict) -> Tuple[Decimal, Decimal]:
     'Net. pred rab.', 'Net. po rab.'.
     Če je mogoče, unit_after preračunamo iz Skupna neto / Količina.
     """
-    rab_keys = ("rabata_pct", "eff_discount_pct", "Rabat (%)", "rabat_pct")
+    # 1) najprej išči izračunan efektivni rabat; šele nato surove vrednosti
+    rab_keys = ("eff_discount_pct", "rabata_pct", "Rabat (%)", "rabat_pct")
     before_keys = (
         "cena_pred_rabatom",
         "net_pred_rab",
@@ -87,9 +100,10 @@ def _discount_bucket(row: dict) -> Tuple[Decimal, Decimal]:
 
     pct = None
     for k in rab_keys:
-        if k in row and row.get(k) not in (None, ""):
-            pct = _to_dec(row.get(k))
-            break
+        if k in row:
+            pct = _safe_pct(row.get(k))
+            if pct is not None:
+                break
 
     unit_before = None
     for k in before_keys:
@@ -125,6 +139,7 @@ def _discount_bucket(row: dict) -> Tuple[Decimal, Decimal]:
         ):
             unit_after = ua_calc
 
+    # če % še vedno nimamo, ga izračunaj iz unit_before/after
     if (
         pct is None
         and unit_before
@@ -138,10 +153,10 @@ def _discount_bucket(row: dict) -> Tuple[Decimal, Decimal]:
 
     pct = pct.quantize(DEC2, rounding=ROUND_HALF_UP)
     # manj občutljivo na drobne razlike: 3 decimalke
-    ua4 = (unit_after if unit_after is not None else Decimal("0")).quantize(
+    ua3 = (unit_after if unit_after is not None else Decimal("0")).quantize(
         Decimal("0.001"), rounding=ROUND_HALF_UP
     )
-    return (pct, ua4)
+    return (pct, ua3)
 
 
 # Logger setup
@@ -727,6 +742,17 @@ def review_links(
         int(df["is_gratis"].sum()) if "is_gratis" in df.columns else "n/a",
     )
 
+    # očisti morebitne nemogoče vrednosti rabata
+    if "rabata_pct" in df.columns:
+
+        def _clip(v):
+            d = _safe_pct(v)
+            if d is None:
+                d = Decimal("0")
+            return d.quantize(DEC2, rounding=ROUND_HALF_UP)
+
+        df["rabata_pct"] = df["rabata_pct"].map(_clip)
+
     # 2) pripravimo 'discount bucket' za stabilno grupiranje
     if GROUP_BY_DISCOUNT:
         if "line_bucket" in df.columns:
@@ -925,7 +951,8 @@ def review_links(
 
             def _calc_group(g: pd.DataFrame) -> pd.Series:
                 unit = _unit_from_row(g.iloc[0])
-                # Robustno: pretvori vsako vrednost prek _as_dec (odpravi NaN/None/'' itd.)
+                # Robustno: pretvori vsako vrednost prek _as_dec
+                # (odpravi NaN/None/'' itd.)
                 qty_all = sum(
                     (_as_dec(x, "0") for x in g[qty_col]), Decimal("0")
                 )
@@ -987,7 +1014,8 @@ def review_links(
 
         df["cena_po_rabatu"] = df.apply(_from_bucket, axis=1)
 
-    # Za prikaz dosledno zaokroži rabata_pct na 2 decimalni mesti (ustvari stolpec, če manjka)
+    # Za prikaz dosledno zaokroži rabata_pct na 2 decimalni mesti
+    # (ustvari stolpec, če manjka)
     if "rabata_pct" not in df.columns:
         df["rabata_pct"] = Decimal("0")
     df["rabata_pct"] = df["rabata_pct"].map(
