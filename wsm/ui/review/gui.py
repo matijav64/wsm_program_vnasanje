@@ -911,10 +911,11 @@ def review_links(
     # -------------------------------------------------------------------
     # Efektivni rabat (upošteva gratis) – samo za prikaz v GUI
     try:
+        # raje normalizirana količina (če obstaja)
         qty_col = next(
             (
                 c
-                for c in ("Količina", "kolicina_norm", "kolicina")
+                for c in ("kolicina_norm", "Količina", "kolicina")
                 if c in df.columns
             ),
             None,
