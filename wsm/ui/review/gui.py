@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import math
 import re
 from collections.abc import Callable
 from decimal import Decimal, ROUND_HALF_UP
@@ -1043,6 +1042,7 @@ def review_links(
         df["warning"] = df.apply(_format_opozorilo, axis=1)
     except Exception as exc:
         log.debug("warning format (post-merge) failed: %s", exc)
+
     def _price_from_bucket(row):
         b = row.get("_discount_bucket")
         if isinstance(b, (tuple, list)) and len(b) == 2:
@@ -1050,7 +1050,8 @@ def review_links(
         return _as_dec(row.get("cena_po_rabatu", "0"), "0")
 
     if GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
-        # zgolj kozmetika – izračun cene iz bucket-a, dejanska teža je že v 'Skupna neto'
+        # zgolj kozmetika – izračun cene iz bucket-a,
+        # dejanska teža je že v 'Skupna neto'
         df["cena_po_rabatu"] = df.apply(_price_from_bucket, axis=1)
     _t(
         "STEP5 after merge: rows=%d head=%s",
@@ -1074,9 +1075,14 @@ def review_links(
     )
 
     # --- Povzetek po WSM šifri z varnim ključem "OSTALO" ---
-    # Ustvarimo "_summary_key" SAMO za povzetek/log, originalni `wsm_sifra` ostane nespremenjen.
+    # Ustvarimo "_summary_key" SAMO za povzetek/log,
+    # originalni `wsm_sifra` ostane nespremenjen.
     try:
-        sum_col = next(c for c in ("Skupna neto", "total_net", "vrednost") if c in df.columns)
+        sum_col = next(
+            c
+            for c in ("Skupna neto", "total_net", "vrednost")
+            if c in df.columns
+        )
     except StopIteration:
         sum_col = None
 
@@ -1088,12 +1094,22 @@ def review_links(
                 # manjkajoče -> "OSTALO"
                 key_series = key_series.where(~pd.isna(key_series), "OSTALO")
             else:
-                key_series = pd.Series(["OSTALO"] * len(df), index=df.index, dtype=object)
+                key_series = pd.Series(
+                    ["OSTALO"] * len(df), index=df.index, dtype=object
+                )
             # dodatna normalizacija (odstrani NA in literal "<NA>")
             df[summary_key_col] = (
                 key_series.astype(object)
                 .where(~pd.isna(key_series), "OSTALO")
-                .replace({None: "OSTALO", "": "OSTALO", "<NA>": "OSTALO", "nan": "OSTALO", "NaN": "OSTALO"})
+                .replace(
+                    {
+                        None: "OSTALO",
+                        "": "OSTALO",
+                        "<NA>": "OSTALO",
+                        "nan": "OSTALO",
+                        "NaN": "OSTALO",
+                    }
+                )
             )
 
         # povzetek po ključu
@@ -1103,7 +1119,9 @@ def review_links(
             .reset_index()
         )
         # "OSTALO" postavimo na konec (kozmetika)
-        summary["_is_ostalo"] = summary[summary_key_col].astype(str).eq("OSTALO")
+        summary["_is_ostalo"] = (
+            summary[summary_key_col].astype(str).eq("OSTALO")
+        )
         summary = summary.sort_values(
             by=["_is_ostalo", sum_col], ascending=[True, False]
         ).drop(columns="_is_ostalo")
@@ -1313,6 +1331,41 @@ def review_links(
     vsb.pack(side="right", fill="y")
     tree.pack(side="left", fill="both", expand=True)
 
+    # ------------------------------
+    # VEDNO ENTER ZA ZAČETEK PISANJA
+    # ------------------------------
+    def _is_entry_like(widget: tk.Widget | None) -> bool:
+        if widget is None:
+            return False
+        try:
+            cls = widget.winfo_class()
+        except Exception:
+            cls = ""
+        return cls in ("Entry", "TEntry", "TCombobox", "Combobox")
+
+    def _block_typing_outside_edit(evt: tk.Event):
+        """
+        Če fokus NI na Entry/Combobox, blokiraj vse 'printable' tipke,
+        razen Enter/KP_Enter/F2, ki jih pustimo skozi (ti običajno
+        sprožijo vstop v urejanje).
+        """
+        try:
+            focused = root.focus_get()
+        except Exception:
+            focused = None
+
+        if _is_entry_like(focused):
+            return
+
+        if evt.keysym in ("Return", "KP_Enter", "F2"):
+            return
+
+        ch = getattr(evt, "char", "") or ""
+        if ch and ch.isprintable():
+            return "break"
+
+    root.bind_all("<Key>", _block_typing_outside_edit, add="+")
+
     for c, h in zip(cols, heads):
         tree.heading(c, text=h)
         width = (
@@ -1521,7 +1574,15 @@ def review_links(
             wsm_s = (
                 wsm_s.astype(object)
                 .where(~pd.isna(wsm_s), "OSTALO")
-                .replace({None: "OSTALO", "": "OSTALO", "<NA>": "OSTALO", "nan": "OSTALO", "NaN": "OSTALO"})
+                .replace(
+                    {
+                        None: "OSTALO",
+                        "": "OSTALO",
+                        "<NA>": "OSTALO",
+                        "nan": "OSTALO",
+                        "NaN": "OSTALO",
+                    }
+                )
             )
         name_s = (
             df["wsm_naziv"]
@@ -1541,9 +1602,17 @@ def review_links(
             {
                 # v povzetku prikažemo "OSTALO" za vse manjkajoče
                 # (ločeno astype(object) -> replace tudi ujame None)
-                "wsm_sifra": wsm_s.astype(object).replace(
-                    {None: "OSTALO", "": "OSTALO", "<NA>": "OSTALO", "nan": "OSTALO", "NaN": "OSTALO"}
-                ).astype(str),
+                "wsm_sifra": wsm_s.astype(object)
+                .replace(
+                    {
+                        None: "OSTALO",
+                        "": "OSTALO",
+                        "<NA>": "OSTALO",
+                        "nan": "OSTALO",
+                        "NaN": "OSTALO",
+                    }
+                )
+                .astype(str),
                 "wsm_naziv": name_s.astype(str),
                 "eff_discount_pct": eff_s,
                 "znesek": val_s,
