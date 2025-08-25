@@ -21,6 +21,14 @@ GROUP_BY_DISCOUNT = os.getenv("WSM_GROUP_BY_DISCOUNT", "1") not in {
     "false",
     "False",
 }
+# Združuj bolj "ohlapno": če je vključen, ignoriraj supplier kodo,
+# ko obstaja WSM šifra (zliva po wsm_sifra + naziv_ckey +
+# enota_norm + is_gratis).
+RELAXED_MERGE = os.getenv("WSM_RELAXED_MERGE", "0") not in {
+    "0",
+    "false",
+    "False",
+}
 
 
 def q2(x: Decimal) -> Decimal:
@@ -463,6 +471,17 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         df["_price_key"] = df["_discount_bucket"].map(_price_from_bucket)
         _t("MERGE price_key sample=%s", df["_price_key"].head(5).tolist())
+    elif (
+        GROUP_BY_DISCOUNT
+        and "cena_po_rabatu" in df.columns
+        and "_price_key" not in df.columns
+    ):
+        df = df.copy()
+        df["_price_key"] = df["cena_po_rabatu"].map(
+            lambda v: _as_dec(v, "0").quantize(
+                Decimal("0.001"), rounding=ROUND_HALF_UP
+            )
+        )
 
     # ➊ Minimalni identitetni ključ
     base_keys = [
@@ -476,6 +495,15 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         )
         if k in df.columns
     ]
+    # Če želimo zlivati po WSM šifri (in ignorirati različne supplier kode in
+    # različne canonical nazive), skrčimo ključ na
+    # wsm_sifra + enota_norm + is_gratis.
+    if RELAXED_MERGE and "wsm_sifra" in base_keys:
+        base_keys = [
+            k
+            for k in base_keys
+            if k not in ("sifra_dobavitelja", "naziv_ckey")
+        ]
     # ➋ Ključ cene/rabata za varno združevanje
     # (le če je vključeno grupiranje po ceni):
     #    1) tolerantna cena (0.001) – če obstaja
@@ -520,6 +548,18 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     df = df.copy()
+    # mehka normalizacija za varnost (ne spremeni količin/€):
+    if "enota_norm" in df.columns:
+        df["enota_norm"] = df["enota_norm"].astype(str).str.strip().str.lower()
+    if "naziv_ckey" in df.columns:
+        df["naziv_ckey"] = (
+            df["naziv_ckey"]
+            .astype(str)
+            .str.strip()
+            .str.replace(r"\s+", " ", regex=True)
+        )
+    if "wsm_sifra" in df.columns:
+        df["wsm_sifra"] = df["wsm_sifra"].astype(str).str.strip()
     if "_discount_bucket" in df.columns:
         df["_discount_bucket"] = df["_discount_bucket"].astype(object)
 
@@ -528,7 +568,7 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
 
     # seštej samo numeriko; prikazne stolpce ohrani kot 'first'
     agg_dict = {c: "sum" for c in existing_numeric}
-    for keep in ("naziv", "enota", "warning", "rabata_pct"):
+    for keep in ("naziv", "naziv_ckey", "enota", "warning", "rabata_pct"):
         if keep in df.columns and keep not in group_cols:
             agg_dict[keep] = "first"
     if "cena_po_rabatu" in df.columns and "cena_po_rabatu" not in agg_dict:
@@ -536,6 +576,24 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     agg_dict["_first_idx"] = "min"
 
     merged = df.groupby(group_cols, dropna=False).agg(agg_dict).reset_index()
+
+    # --- DIAGNOSTIKA: pokaži skupine, ki so ostale podvojene po
+    # osnovnem ključu ---
+    try:
+        # uporabi dejanski base_keys po morebitnem RELAXED_MERGE
+        base_probe = [c for c in base_keys if c in merged.columns]
+        if base_probe:
+            dups = merged.groupby(
+                base_probe, dropna=False, as_index=False
+            ).size()
+            dups = dups[dups["size"] > 1].head(20)  # prvih 20
+            if len(dups):
+                _t(
+                    "PODVOJENE SKUPINE (brez bucketov)=%s",
+                    dups.to_dict("records"),
+                )
+    except Exception as _exc:
+        _t("diag merge duplicates failed: %s", _exc)
 
     # Poravnava cene za prikaz:
     # - če grupiramo po ceni -> vzemi ceno iz bucket-a
