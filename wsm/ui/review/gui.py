@@ -1076,6 +1076,8 @@ def review_links(
     )
 
     # --- Povzetek po WSM šifri z varnim ključem "OSTALO" za manjkajoče ---
+    # _summary_key exists solely for grouping/logging; original `wsm_sifra`
+    # is left untouched so downstream logic remains unaffected.
     try:
         # izberi stolpec za seštevek (katerikoli od spodnjih, prvi ki obstaja)
         sum_col = next(
