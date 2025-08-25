@@ -420,15 +420,63 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     existing_numeric = [c for c in num_candidates if c in df.columns]
     _t("start rows=%d numeric=%s", len(df), existing_numeric)
 
-    # ➊ Minimalni identitetni ključ + rabatni bucket
-    # fmt: off
-    base_keys = [k for k in ("sifra_dobavitelja", "naziv_ckey", "enota_norm", "wsm_sifra") if k in df.columns]  # noqa: E501
-    bucket_keys = [k for k in ("_discount_bucket", "line_bucket", "eff_discount_pct") if k in df.columns]  # noqa: E501
+    # Če imamo tolerantni bucket, naredimo price-only ključ (3 dec) – brez %
+    if "_discount_bucket" in df.columns:
+        def _price_from_bucket(val):
+            try:
+                if isinstance(val, (tuple, list)) and len(val) == 2:
+                    return _as_dec(val[1], "0").quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+            except Exception:
+                pass
+            return None
+        df = df.copy()
+        df["_price_key"] = df["_discount_bucket"].map(_price_from_bucket)
+        _t("MERGE price_key sample=%s", df["_price_key"].head(5).tolist())
+
+    # ➊ Minimalni identitetni ključ
+    base_keys = [
+        k
+        for k in (
+            "sifra_dobavitelja",
+            "naziv_ckey",
+            "enota_norm",
+            "wsm_sifra",
+            "is_gratis",
+        )
+        if k in df.columns
+    ]
+    # ➋ Ključ cene: preferiraj _price_key (tolerantna cena), sicer fallback
+    if "_price_key" in df.columns:
+        bucket_keys = ["_price_key"]
+    elif "line_bucket" in df.columns:
+        bucket_keys = ["line_bucket"]
+    elif "eff_discount_pct" in df.columns:
+        bucket_keys = ["eff_discount_pct"]
+    else:
+        bucket_keys = []
     # ➌ Končni ključ = identitetni + bucket/rabat (brez “šuma”)
-    noise = {"naziv", "enota", "warning", "status", "dobavitelj", "wsm_naziv", "cena_bruto", "cena_netto", "cena_pred_rabatom", "rabata_pct", "sifra_artikla", "ean", "ddv_stopnja", "multiplier", }  # noqa: E501
-    group_cols = [c for c in list(dict.fromkeys(base_keys + bucket_keys + ["is_gratis"])) if c not in noise]  # noqa: E501
-    # fmt: on
-    _t("group_cols(final)=%s", group_cols)
+    noise = {
+        "naziv",
+        "enota",
+        "warning",
+        "status",
+        "dobavitelj",
+        "wsm_naziv",
+        "cena_bruto",
+        "cena_netto",
+        "cena_pred_rabatom",
+        "rabata_pct",
+        "sifra_artikla",
+        "ean",
+        "ddv_stopnja",
+        "multiplier",
+    }
+    group_cols = [
+        c
+        for c in list(dict.fromkeys(base_keys + bucket_keys))
+        if c not in noise
+    ]
+    _t("MERGE group_cols(final)=%s", group_cols)
 
     if not group_cols:
         return df
