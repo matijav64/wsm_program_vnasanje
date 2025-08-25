@@ -1038,14 +1038,11 @@ def review_links(
         lambda v: _as_dec(v, "0").quantize(DEC2, rounding=ROUND_HALF_UP)
     )
 
-    # Zdaj izračunaj opozorila na KONČNI (po-merge) tabeli
+    # -- po merge-u format opozorila (če obstaja)
     try:
         df["warning"] = df.apply(_format_opozorilo, axis=1)
     except Exception as exc:
         log.debug("warning format (post-merge) failed: %s", exc)
-
-    # Za prikaz poravnaj ceno na "tolerantni" bucket (3 dec) – čisto kozmetika
-    # Samo, če grupiramo po ceni/rabatu; če ne, smo že izračunali tehtano ceno.
     def _price_from_bucket(row):
         b = row.get("_discount_bucket")
         if isinstance(b, (tuple, list)) and len(b) == 2:
@@ -1053,6 +1050,7 @@ def review_links(
         return _as_dec(row.get("cena_po_rabatu", "0"), "0")
 
     if GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
+        # zgolj kozmetika – izračun cene iz bucket-a, dejanska teža je že v 'Skupna neto'
         df["cena_po_rabatu"] = df.apply(_price_from_bucket, axis=1)
     _t(
         "STEP5 after merge: rows=%d head=%s",
@@ -1075,65 +1073,45 @@ def review_links(
         .to_dict("records"),
     )
 
-    # --- Povzetek po WSM šifri z varnim ključem "OSTALO" za manjkajoče ---
+    # --- Povzetek po WSM šifri z varnim ključem "OSTALO" ---
+    # Ustvarimo "_summary_key" SAMO za povzetek/log, originalni `wsm_sifra` ostane nespremenjen.
     try:
-        # izberi stolpec za seštevek (katerikoli od spodnjih, prvi ki obstaja)
-        sum_col = next(
-            c
-            for c in ("Skupna neto", "total_net", "vrednost")
-            if c in df.columns
-        )
+        sum_col = next(c for c in ("Skupna neto", "total_net", "vrednost") if c in df.columns)
     except StopIteration:
         sum_col = None
 
     if sum_col:
-        # pripravi ključ za povzetek: če ni wsm_sifra -> 'OSTALO'
-        if "wsm_sifra" in df.columns:
-            summary_key_col = "_summary_key"
-            # ne spreminjamo originalne wsm_sifra kolone,
-            # da ne vplivamo na preostali GUI
-            key_series = df["wsm_sifra"].astype(object)
-            if hasattr(pd, "isna"):
+        summary_key_col = "_summary_key"
+        if summary_key_col not in df.columns:
+            if "wsm_sifra" in df.columns:
+                key_series = df["wsm_sifra"].astype(object)
+                # manjkajoče -> "OSTALO"
                 key_series = key_series.where(~pd.isna(key_series), "OSTALO")
             else:
-                # rezervni mehanizem
-                key_series = key_series.apply(
-                    lambda v: (
-                        "OSTALO"
-                        if (
-                            v is None
-                            or (isinstance(v, float) and math.isnan(v))
-                        )
-                        else v
-                    )
-                )
-            df[summary_key_col] = key_series
-        else:
-            summary_key_col = "_summary_key"
-            df[summary_key_col] = "OSTALO"
+                key_series = pd.Series(["OSTALO"] * len(df), index=df.index, dtype=object)
+            # dodatna normalizacija (odstrani NA in literal "<NA>")
+            df[summary_key_col] = (
+                key_series.astype(object)
+                .where(~pd.isna(key_series), "OSTALO")
+                .replace({None: "OSTALO", "": "OSTALO", "<NA>": "OSTALO", "nan": "OSTALO", "NaN": "OSTALO"})
+            )
 
+        # povzetek po ključu
         summary = (
             df.groupby(summary_key_col, dropna=False)[sum_col]
             .sum()
             .reset_index()
         )
-
-        # poskrbi, da je OSTALO zadnje (kozmetika)
-        summary["_is_ostalo"] = (
-            summary[summary_key_col].astype(str).eq("OSTALO")
-        )
+        # "OSTALO" postavimo na konec (kozmetika)
+        summary["_is_ostalo"] = summary[summary_key_col].astype(str).eq("OSTALO")
         summary = summary.sort_values(
             by=["_is_ostalo", sum_col], ascending=[True, False]
         ).drop(columns="_is_ostalo")
 
-        # logging povzetka (namesto <NA> bo OSTALO)
+        # logiraj povzetek (Decimal-varno)
         for _, r in summary.iterrows():
             label = str(r[summary_key_col])
-            try:
-                val = Decimal(r[sum_col])
-            except Exception:
-                val = r[sum_col]
-            log.info("SUMMARY[%s] cena=%.2f", label, val)
+            log.info("SUMMARY[%s] cena=%s", label, r[sum_col])
 
     total_s = first_existing_series(
         df, ["total_net", "Neto po rabatu", "vrednost", "Skupna neto"]
@@ -1534,9 +1512,17 @@ def review_links(
             df, ["Bruto", "vrednost_bruto", "Skupna bruto"]
         )
         qty_s = first_existing_series(df, ["Količina", "kolicina_norm"])
+        # za prikaz povzetka vedno raje vzemi _summary_key (če obstaja)
         wsm_s = first_existing_series(
             df, ["_summary_key", "wsm_sifra", "WSM šifra"]
         )
+        # normaliziraj ključ na "OSTALO" kjer je prazno/NA
+        if wsm_s is not None:
+            wsm_s = (
+                wsm_s.astype(object)
+                .where(~pd.isna(wsm_s), "OSTALO")
+                .replace({None: "OSTALO", "": "OSTALO", "<NA>": "OSTALO", "nan": "OSTALO", "NaN": "OSTALO"})
+            )
         name_s = (
             df["wsm_naziv"]
             if "wsm_naziv" in df.columns
@@ -1553,7 +1539,11 @@ def review_links(
 
         work = pd.DataFrame(
             {
-                "wsm_sifra": wsm_s.astype(str).replace("", "UNKNOWN"),
+                # v povzetku prikažemo "OSTALO" za vse manjkajoče
+                # (ločeno astype(object) -> replace tudi ujame None)
+                "wsm_sifra": wsm_s.astype(object).replace(
+                    {None: "OSTALO", "": "OSTALO", "<NA>": "OSTALO", "nan": "OSTALO", "NaN": "OSTALO"}
+                ).astype(str),
                 "wsm_naziv": name_s.astype(str),
                 "eff_discount_pct": eff_s,
                 "znesek": val_s,
