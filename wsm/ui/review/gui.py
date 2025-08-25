@@ -95,7 +95,8 @@ def _discount_bucket(row: dict) -> Tuple[Decimal, Decimal]:
         "Net. po rab.",
         "Net. po rab",
     )
-    qty_keys = ("Količina", "kolicina_norm", "kolicina")
+    # pomembno: raje uporabi normalizirano količino, če obstaja
+    qty_keys = ("kolicina_norm", "Količina", "kolicina")
     total_net_keys = ("Skupna neto", "vrednost", "Neto po rabatu", "total_net")
 
     pct = None
@@ -943,19 +944,31 @@ def review_links(
         ]
         if qty_col and tot_col and grp_cols:
 
-            def _unit_from_row(r: pd.Series) -> Decimal:
+            def _unit_from_bucket(r: pd.Series) -> Decimal:
                 b = r.get("_discount_bucket")
                 if isinstance(b, (tuple, list)) and len(b) == 2:
                     return _as_dec(b[1], "0")
                 return _as_dec(r.get("cena_po_rabatu", "0"), "0")
 
+            def _unit_row_effective(r: pd.Series) -> Decimal:
+                # raje izračun iz vsote/količine, če je možen (ujema enote)
+                try:
+                    q = _as_dec(r.get(qty_col, "0"), "0")
+                    t = _as_dec(r.get(tot_col, "0"), "0")
+                    if q and q > 0:
+                        return t / q
+                except Exception:
+                    pass
+                return _unit_from_bucket(r)
+
             def _calc_group(g: pd.DataFrame) -> pd.Series:
-                unit = _unit_from_row(g.iloc[0])
-                # Robustno: pretvori vsako vrednost prek _as_dec
-                # (odpravi NaN/None/'' itd.)
-                qty_all = sum(
-                    (_as_dec(x, "0") for x in g[qty_col]), Decimal("0")
-                )
+                # Vsota imenovalca po vrsticah: sum(unit_i * qty_i)
+                qty_vals = g[qty_col].map(lambda v: _as_dec(v, "0"))
+                denom = Decimal("0")
+                for idx, q in qty_vals.items():
+                    if q and q > 0:
+                        u = _unit_row_effective(g.loc[idx])
+                        denom += u * q
                 paid_mask = ~g.get(
                     "is_gratis", pd.Series(False, index=g.index)
                 ).fillna(False)
@@ -963,7 +976,6 @@ def review_links(
                     (_as_dec(x, "0") for x in g.loc[paid_mask, tot_col]),
                     Decimal("0"),
                 )
-                denom = unit * qty_all
                 if denom == 0:
                     eff = None
                 else:
