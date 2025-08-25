@@ -510,14 +510,18 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     #    2) _discount_bucket (pct, cena) – če obstaja
     #    3) line_bucket
     #    4) eff_discount_pct  (zadnji izhod v sili)
-    if GROUP_BY_DISCOUNT and "_price_key" in df.columns:
+    if GROUP_BY_DISCOUNT and "eff_discount_pct" in df.columns:
+        bucket_keys = ["eff_discount_pct"]
+    elif (
+        GROUP_BY_DISCOUNT
+        and "_price_key" in df.columns
+        and df["_price_key"].notna().all()
+    ):
         bucket_keys = ["_price_key"]
     elif GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
         bucket_keys = ["_discount_bucket"]
     elif GROUP_BY_DISCOUNT and "line_bucket" in df.columns:
         bucket_keys = ["line_bucket"]
-    elif GROUP_BY_DISCOUNT and "eff_discount_pct" in df.columns:
-        bucket_keys = ["eff_discount_pct"]
     else:
         bucket_keys = []
     # ➌ Končni ključ = identitetni + bucket/rabat (brez “šuma”)
@@ -543,6 +547,10 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         if c not in noise
     ]
     _t("MERGE group_cols(final)=%s", group_cols)
+    used_group_price = GROUP_BY_DISCOUNT and any(
+        k in group_cols
+        for k in ("_price_key", "_discount_bucket", "line_bucket")
+    )
 
     if not group_cols:
         return df
@@ -598,18 +606,53 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     # Poravnava cene za prikaz:
     # - če grupiramo po ceni -> vzemi ceno iz bucket-a
     # - sicer -> uporabi tehtano povprečje total/qty in popravi tudi bucket
-    if GROUP_BY_DISCOUNT and "_discount_bucket" in merged.columns:
-        merged["cena_po_rabatu"] = merged.apply(
-            lambda r: (
-                _as_dec(r["_discount_bucket"][1], "0")
-                if (
-                    isinstance(r.get("_discount_bucket"), (tuple, list))
-                    and len(r["_discount_bucket"]) == 2
+    if used_group_price:
+        if "_discount_bucket" in merged.columns:
+            merged["cena_po_rabatu"] = merged.apply(
+                lambda r: (
+                    _as_dec(r["_discount_bucket"][1], "0")
+                    if (
+                        isinstance(r.get("_discount_bucket"), (tuple, list))
+                        and len(r["_discount_bucket"]) == 2
+                    )
+                    else _as_dec(r.get("cena_po_rabatu", "0"), "0")
+                ),
+                axis=1,
+            )
+        elif "line_bucket" in merged.columns:
+            merged["cena_po_rabatu"] = merged.apply(
+                lambda r: (
+                    _as_dec(r["line_bucket"][1], "0")
+                    if (
+                        isinstance(r.get("line_bucket"), (tuple, list))
+                        and len(r["line_bucket"]) == 2
+                    )
+                    else _as_dec(r.get("cena_po_rabatu", "0"), "0")
+                ),
+                axis=1,
+            )
+        elif "_price_key" in merged.columns:
+            merged["cena_po_rabatu"] = merged["_price_key"].map(
+                lambda v: _as_dec(v, "0").quantize(
+                    Decimal("0.001"), rounding=ROUND_HALF_UP
                 )
-                else _as_dec(r.get("cena_po_rabatu", "0"), "0")
-            ),
-            axis=1,
-        )
+            )
+
+        if "_discount_bucket" not in merged.columns:
+            merged["_discount_bucket"] = merged.apply(
+                lambda r: (
+                    _as_dec(r.get("rabata_pct", "0"), "0").quantize(
+                        DEC2, rounding=ROUND_HALF_UP
+                    ),
+                    _as_dec(r.get("cena_po_rabatu", "0"), "0").quantize(
+                        Decimal("0.001"), rounding=ROUND_HALF_UP
+                    ),
+                ),
+                axis=1,
+            )
+            merged["_discount_bucket"] = merged["_discount_bucket"].astype(
+                object
+            )
     else:
         qty_col = next(
             (
@@ -642,22 +685,19 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
             merged["cena_po_rabatu"] = merged.apply(_avg_unit, axis=1).map(
                 lambda d: d.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
             )
-            # nastavi “kozmetični” bucket na (rabat%, enotna cena)
-            if "_discount_bucket" in merged.columns:
-                merged["_discount_bucket"] = merged.apply(
-                    lambda r: (
-                        _as_dec(r.get("rabata_pct", "0"), "0").quantize(
-                            DEC2, rounding=ROUND_HALF_UP
-                        ),
-                        _as_dec(r.get("cena_po_rabatu", "0"), "0").quantize(
-                            Decimal("0.001"), rounding=ROUND_HALF_UP
-                        ),
-                    ),
-                    axis=1,
-                )
-                merged["_discount_bucket"] = merged["_discount_bucket"].astype(
-                    object
-                )
+
+        merged["_discount_bucket"] = merged.apply(
+            lambda r: (
+                _as_dec(r.get("rabata_pct", "0"), "0").quantize(
+                    DEC2, rounding=ROUND_HALF_UP
+                ),
+                _as_dec(r.get("cena_po_rabatu", "0"), "0").quantize(
+                    Decimal("0.001"), rounding=ROUND_HALF_UP
+                ),
+            ),
+            axis=1,
+        )
+        merged["_discount_bucket"] = merged["_discount_bucket"].astype(object)
 
     # eksplicitno nastavi is_gratis:
     # plačljive → False, gratis → True (že v ključu)

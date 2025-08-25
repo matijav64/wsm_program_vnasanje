@@ -138,3 +138,42 @@ def test_merge_same_items_handles_none_in_numeric_columns():
     assert merged["vrednost"] == Decimal("20")
     assert merged["total_net"] == Decimal("20")
     assert merged["ddv"] == Decimal("4.4")
+
+
+def test_merge_same_items_groups_by_discount_not_price():
+    df = pd.DataFrame(
+        [
+            {
+                "sifra_dobavitelja": "123",
+                "naziv_ckey": "paprika",
+                "enota_norm": "kg",
+                "wsm_sifra": "PAP",
+                "is_gratis": False,
+                "kolicina_norm": Decimal("1"),
+                "total_net": Decimal("2.251"),
+                "cena_po_rabatu": Decimal("2.251"),
+                "eff_discount_pct": Decimal("0"),
+                "rabata_pct": Decimal("0"),
+            },
+            {
+                "sifra_dobavitelja": "123",
+                "naziv_ckey": "paprika",
+                "enota_norm": "kg",
+                "wsm_sifra": "PAP",
+                "is_gratis": False,
+                "kolicina_norm": Decimal("1"),
+                "total_net": Decimal("1.950"),
+                "cena_po_rabatu": Decimal("1.950"),
+                "eff_discount_pct": Decimal("0"),
+                "rabata_pct": Decimal("0"),
+            },
+        ]
+    )
+
+    result = _merge_same_items(df)
+
+    assert len(result) == 1
+    merged = result.iloc[0]
+    assert merged["kolicina_norm"] == Decimal("2")
+    assert merged["total_net"] == Decimal("4.201")
+    assert merged["cena_po_rabatu"] == Decimal("2.101")
