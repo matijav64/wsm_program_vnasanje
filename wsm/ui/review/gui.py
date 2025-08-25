@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 from collections.abc import Callable
 from decimal import Decimal, ROUND_HALF_UP
@@ -1074,6 +1075,75 @@ def review_links(
         .to_dict("records"),
     )
 
+    # --- Povzetek po WSM šifri z varnim ključem "OSTALO" za manjkajoče ---
+    try:
+        # izberi stolpec za seštevek (katerikoli od spodnjih, prvi ki obstaja)
+        sum_col = next(
+            c
+            for c in ("Skupna neto", "total_net", "vrednost")
+            if c in df.columns
+        )
+    except StopIteration:
+        sum_col = None
+
+    if sum_col:
+        # pripravi ključ za povzetek: če ni wsm_sifra -> 'OSTALO'
+        if "wsm_sifra" in df.columns:
+            summary_key_col = "_summary_key"
+            # ne spreminjamo originalne wsm_sifra kolone,
+            # da ne vplivamo na preostali GUI
+            key_series = df["wsm_sifra"].astype(object)
+            if hasattr(pd, "isna"):
+                key_series = key_series.where(~pd.isna(key_series), "OSTALO")
+            else:
+                # rezervni mehanizem
+                key_series = key_series.apply(
+                    lambda v: (
+                        "OSTALO"
+                        if (
+                            v is None
+                            or (isinstance(v, float) and math.isnan(v))
+                        )
+                        else v
+                    )
+                )
+            df[summary_key_col] = key_series
+        else:
+            summary_key_col = "_summary_key"
+            df[summary_key_col] = "OSTALO"
+
+        # dodatna normalizacija: poskrbi, da ni nobenih NA
+        # in tudi ne dobesednega "<NA>"
+        df[summary_key_col] = (
+            df[summary_key_col]
+            .astype(object)
+            .where(~pd.isna(df[summary_key_col]), "OSTALO")
+            .replace({"<NA>": "OSTALO"})
+        )
+
+        summary = (
+            df.groupby(summary_key_col, dropna=False)[sum_col]
+            .sum()
+            .reset_index()
+        )
+
+        # poskrbi, da je OSTALO zadnje (kozmetika)
+        summary["_is_ostalo"] = (
+            summary[summary_key_col].astype(str).eq("OSTALO")
+        )
+        summary = summary.sort_values(
+            by=["_is_ostalo", sum_col], ascending=[True, False]
+        ).drop(columns="_is_ostalo")
+
+        # logging povzetka (namesto <NA> bo OSTALO)
+        for _, r in summary.iterrows():
+            label = str(r[summary_key_col])
+            try:
+                val = Decimal(r[sum_col])
+            except Exception:
+                val = r[sum_col]
+            log.info("SUMMARY[%s] cena=%s", label, val)
+
     total_s = first_existing_series(
         df, ["total_net", "Neto po rabatu", "vrednost", "Skupna neto"]
     )
@@ -1473,7 +1543,16 @@ def review_links(
             df, ["Bruto", "vrednost_bruto", "Skupna bruto"]
         )
         qty_s = first_existing_series(df, ["Količina", "kolicina_norm"])
-        wsm_s = first_existing_series(df, ["wsm_sifra", "WSM šifra"])
+        wsm_s = first_existing_series(
+            df, ["_summary_key", "wsm_sifra", "WSM šifra"]
+        )
+        # normaliziraj ključ še tukaj, preden ga pretvorimo v str
+        if wsm_s is not None:
+            wsm_s = (
+                wsm_s.astype(object)
+                .where(~pd.isna(wsm_s), "OSTALO")
+                .replace({"<NA>": "OSTALO"})
+            )
         name_s = (
             df["wsm_naziv"]
             if "wsm_naziv" in df.columns
@@ -1490,7 +1569,14 @@ def review_links(
 
         work = pd.DataFrame(
             {
-                "wsm_sifra": wsm_s.astype(str).replace("", "UNKNOWN"),
+                "wsm_sifra": wsm_s.astype(str).replace(
+                    {
+                        "": "UNKNOWN",
+                        "<NA>": "OSTALO",
+                        "nan": "OSTALO",
+                        "NaN": "OSTALO",
+                    }
+                ),
                 "wsm_naziv": name_s.astype(str),
                 "eff_discount_pct": eff_s,
                 "znesek": val_s,
