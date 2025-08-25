@@ -37,6 +37,27 @@ def series_to_dec(s: pd.Series) -> pd.Series:
     return s.map(to_dec)
 
 
+# --- robust Decimal coercion (similar to GUI helper) ---
+def _as_dec(x, default: str = "0") -> Decimal:
+    """Convert value to Decimal safely.
+
+    Any NaN/None/empty/invalid → Decimal(default).
+    Also normalizes comma decimals.
+    """
+    try:
+        if isinstance(x, Decimal):
+            return x if x.is_finite() else Decimal(default)
+        if pd.isna(x) or x in ("", None):
+            return Decimal(default)
+        s = str(x).strip().replace(",", ".")
+        if not s:
+            return Decimal(default)
+        d = Decimal(s)
+        return d if d.is_finite() else Decimal(default)
+    except Exception:
+        return Decimal(default)
+
+
 log = logging.getLogger(__name__)
 _TRACE = os.getenv("WSM_TRACE", "0") not in {"0", "false", "False"}
 _LOG = logging.getLogger(__name__)
@@ -422,13 +443,17 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
 
     # Če imamo tolerantni bucket, naredimo price-only ključ (3 dec) – brez %
     if "_discount_bucket" in df.columns:
+
         def _price_from_bucket(val):
             try:
                 if isinstance(val, (tuple, list)) and len(val) == 2:
-                    return _as_dec(val[1], "0").quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+                    return _as_dec(val[1], "0").quantize(
+                        Decimal("0.001"), rounding=ROUND_HALF_UP
+                    )
             except Exception:
                 pass
             return None
+
         df = df.copy()
         df["_price_key"] = df["_discount_bucket"].map(_price_from_bucket)
         _t("MERGE price_key sample=%s", df["_price_key"].head(5).tolist())
@@ -445,9 +470,15 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         )
         if k in df.columns
     ]
-    # ➋ Ključ cene: preferiraj _price_key (tolerantna cena), sicer fallback
+    # ➋ Ključ cene/rabata za varno združevanje:
+    #    1) tolerantna cena (0.001) – če obstaja
+    #    2) _discount_bucket (pct, cena) – če obstaja
+    #    3) line_bucket
+    #    4) eff_discount_pct  (zadnji izhod v sili)
     if "_price_key" in df.columns:
         bucket_keys = ["_price_key"]
+    elif "_discount_bucket" in df.columns:
+        bucket_keys = ["_discount_bucket"]
     elif "line_bucket" in df.columns:
         bucket_keys = ["line_bucket"]
     elif "eff_discount_pct" in df.columns:
@@ -503,10 +534,12 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     if "_discount_bucket" in merged.columns:
         merged["cena_po_rabatu"] = merged.apply(
             lambda r: (
-                r["_discount_bucket"][1]
-                if isinstance(r["_discount_bucket"], (tuple, list))
-                and len(r["_discount_bucket"]) == 2
-                else r.get("cena_po_rabatu")
+                _as_dec(r["_discount_bucket"][1], "0")
+                if (
+                    isinstance(r.get("_discount_bucket"), (tuple, list))
+                    and len(r["_discount_bucket"]) == 2
+                )
+                else _as_dec(r.get("cena_po_rabatu", "0"), "0")
             ),
             axis=1,
         )
