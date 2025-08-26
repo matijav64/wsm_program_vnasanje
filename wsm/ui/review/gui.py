@@ -74,7 +74,12 @@ EXCLUDED_CODES = {"UNKNOWN", "OSTALO", "OTHER", "NAN"}
 
 
 def _booked_mask_from(df_or_sr: pd.DataFrame | pd.Series) -> pd.Series:
-    """True, če je vrstica KNJIŽENA (ima smiselno wsm_sifra)."""
+    """True, če je vrstica KNJIŽENA (status == 'POVEZANO')."""
+    if isinstance(df_or_sr, pd.DataFrame) and "status" in df_or_sr.columns:
+        st = (
+            df_or_sr["status"].fillna("").astype(str).str.upper().str.strip()
+        )
+        return st.eq("POVEZANO")
     if isinstance(df_or_sr, pd.Series):
         sr = df_or_sr
     else:
@@ -686,6 +691,24 @@ def review_links(
             "AUTO_APPLY_LINKS=0 → shranjene povezave NE bodo "
             "uveljavljene samodejno."
         )
+
+    # Poskrbi za prisotnost in tipe stolpcev za WSM povezave
+    for c in ("wsm_sifra", "wsm_naziv"):
+        if c not in df.columns:
+            df[c] = pd.Series(pd.NA, index=df.index, dtype="string")
+        else:
+            df[c] = df[c].astype("string")
+
+    if not AUTO_APPLY_LINKS:
+        if "status" not in df.columns:
+            df["status"] = ""
+        mask_not_booked = df["status"].astype(str).str.upper().ne("POVEZANO")
+        df.loc[mask_not_booked, ["wsm_sifra", "wsm_naziv"]] = pd.NA
+
+    if "WSM šifra" in df.columns:
+        df["WSM šifra"] = df["wsm_sifra"].fillna("")
+    if "WSM Naziv" in df.columns:
+        df["WSM Naziv"] = df["wsm_naziv"].fillna("")
 
     df["multiplier"] = Decimal("1")
     log.debug(f"df po inicializaciji: {df.head().to_dict()}")
@@ -1956,35 +1979,41 @@ def review_links(
             _render_summary(summary_df_from_records([]))
             return
 
-        work = pd.DataFrame(
-            {
-                "wsm_sifra": (
-                    wsm_s
-                    if wsm_s is not None
-                    else pd.Series(["OSTALO"] * len(df), index=df.index)
-                ),
-                "wsm_naziv": name_s,
-                "znesek": (
-                    val_s
-                    if val_s is not None
-                    else pd.Series([Decimal("0")] * len(df), index=df.index)
-                ),
-                "kolicina": (
-                    qty_s
-                    if qty_s is not None
-                    else pd.Series([Decimal("0")] * len(df), index=df.index)
-                ),
-                "bruto": (
-                    bruto_s
-                    if bruto_s is not None
-                    else pd.Series([Decimal("0")] * len(df), index=df.index)
-                ),
-                "eff_discount_pct": df["eff_discount_pct"],
-            }
-        )
+        data = {
+            "wsm_sifra": (
+                wsm_s
+                if wsm_s is not None
+                else pd.Series(["OSTALO"] * len(df), index=df.index)
+            ),
+            "wsm_naziv": name_s,
+            "znesek": (
+                val_s
+                if val_s is not None
+                else pd.Series([Decimal("0")] * len(df), index=df.index)
+            ),
+            "kolicina": (
+                qty_s
+                if qty_s is not None
+                else pd.Series([Decimal("0")] * len(df), index=df.index)
+            ),
+            "bruto": (
+                bruto_s
+                if bruto_s is not None
+                else pd.Series([Decimal("0")] * len(df), index=df.index)
+            ),
+            "eff_discount_pct": df["eff_discount_pct"],
+        }
+        if "status" in df.columns:
+            data["status"] = df["status"]
+        work = pd.DataFrame(data)
         # Izračunaj knjiženost enkrat in jo nesi naprej skozi agregacijo
         try:
-            work["_is_booked"] = _booked_mask_from(work)
+            if "status" in work.columns:
+                work["_is_booked"] = (
+                    work["status"].fillna("").astype(str).str.upper().eq("POVEZANO")
+                ).astype(int)
+            else:
+                work["_is_booked"] = _booked_mask_from(work).astype(int)
         except Exception:
             _ws = work["wsm_sifra"].fillna("").astype(str).str.strip()
             work["_is_booked"] = _ws.ne("") & ~_ws.str.upper().isin(
@@ -1998,7 +2027,7 @@ def review_links(
 
         # Po želji pokaži le knjižene postavke (uporabi isto masko)
         if globals().get("ONLY_BOOKED_IN_SUMMARY"):
-            work = work[work["_is_booked"]]
+            work = work[work["_is_booked"] > 0]
             if work.empty:
                 _render_summary(summary_df_from_records([]))
                 return
@@ -2020,7 +2049,7 @@ def review_links(
             work.columns
         ) and "naziv" in df.columns:
             # neknjižene vrstice (brez prave WSM šifre)
-            mask_unbooked = ~work["_is_booked"]
+            mask_unbooked = work["_is_booked"] == 0
             # poravnaj dobaviteljev naziv na indekse 'work'
             src_names = df["naziv"].astype(str).reindex(work.index)
             # pri neknjiženih uporabi dobaviteljev naziv, da ne bo vse 'OSTALO'
@@ -2129,20 +2158,15 @@ def review_links(
                     [df_b, df_summary.loc[~booked_mask]], ignore_index=True
                 )
 
-                if wsm_df is not None and {"wsm_sifra", "wsm_naziv"}.issubset(
-                    wsm_df.columns
-                ):
+                wdf = wsm_df
+                if wdf is not None and {"wsm_sifra", "wsm_naziv"}.issubset(wdf.columns):
                     m = (
-                        wsm_df.assign(
-                            wsm_sifra=wsm_df["wsm_sifra"].astype(str)
-                        )
+                        wdf.assign(wsm_sifra=wdf["wsm_sifra"].astype(str))
                         .dropna(subset=["wsm_naziv"])
                         .drop_duplicates("wsm_sifra")
                         .set_index("wsm_sifra")["wsm_naziv"]
                     )
-                    s_codes = df_summary.loc[booked_mask, "WSM šifra"].astype(
-                        str
-                    )
+                    s_codes = df_summary.loc[booked_mask, "WSM šifra"].astype(str)
                     fill = s_codes.map(m)
                     empty_name = (
                         df_summary.loc[booked_mask, "WSM Naziv"]
@@ -2828,9 +2852,21 @@ def review_links(
             else entry.get().strip()
         )
         idx = int(sel_i)
-        df.at[idx, "wsm_naziv"] = choice
-        df.at[idx, "wsm_sifra"] = n2s.get(choice, pd.NA)
+        code = n2s.get(choice, pd.NA)
+        name = choice
+        df.at[idx, "wsm_sifra"] = pd.NA if pd.isna(code) else str(code)
+        df.at[idx, "wsm_naziv"] = pd.NA if pd.isna(name) else str(name)
         df.at[idx, "status"] = "POVEZANO"
+        if "WSM šifra" in df.columns:
+            df.at[idx, "WSM šifra"] = "" if pd.isna(code) else str(code)
+        if "WSM Naziv" in df.columns:
+            df.at[idx, "WSM Naziv"] = "" if pd.isna(name) else str(name)
+        row_id = str(idx)
+        try:
+            tree.set(row_id, "WSM šifra", "" if pd.isna(code) else str(code))
+            tree.set(row_id, "WSM Naziv", "" if pd.isna(name) else str(name))
+        except Exception:
+            pass
         # vizualni tagi
         try:
             tags = set(tree.item(sel_i, "tags"))
@@ -2888,20 +2924,10 @@ def review_links(
             for c in cols
         ]
         tree.item(sel_i, values=new_vals)
-        # Naj bodo “display” stolpci vedno poravnani z internimi
-        # (pred summary!)
-        try:
-            df.at[idx, "WSM šifra"] = df.at[idx, "wsm_sifra"]
-        except Exception:
-            pass
-        try:
-            if "wsm_naziv" in df.columns:
-                df.at[idx, "WSM Naziv"] = df.at[idx, "wsm_naziv"]
-        except Exception:
-            pass
         try:
             globals()["_CURRENT_GRID_DF"] = df
             _update_summary()
+            _schedule_totals()
         except Exception:
             pass
         log.info(
@@ -2943,6 +2969,15 @@ def review_links(
         df.at[idx, "wsm_naziv"] = pd.NA
         df.at[idx, "wsm_sifra"] = pd.NA
         df.at[idx, "status"] = pd.NA
+        if "WSM šifra" in df.columns:
+            df.at[idx, "WSM šifra"] = ""
+        if "WSM Naziv" in df.columns:
+            df.at[idx, "WSM Naziv"] = ""
+        try:
+            tree.set(sel_i, "WSM šifra", "")
+            tree.set(sel_i, "WSM Naziv", "")
+        except Exception:
+            pass
         new_vals = [
             (
                 _fmt(df.at[idx, c])

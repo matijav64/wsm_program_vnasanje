@@ -27,6 +27,7 @@ def _extract_update_summary():
         "ONLY_BOOKED_IN_SUMMARY": rl.ONLY_BOOKED_IN_SUMMARY,
         "EXCLUDED_CODES": rl.EXCLUDED_CODES,
         "_booked_mask_from": rl._booked_mask_from,
+        "wsm_df": pd.DataFrame(),
     }
     exec(snippet, ns)
     return ns["_update_summary"], ns
