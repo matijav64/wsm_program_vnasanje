@@ -58,6 +58,14 @@ ONLY_BOOKED_IN_SUMMARY = os.getenv("WSM_SUMMARY_ONLY_BOOKED", "0") not in {
     "False",
 }
 
+# Naj se shranjene povezave uporabijo samodejno ob odprtju?
+# (privzeto NE)
+AUTO_APPLY_LINKS = os.getenv("WSM_AUTO_APPLY_LINKS", "0") not in {
+    "0",
+    "false",
+    "False",
+}
+
 DEC2 = Decimal("0.01")
 DEC_PCT_MIN = Decimal("-100")
 DEC_PCT_MAX = Decimal("100")
@@ -368,6 +376,95 @@ def _apply_multiplier(
         update_totals()
 
 
+def _apply_saved_links_into_grid_df(
+    df: pd.DataFrame,
+    links_df: pd.DataFrame,
+    wsm_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Apply saved WSM mappings and adjustments to ``df``.
+
+    Parameters
+    ----------
+    df:
+        DataFrame with invoice lines to modify in-place.
+    links_df:
+        Previously saved mappings containing at least ``sifra_dobavitelja``,
+        ``naziv`` and ``wsm_sifra`` columns. Optional columns ``enota_norm``
+        and ``multiplier`` are used when present.
+    wsm_df:
+        Catalog of WSM articles used to translate ``wsm_sifra`` to names.
+    """
+    if links_df is None or links_df.empty:
+        return df
+
+    links_df = links_df.copy()
+    links_df["sifra_dobavitelja"] = (
+        links_df["sifra_dobavitelja"].fillna("").astype(str)
+    )
+    links_df["naziv_ckey"] = links_df["naziv"].map(_clean)
+
+    map_dict = links_df.set_index(["sifra_dobavitelja", "naziv_ckey"])[
+        "wsm_sifra"
+    ].to_dict()
+
+    unit_dict: dict[tuple, str] = {}
+    if "enota_norm" in links_df.columns:
+        unit_dict = links_df.set_index(["sifra_dobavitelja", "naziv_ckey"])[
+            "enota_norm"
+        ].to_dict()
+
+    mult_dict: dict[tuple, Decimal] = {}
+    if "multiplier" in links_df.columns:
+        mult_dict = (
+            links_df.set_index(["sifra_dobavitelja", "naziv_ckey"])[
+                "multiplier"
+            ]
+            .apply(lambda x: Decimal(str(x)) if pd.notna(x) else Decimal("1"))
+            .to_dict()
+        )
+
+    df["naziv_ckey"] = df["naziv"].map(_clean)
+    df["wsm_sifra"] = df.apply(
+        lambda r: map_dict.get(
+            (r["sifra_dobavitelja"], r["naziv_ckey"]), pd.NA
+        ),
+        axis=1,
+    )
+    if wsm_df is not None and {"wsm_sifra", "wsm_naziv"}.issubset(
+        wsm_df.columns
+    ):
+        df["wsm_naziv"] = df["wsm_sifra"].map(
+            wsm_df.set_index("wsm_sifra")["wsm_naziv"]
+        )
+    df["status"] = (
+        df["wsm_sifra"].notna().map({True: "POVEZANO", False: pd.NA})
+    )
+
+    if unit_dict:
+
+        def _restore_unit(r: pd.Series) -> object:
+            return unit_dict.get(
+                (r["sifra_dobavitelja"], r["naziv_ckey"]), r.get("enota_norm")
+            )
+
+        df["enota_norm"] = df.apply(_restore_unit, axis=1)
+
+    if mult_dict:
+        for idx, row in df.iterrows():
+            key = (row["sifra_dobavitelja"], row["naziv_ckey"])
+            mult = mult_dict.get(key, Decimal("1"))
+            if mult != Decimal("1"):
+                _apply_multiplier(df, idx, mult)
+
+    # Keep display columns aligned when present
+    if "WSM šifra" in df.columns:
+        df["WSM šifra"] = df["wsm_sifra"]
+    if "WSM Naziv" in df.columns:
+        df["WSM Naziv"] = df["wsm_naziv"]
+
+    return df
+
+
 def review_links(
     df: pd.DataFrame,
     wsm_df: pd.DataFrame,
@@ -518,10 +615,10 @@ def review_links(
         manual_old = pd.read_excel(links_file, dtype=str)
         log.info("Processing complete")
         log.info(
-            f"Število prebranih povezav iz {links_file}: {len(manual_old)}"
+            "Število prebranih povezav iz %s: %d", links_file, len(manual_old)
         )
         log.debug(
-            f"Primer povezav iz {links_file}: {manual_old.head().to_dict()}"
+            "Primer povezav iz %s: %s", links_file, manual_old.head().to_dict()
         )
         manual_old["sifra_dobavitelja"] = (
             manual_old["sifra_dobavitelja"].fillna("").astype(str)
@@ -578,46 +675,18 @@ def review_links(
             f"{empty_sifra.sum()} vrstic v df",
         )
 
-    # Create a dictionary for quick lookup
-    old_map_dict = manual_old.set_index(["sifra_dobavitelja", "naziv_ckey"])[
-        "wsm_sifra"
-    ].to_dict()
-    old_unit_dict = {}
-    if "enota_norm" in manual_old.columns:
-        old_unit_dict = manual_old.set_index(
-            ["sifra_dobavitelja", "naziv_ckey"]
-        )["enota_norm"].to_dict()
+    links_df = manual_old
+    df["naziv_ckey"] = df["naziv"].map(_clean)
 
-    old_multiplier_dict = {}
-    if "multiplier" in manual_old.columns:
-        old_multiplier_dict = (
-            manual_old.set_index(["sifra_dobavitelja", "naziv_ckey"])[
-                "multiplier"
-            ]
-            .apply(lambda x: Decimal(str(x)) if pd.notna(x) else Decimal("1"))
-            .to_dict()
+    if AUTO_APPLY_LINKS:
+        df = _apply_saved_links_into_grid_df(df, links_df, wsm_df)
+    else:
+        globals()["_PENDING_LINKS_DF"] = links_df
+        log.info(
+            "AUTO_APPLY_LINKS=0 → shranjene povezave NE bodo "
+            "uveljavljene samodejno."
         )
 
-    df["naziv_ckey"] = df["naziv"].map(_clean)
-    booked_keys = {
-        (str(s), ck)
-        for s, ck, ws in manual_old[
-            ["sifra_dobavitelja", "naziv_ckey", "wsm_sifra"]
-        ].itertuples(index=False)
-        if pd.notna(ws) and str(ws).strip()
-    }
-    df["wsm_sifra"] = df.apply(
-        lambda r: old_map_dict.get(
-            (r["sifra_dobavitelja"], r["naziv_ckey"]), pd.NA
-        ),
-        axis=1,
-    )
-    df["wsm_naziv"] = df["wsm_sifra"].map(
-        wsm_df.set_index("wsm_sifra")["wsm_naziv"]
-    )
-    df["status"] = (
-        df["wsm_sifra"].notna().map({True: "POVEZANO", False: pd.NA})
-    )
     df["multiplier"] = Decimal("1")
     log.debug(f"df po inicializaciji: {df.head().to_dict()}")
 
@@ -667,39 +736,9 @@ def review_links(
             )
         ]
     )
-    if old_unit_dict:
-        log.debug(f"Old unit mapping loaded: {old_unit_dict}")
-
-        def _restore_unit(r):
-            return old_unit_dict.get(
-                (r["sifra_dobavitelja"], r["naziv_ckey"]), r["enota_norm"]
-            )
-
-        before = df["enota_norm"].copy()
-        df["enota_norm"] = df.apply(_restore_unit, axis=1)
-        changed = (before != df["enota_norm"]).sum()
-        log.debug(f"Units restored from old map: {changed} rows updated")
-
-        log.debug(
-            "Units after applying saved mapping: %s",
-            df["enota_norm"].value_counts().to_dict(),
-        )
-
     # Keep ``kolicina_norm`` as ``Decimal`` to avoid losing precision in
     # subsequent calculations and when saving the file. Previously the column
     # was cast to ``float`` which could introduce rounding errors.
-    if old_multiplier_dict:
-        non_default = {
-            k: v for k, v in old_multiplier_dict.items() if v != Decimal("1")
-        }
-        if non_default:
-            log.info("Applying multipliers for %d rows", len(non_default))
-            log.debug("Multiplier mapping: %s", non_default)
-        for idx, row in df.iterrows():
-            key = (row["sifra_dobavitelja"], row["naziv_ckey"])
-            mult = old_multiplier_dict.get(key, Decimal("1"))
-            if mult != Decimal("1"):
-                _apply_multiplier(df, idx, mult)
     df["warning"] = pd.NA
     log.debug("df po normalizaciji: %s", df.head().to_dict())
     # Ensure 'multiplier' is a sane Decimal for later comparisons/UI
@@ -1673,7 +1712,6 @@ def review_links(
         except Exception:
             return default
 
-    booked_keys = locals().get("booked_keys", set())
     for i, row in df.iterrows():
         vals = []
         for c in cols:
@@ -1693,8 +1731,7 @@ def review_links(
                     vals.append(str(v))
         # obstoječa logika za določanje tagov (price_warn/gratis/linked/...)
         row_tags: list[str] = []
-        key = (str(row.get("sifra_dobavitelja")), row.get("naziv_ckey"))
-        if bool(row.get("_never_booked", False)) and key not in booked_keys:
+        if bool(row.get("_never_booked", False)):
             row_tags.append("unbooked")
 
         tree.insert("", "end", iid=str(i), values=vals, tags=tuple(row_tags))
@@ -2019,7 +2056,7 @@ def review_links(
                     "WSM Naziv": (
                         name
                         if is_booked and name
-                        else (code if is_booked else "ostalo")
+                        else ("ostalo" if not is_booked else "")
                     ),
                     "Količina": r["kolicina"],
                     "Znesek": (
@@ -2087,10 +2124,34 @@ def review_links(
                     .sum()
                 )
                 df_b = sums.merge(names, on="WSM šifra", how="left")
-                df_b["WSM Naziv"] = df_b["WSM Naziv"].fillna(df_b["WSM šifra"])
+                df_b["WSM Naziv"] = df_b["WSM Naziv"].fillna("")
                 df_summary = pd.concat(
                     [df_b, df_summary.loc[~booked_mask]], ignore_index=True
                 )
+
+                if wsm_df is not None and {"wsm_sifra", "wsm_naziv"}.issubset(
+                    wsm_df.columns
+                ):
+                    m = (
+                        wsm_df.assign(
+                            wsm_sifra=wsm_df["wsm_sifra"].astype(str)
+                        )
+                        .dropna(subset=["wsm_naziv"])
+                        .drop_duplicates("wsm_sifra")
+                        .set_index("wsm_sifra")["wsm_naziv"]
+                    )
+                    s_codes = df_summary.loc[booked_mask, "WSM šifra"].astype(
+                        str
+                    )
+                    fill = s_codes.map(m)
+                    empty_name = (
+                        df_summary.loc[booked_mask, "WSM Naziv"]
+                        .fillna("")
+                        .eq("")
+                    )
+                    df_summary.loc[booked_mask & empty_name, "WSM Naziv"] = (
+                        fill[empty_name].fillna("")
+                    )
 
         # --- Vse neknjižene normaliziraj v ENO vrstico "ostalo" ---
         if ("WSM šifra" in df_summary.columns) and (
@@ -2383,6 +2444,27 @@ def review_links(
     btn_frame = tk.Frame(entry_frame)
     btn_frame.grid(row=2, column=0, pady=(0, 6), sticky="ew")
 
+    def _apply_saved_links_now():
+        links_df = globals().get("_PENDING_LINKS_DF")
+        if links_df is None or getattr(links_df, "empty", True):
+            messagebox.showinfo(
+                "Povezave", "Ni shranjenih povezav za uveljavitev."
+            )
+            return
+        try:
+            _apply_saved_links_into_grid_df(df, links_df, wsm_df)
+            globals()["_CURRENT_GRID_DF"] = df
+            _update_summary()
+            _schedule_totals()
+            messagebox.showinfo(
+                "Povezave", f"Uveljavljenih povezav: {len(links_df)}"
+            )
+        except Exception as e:
+            log.exception("Ročna uveljavitev povezav ni uspela: %s", e)
+            messagebox.showerror(
+                "Povezave", f"Napaka pri uveljavitvi povezav:\n{e}"
+            )
+
     # --- Unit change widgets ---
     unit_options = ["kos", "kg", "L"]
 
@@ -2450,11 +2532,23 @@ def review_links(
         width=14,
         command=_exit,
     )
+    try:
+        btn_apply_links = ttk.Button(
+            btn_frame,
+            text="Uporabi shranjene povezave",
+            command=_apply_saved_links_now,
+        )
+        btn_apply_links.grid(row=0, column=2, padx=(6, 0))
+    except Exception:
+        pass
     save_btn.grid(row=0, column=0, padx=(6, 0))
     exit_btn.grid(row=0, column=1, padx=(6, 0))
 
     root.bind("<F10>", _finalize_and_save)
     bindings.append((root, "<F10>"))
+
+    root.bind("<Control-l>", lambda _e: _apply_saved_links_now())
+    bindings.append((root, "<Control-l>"))
 
     nazivi = wsm_df["wsm_naziv"].dropna().tolist()
     n2s = dict(zip(wsm_df["wsm_naziv"], wsm_df["wsm_sifra"]))
@@ -2888,7 +2982,7 @@ def review_links(
         text="Pomnoži z količino X",
         command=_apply_multiplier_prompt,
     )
-    multiplier_btn.grid(row=0, column=2, padx=(6, 0))
+    multiplier_btn.grid(row=0, column=3, padx=(6, 0))
 
     def _tree_nav_up(_=None):
         """Select previous row and ensure it is visible."""
@@ -2978,6 +3072,12 @@ def review_links(
     bindings.append((lb, "<Down>"))
     lb.bind("<Up>", _nav_list)
     bindings.append((lb, "<Up>"))
+
+    # poravnaj prikazne stolpce z internimi
+    if "wsm_sifra" in df.columns and "WSM šifra" in df.columns:
+        df["WSM šifra"] = df["wsm_sifra"]
+    if "wsm_naziv" in df.columns and "WSM Naziv" in df.columns:
+        df["WSM Naziv"] = df["wsm_naziv"]
 
     # Prvič osveži
     _update_summary()
