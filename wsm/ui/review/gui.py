@@ -1582,13 +1582,13 @@ def review_links(
                 # Fallback, če je karkoli ušlo (npr. NaN)
                 pct, ua = _discount_bucket(row)
             tag = f"rabat {pct}% @ {ua}"
-            existing = df.at[i, "warning"]
-            if existing is None or pd.isna(existing):
-                existing = ""
+            warn_existing = df.at[i, "warning"]
+            if warn_existing is None or pd.isna(warn_existing):
+                warn_existing = ""
             else:
-                existing = str(existing)
+                warn_existing = str(warn_existing)
             df.at[i, "warning"] = (
-                (existing + " · ") if existing else ""
+                (warn_existing + " · ") if warn_existing else ""
             ) + tag
             tree.set(str(i), "warning", df.at[i, "warning"])
         key = (str(row["sifra_dobavitelja"]), row["naziv_ckey"])
