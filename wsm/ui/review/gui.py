@@ -1109,14 +1109,21 @@ def review_links(
             )
         )
 
-        # Prikaz v gridu
-        df0["WSM šifra"] = df0["_summary_key"]
-        df0["WSM naziv"] = df0.apply(
-            lambda r: (
-                "" if r["_summary_key"] == "OSTALO" else r.get("wsm_naziv", "")
-            ),
-            axis=1,
-        )
+        # Prikaz v gridu je vezan na dejansko knjiženje (_summary_key):
+        #  - če je OSTALO: šifra prazna, naziv "ostalo"
+        #  - sicer: šifra = _summary_key, naziv = wsm_naziv
+        def _disp_sifra(r):
+            k = str(r.get("_summary_key", "") or "")
+            return "" if k == "OSTALO" else k
+
+        def _disp_naziv(r):
+            k = str(r.get("_summary_key", "") or "")
+            if k == "OSTALO":
+                return "ostalo"
+            return str(r.get("wsm_naziv", "") or "")
+
+        df0["WSM šifra"] = df0.apply(_disp_sifra, axis=1)
+        df0["WSM naziv"] = df0.apply(_disp_naziv, axis=1)
 
     # počisti morebitne ostanke iz prejšnje seje
     df.drop(
@@ -1889,7 +1896,17 @@ def review_links(
                 }
             )
 
-        _render_summary(summary_df_from_records(records))
+        df_summary = summary_df_from_records(records)
+        try:
+            if "WSM šifra" in df_summary.columns:
+                mask_ost = df_summary["WSM šifra"].astype(str).eq("OSTALO")
+                df_summary.loc[mask_ost, "WSM šifra"] = ""
+                if "WSM Naziv" in df_summary.columns:
+                    df_summary.loc[mask_ost, "WSM Naziv"] = "ostalo"
+        except Exception:
+            pass
+
+        _render_summary(df_summary)
 
     # Skupni zneski pod povzetkom
     total_frame = tk.Frame(root)
