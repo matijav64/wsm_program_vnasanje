@@ -34,6 +34,13 @@ from .summary_utils import vectorized_discount_pct, summary_df_from_records
 builtins.tk = tk
 builtins.simpledialog = simpledialog
 
+# Feature flag controlling whether editing starts only after pressing Enter
+EDIT_ON_ENTER = os.getenv("WSM_EDIT_ON_ENTER", "1") not in {
+    "0",
+    "false",
+    "False",
+}
+
 # Feature flag controlling whether items are grouped by discount/price
 GROUP_BY_DISCOUNT = os.getenv("WSM_GROUP_BY_DISCOUNT", "1") not in {
     "0",
@@ -44,6 +51,15 @@ GROUP_BY_DISCOUNT = os.getenv("WSM_GROUP_BY_DISCOUNT", "1") not in {
 DEC2 = Decimal("0.01")
 DEC_PCT_MIN = Decimal("-100")
 DEC_PCT_MAX = Decimal("100")
+
+EXCLUDED_CODES = {"UNKNOWN", "OSTALO", "OTHER", "NAN"}
+
+
+def _booked_mask_from(sr: pd.Series) -> pd.Series:
+    """True, če je vrstica KNJIŽENA (ima smiselno wsm_sifra)."""
+    _ws = sr.fillna("").astype(str).str.strip()
+    _wsU = _ws.str.upper()
+    return (_ws != "") & (~_wsU.isin(EXCLUDED_CODES))
 
 
 def _safe_pct(v) -> Optional[Decimal]:
@@ -1374,6 +1390,12 @@ def review_links(
     vsb.pack(side="right", fill="y")
     tree.pack(side="left", fill="both", expand=True)
 
+    if EDIT_ON_ENTER:
+        try:
+            tree.unbind("<Key>")
+        except Exception:
+            pass
+
     # Indikator "nikoli knjiženo" (za rdeče barvanje):
     #  - če obstaja was_ever_booked => True pomeni da JE bilo kdaj knjiženo
     #  - če obstaja le was_ever_linked, ga ne štejemo kot knjiženje
@@ -1901,6 +1923,11 @@ def review_links(
                 "eff_discount_pct": df["eff_discount_pct"],
             }
         )
+        # Pokaži le KNJIŽENO: wsm_sifra napolnjena in ne "UNKNOWN/OSTALO/OTHER"
+        work = work[_booked_mask_from(work["wsm_sifra"])]
+        if work.empty:
+            _render_summary(summary_df_from_records([]))
+            return
         group_by_discount = globals().get("GROUP_BY_DISCOUNT", True)
         if group_by_discount and "_discount_bucket" in df.columns:
             work["_discount_bucket"] = df["_discount_bucket"]
@@ -2070,6 +2097,10 @@ def review_links(
         total_frame, text="", style="Indicator.Red.TLabel"
     )
     indicator_label.pack(side="left", padx=5)
+    status_count_label = ttk.Label(total_frame, text="")
+    status_count_label.pack(side="left", padx=5)
+
+    _last_warn_msg = {"val": None}
 
     def _safe_update_totals():
         if closing or not root.winfo_exists():
@@ -2102,27 +2133,40 @@ def review_links(
             if discount:
                 diff2 = inv_total - (calc_total + abs(discount))
                 if abs(diff2) > tolerance:
-                    messagebox.showwarning(
-                        "Opozorilo",
-                        (
-                            "Razlika med postavkami in računom je "
-                            f"{diff2:+.2f} € in presega "
-                            "dovoljeno zaokroževanje."
-                        ),
-                    )
-            else:
-                messagebox.showwarning(
-                    "Opozorilo",
-                    (
+                    msg = (
                         "Razlika med postavkami in računom je "
-                        f"{diff:+.2f} € in presega "
-                        "dovoljeno zaokroževanje."
-                    ),
+                        f"{diff2:+.2f} € in presega dovoljeno zaokroževanje."
+                    )
+                    if _last_warn_msg["val"] != msg:
+                        _last_warn_msg["val"] = msg
+                        messagebox.showwarning("Opozorilo", msg)
+            else:
+                msg = (
+                    "Razlika med postavkami in računom je "
+                    f"{diff:+.2f} € in presega dovoljeno zaokroževanje."
                 )
+                if _last_warn_msg["val"] != msg:
+                    _last_warn_msg["val"] = msg
+                    messagebox.showwarning("Opozorilo", msg)
+        else:
+            # razlika je OK -> dovoli prihodnja opozorila
+            _last_warn_msg["val"] = None
 
+        net = net_total
+        vat = vat_val
+        gross = calc_total
         try:
             if indicator_label is None or not indicator_label.winfo_exists():
                 return
+            booked_mask = (
+                _booked_mask_from(df["wsm_sifra"])
+                if "wsm_sifra" in df.columns
+                else None
+            )
+            booked = int(booked_mask.sum()) if booked_mask is not None else 0
+            remaining = (
+                len(df) - booked if booked_mask is not None else len(df)
+            )
             indicator_label.config(
                 text="✓" if difference <= tolerance else "✗",
                 style=(
@@ -2131,12 +2175,15 @@ def review_links(
                     else "Indicator.Red.TLabel"
                 ),
             )
+            try:
+                if status_count_label and status_count_label.winfo_exists():
+                    status_count_label.config(
+                        text=f"Knjiženo: {booked}  Ostane: {remaining}"
+                    )
+            except NameError:
+                pass
         except tk.TclError:
             return
-
-        net = net_total
-        vat = vat_val
-        gross = calc_total
         widget = total_frame.children.get("total_net")
         if widget and getattr(widget, "winfo_exists", lambda: True)():
             widget.config(text=f"Neto: {net:,.2f} €")
@@ -2278,9 +2325,9 @@ def review_links(
         if not _dropdown_is_open(lb_widget):
             return
         try:
-            lb_widget.grid_remove()
-        except Exception:  # pragma: no cover - defensive
             lb_widget.pack_forget()
+        except Exception:  # pragma: no cover - defensive
+            lb_widget.grid_remove()
         lb_widget.selection_clear(0, "end")
         entry_widget.focus_set()
 
@@ -2303,7 +2350,27 @@ def review_links(
         entry.delete(0, "end")
         _close_suggestions(entry, lb)
         entry.focus_set()
+        try:
+            _open_suggestions_if_needed()
+        except Exception:
+            pass
         return "break"
+
+    def _open_suggestions_if_needed():
+        """Open the suggestion dropdown if it's not already visible."""
+        txt = entry.get().strip().lower()
+        lb.delete(0, "end")
+        matches = [n for n in nazivi if not txt or txt in n.lower()]
+        if matches:
+            if not _dropdown_is_open(lb):
+                lb.pack(side="top", fill="x")
+            for m in matches:
+                lb.insert("end", m)
+            lb.selection_set(0)
+            lb.activate(0)
+            lb.see(0)
+        else:
+            _close_suggestions(entry, lb)
 
     def _suggest(evt=None):
         if evt and evt.keysym in {
@@ -2325,7 +2392,8 @@ def review_links(
             return
         matches = [n for n in nazivi if txt in n.lower()]
         if matches:
-            lb.grid()
+            if not _dropdown_is_open(lb):
+                lb.pack(side="top", fill="x")
             for m in matches:
                 lb.insert("end", m)
             lb.selection_set(0)
@@ -2353,9 +2421,34 @@ def review_links(
         _accepting_enter = True
         try:
             _confirm()
-            _start_edit()
+            try:
+                globals()["_CURRENT_GRID_DF"] = df
+                _update_summary()
+                _schedule_totals()
+            except Exception:
+                pass
+            # → premik na NASLEDNJO vrstico
+            cur = tree.focus()
+            next_iid = tree.next(cur) or cur
+            tree.selection_set(next_iid)
+            tree.focus(next_iid)
+            tree.see(next_iid)
+            if EDIT_ON_ENTER:
+                tree.focus_set()  # vnos se NE odpre – čaka na Enter
+            else:
+                entry.focus_set()
+                _open_suggestions_if_needed()
         finally:
             _accepting_enter = False
+
+    def _start_editing_from_tree(_evt=None):
+        """Enter na tabeli začne vnos (focus v Entry + predlogi)."""
+        try:
+            entry.focus_set()
+            _open_suggestions_if_needed()
+        except Exception:
+            pass
+        return "break"
 
     def _on_return_accept(evt=None):
         nonlocal _accepting_enter
@@ -2365,7 +2458,9 @@ def review_links(
             _accept_current_suggestion(entry, lb)
             entry.after(0, _confirm_and_move_down)
             return "break"
-        return _confirm(evt)
+        # tudi brez dropdowna potrdi in pojdi na naslednjo vrstico
+        entry.after(0, _confirm_and_move_down)
+        return "break"
 
     def _on_entry_focus_out(evt):
         if entry.focus_get() is lb:
@@ -2487,6 +2582,14 @@ def review_links(
         df.at[idx, "wsm_naziv"] = choice
         df.at[idx, "wsm_sifra"] = n2s.get(choice, pd.NA)
         df.at[idx, "status"] = "POVEZANO"
+        # vizualni tagi
+        try:
+            tags = set(tree.item(sel_i, "tags"))
+            tags.discard("unbooked")
+            tags.add("linked")
+            tree.item(sel_i, tags=tuple(tags))
+        except Exception:
+            pass
         df.at[idx, "dobavitelj"] = supplier_name
         if (
             pd.isna(df.at[idx, "sifra_dobavitelja"])
@@ -2507,16 +2610,24 @@ def review_links(
             prev_price,
             threshold=price_warn_threshold,
         )
-        tree.item(sel_i, tags=("price_warn",) if warn else ())
+        # ohrani obstoječe tage; samo dodaj/odstrani "price_warn"
+        try:
+            tset = set(tree.item(sel_i, "tags"))
+            if warn:
+                tset.add("price_warn")
+            else:
+                tset.discard("price_warn")
+            tree.item(sel_i, tags=tuple(tset))
+        except Exception:
+            pass
 
         df.at[idx, "warning"] = tooltip
 
         _show_tooltip(sel_i, tooltip)
         if "is_gratis" in df.columns and df.at[idx, "is_gratis"]:
-            current_tags = tree.item(sel_i).get("tags", ())
-            if not isinstance(current_tags, tuple):
-                current_tags = (current_tags,) if current_tags else ()
-            tree.item(sel_i, tags=("gratis",) + current_tags)
+            tset = set(tree.item(sel_i).get("tags", ()))
+            tset.add("gratis")
+            tree.item(sel_i, tags=tuple(tset))
             tree.set(sel_i, "warning", "GRATIS")
 
         new_vals = [
@@ -2536,17 +2647,10 @@ def review_links(
             df.at[idx, "wsm_sifra"],
             df.at[idx, "sifra_dobavitelja"],
         )
-        _update_summary()  # Update summary after confirming
-        _schedule_totals()  # Update totals after confirming
         entry.delete(0, "end")
         _close_suggestions(entry, lb)
         lb.selection_clear(0, "end")
         tree.focus_set()
-        next_i = tree.next(sel_i)
-        if next_i:
-            tree.selection_set(next_i)
-            tree.focus(next_i)
-            tree.see(next_i)
         return "break"
 
     def _apply_multiplier_prompt(_=None):
@@ -2585,17 +2689,34 @@ def review_links(
             for c in cols
         ]
         tree.item(sel_i, values=new_vals)
+        # vizualni tagi
+        try:
+            tags = set(tree.item(sel_i, "tags"))
+            tags.discard("linked")
+            tags.discard("price_warn")  # remove warning tag when unbooking
+            tags.add("unbooked")
+            tree.item(sel_i, tags=tuple(tags))
+        except Exception:
+            pass
+        # počisti opozorilo/tooltip
+        if "warning" in df.columns:
+            df.at[idx, "warning"] = ""
+        _hide_tooltip()
         log.debug(
             f"Povezava odstranjena: idx={idx}, wsm_naziv=NaN, wsm_sifra=NaN"
         )
-        _update_summary()  # Update summary after clearing
+        try:
+            globals()["_CURRENT_GRID_DF"] = df
+            _update_summary()
+        except Exception:
+            pass
         _schedule_totals()  # Update totals after clearing
         tree.focus_set()
         return "break"
 
     multiplier_btn = tk.Button(
         btn_frame,
-        text="Pomnoži z koločino X",
+        text="Pomnoži z količino X",
         command=_apply_multiplier_prompt,
     )
     multiplier_btn.grid(row=0, column=2, padx=(6, 0))
@@ -2619,8 +2740,17 @@ def review_links(
     # Vezave za tipke na tree
     # Dvojni klik na stolpec "Enota" odpre urejanje enote,
     # drugje pa sprozi urejanje vnosa.
-    tree.bind("<Return>", _start_edit)
+    if EDIT_ON_ENTER:
+        tree.bind("<Return>", _start_editing_from_tree)
+        tree.bind("<KP_Enter>", _start_editing_from_tree)
+        tree.bind("<F2>", _start_editing_from_tree)
+    else:
+        tree.bind("<Return>", _start_edit)
+        tree.bind("<KP_Enter>", _start_edit)
+        tree.bind("<F2>", _start_edit)
     bindings.append((tree, "<Return>"))
+    bindings.append((tree, "<KP_Enter>"))
+    bindings.append((tree, "<F2>"))
     tree.bind("<BackSpace>", _clear_wsm_connection)
     bindings.append((tree, "<BackSpace>"))
     tree.bind("<Control-m>", _apply_multiplier_prompt)
