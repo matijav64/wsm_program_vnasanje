@@ -48,6 +48,13 @@ GROUP_BY_DISCOUNT = os.getenv("WSM_GROUP_BY_DISCOUNT", "1") not in {
     "False",
 }
 
+# Should the summary include only booked items? (default NO)
+ONLY_BOOKED_IN_SUMMARY = os.getenv("WSM_SUMMARY_ONLY_BOOKED", "0") not in {
+    "0",
+    "false",
+    "False",
+}
+
 DEC2 = Decimal("0.01")
 DEC_PCT_MIN = Decimal("-100")
 DEC_PCT_MAX = Decimal("100")
@@ -1923,11 +1930,12 @@ def review_links(
                 "eff_discount_pct": df["eff_discount_pct"],
             }
         )
-        # Pokaži le KNJIŽENO: wsm_sifra napolnjena in ne "UNKNOWN/OSTALO/OTHER"
-        work = work[_booked_mask_from(work["wsm_sifra"])]
-        if work.empty:
-            _render_summary(summary_df_from_records([]))
-            return
+        # Po želji pokaži le knjižene postavke
+        if ONLY_BOOKED_IN_SUMMARY:
+            work = work[_booked_mask_from(work["wsm_sifra"])]
+            if work.empty:
+                _render_summary(summary_df_from_records([]))
+                return
         group_by_discount = globals().get("GROUP_BY_DISCOUNT", True)
         if group_by_discount and "_discount_bucket" in df.columns:
             work["_discount_bucket"] = df["_discount_bucket"]
@@ -2226,12 +2234,16 @@ def review_links(
     bottom = None  # backward-compatible placeholder for tests  # noqa: F841
     entry_frame = tk.Frame(root)
     entry_frame.pack(fill="x", padx=8)
-    entry_frame.columnconfigure(0, weight=1)
 
     entry = ttk.Entry(entry_frame, width=120)
-    entry.grid(row=0, column=0, pady=5, sticky="ew")
     lb = tk.Listbox(entry_frame, height=6)
-    lb.grid(row=1, column=0, sticky="ew")
+    parent = entry.master
+    try:
+        parent.columnconfigure(0, weight=1)
+    except Exception:
+        pass
+    entry.grid_configure(row=0, column=0, pady=5, sticky="ew")
+    lb.grid_configure(row=1, column=0, sticky="ew")
     lb.grid_remove()
 
     btn_frame = tk.Frame(entry_frame)
@@ -2324,10 +2336,7 @@ def review_links(
         """Hide the suggestion listbox and reset selection."""
         if not _dropdown_is_open(lb_widget):
             return
-        try:
-            lb_widget.pack_forget()
-        except Exception:  # pragma: no cover - defensive
-            lb_widget.grid_remove()
+        lb_widget.grid_remove()
         lb_widget.selection_clear(0, "end")
         entry_widget.focus_set()
 
@@ -2362,8 +2371,8 @@ def review_links(
         lb.delete(0, "end")
         matches = [n for n in nazivi if not txt or txt in n.lower()]
         if matches:
-            if not _dropdown_is_open(lb):
-                lb.pack(side="top", fill="x")
+            lb.grid()
+            lb.lift()
             for m in matches:
                 lb.insert("end", m)
             lb.selection_set(0)
@@ -2392,8 +2401,8 @@ def review_links(
             return
         matches = [n for n in nazivi if txt in n.lower()]
         if matches:
-            if not _dropdown_is_open(lb):
-                lb.pack(side="top", fill="x")
+            lb.grid()
+            lb.lift()
             for m in matches:
                 lb.insert("end", m)
             lb.selection_set(0)
@@ -2765,6 +2774,8 @@ def review_links(
     bindings.append((tree, "<<TreeviewSelect>>"))
 
     # Vezave za entry in lb
+    entry.bind("<FocusIn>", lambda e: _open_suggestions_if_needed())
+    bindings.append((entry, "<FocusIn>"))
     entry.bind("<KeyRelease>", _suggest)
     bindings.append((entry, "<KeyRelease>"))
     entry.bind("<Down>", _init_listbox)
