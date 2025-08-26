@@ -1836,10 +1836,17 @@ def review_links(
             df, ["Bruto", "vrednost_bruto", "Skupna bruto"]
         )
         qty_s = first_existing_series(df, ["Količina", "kolicina_norm"])
-        # za prikaz povzetka vedno raje vzemi _summary_key (če obstaja)
+
+        # ⬇️ KLJUČNO: najprej "WSM šifra" iz grida, šele nato _summary_key
         wsm_s = first_existing_series(
-            df, ["_summary_key", "WSM šifra", "wsm_sifra"]
+            df, ["WSM šifra", "_summary_key", "wsm_sifra"]
         )
+
+        # Naziv prav tako iz grida, če obstaja
+        name_s = first_existing_series(df, ["WSM naziv", "wsm_naziv"])
+        if name_s is None:
+            name_s = pd.Series([""] * len(df), index=df.index, dtype=object)
+
         # normaliziraj ključ na "OSTALO" kjer je prazno/NA
         if wsm_s is not None:
             wsm_s = (
@@ -1855,14 +1862,11 @@ def review_links(
                     }
                 )
             )
-        name_s = (
-            df["wsm_naziv"]
-            if "wsm_naziv" in df.columns
-            else pd.Series([""] * len(df), index=df.index, dtype=object)
-        )
-        eff_s = df[
-            "eff_discount_pct"
-        ]  # točno ta, ki je bil izračunan pred merge
+
+        # če je ključ OSTALO => naziv naj bo vedno "ostalo"
+        name_s = name_s.astype(object).fillna("")
+        if wsm_s is not None:
+            name_s = name_s.where(~wsm_s.astype(str).eq("OSTALO"), "ostalo")
 
         # Če ključni stolpci manjkajo, izpiši prazen povzetek
         if wsm_s is None or val_s is None:
@@ -1871,30 +1875,28 @@ def review_links(
 
         work = pd.DataFrame(
             {
-                # v povzetku prikažemo "OSTALO" za vse manjkajoče
-                # (ločeno astype(object) -> replace tudi ujame None)
-                "wsm_sifra": wsm_s.astype(object)
-                .replace(
-                    {
-                        None: "OSTALO",
-                        "": "OSTALO",
-                        "<NA>": "OSTALO",
-                        "nan": "OSTALO",
-                        "NaN": "OSTALO",
-                    }
-                )
-                .astype(str),
-                "wsm_naziv": name_s.astype(str),
-                "eff_discount_pct": eff_s,
-                "znesek": val_s,
+                "wsm_sifra": (
+                    wsm_s
+                    if wsm_s is not None
+                    else pd.Series(["OSTALO"] * len(df), index=df.index)
+                ),
+                "wsm_naziv": name_s,
+                "znesek": (
+                    val_s
+                    if val_s is not None
+                    else pd.Series([Decimal("0")] * len(df), index=df.index)
+                ),
+                "kolicina": (
+                    qty_s
+                    if qty_s is not None
+                    else pd.Series([Decimal("0")] * len(df), index=df.index)
+                ),
                 "bruto": (
                     bruto_s
                     if bruto_s is not None
-                    else pd.Series(
-                        [Decimal("0")] * len(df), index=df.index, dtype=object
-                    )
+                    else pd.Series([Decimal("0")] * len(df), index=df.index)
                 ),
-                "kolicina": qty_s if qty_s is not None else Decimal("0"),
+                "eff_discount_pct": df["eff_discount_pct"],
             }
         )
         group_by_discount = globals().get("GROUP_BY_DISCOUNT", True)
