@@ -1542,7 +1542,7 @@ def review_links(
         if bool(row.get("_never_booked", False)):
             row_tags.append("unbooked")
 
-        tree.insert("", "end", iid=str(i), values=vals, tags=row_tags)
+        tree.insert("", "end", iid=str(i), values=vals, tags=tuple(row_tags))
         log.info(
             "GRID[%s] cena_po_rabatu=%s",
             i,
@@ -1562,7 +1562,15 @@ def review_links(
             prev_price,
             threshold=price_warn_threshold,
         )
-        tree.item(str(i), tags=("price_warn",) if warn else ())
+        # NE prepiši obstoječih tagov (npr. 'unbooked'): jih združi
+        existing = tree.item(str(i), "tags")
+        try:
+            existing = set(existing) if existing else set()
+        except Exception:
+            existing = set()
+        if warn:
+            existing.add("price_warn")
+        tree.item(str(i), tags=tuple(existing))
         df.at[i, "warning"] = tooltip
         if GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
             val = df.at[i, "_discount_bucket"]
@@ -1699,19 +1707,22 @@ def review_links(
             return
 
         # vedno pred povzetkom na novo razporedi "OSTALO" / šifre
-        def _recompute_summary_key2(df0: pd.DataFrame) -> None:
-            if df0 is None or df0.empty:
-                return
-            df0["_summary_key"] = "OSTALO"
-            if "wsm_sifra" in df0.columns:
-                ks = df0["wsm_sifra"].astype(object)
-                ks = (
-                    ks.where(~pd.isna(ks), "OSTALO")
-                      .replace({None: "OSTALO", "": "OSTALO", "<NA>": "OSTALO",
-                                "nan": "OSTALO", "NaN": "OSTALO"})
-                )
-                df0.loc[ks.ne("OSTALO"), "_summary_key"] = ks[ks.ne("OSTALO")]
-        _recompute_summary_key2(df)
+        try:
+            _recompute_summary_key  # type: ignore[name-defined]
+        except NameError:  # pragma: no cover - fallback for isolated tests
+            def _recompute_summary_key(df0: pd.DataFrame) -> None:
+                if df0 is None or df0.empty:
+                    return
+                df0["_summary_key"] = "OSTALO"
+                if "wsm_sifra" in df0.columns:
+                    ks = df0["wsm_sifra"].astype(object)
+                    ks = (
+                        ks.where(~pd.isna(ks), "OSTALO")
+                          .replace({None: "OSTALO", "": "OSTALO", "<NA>": "OSTALO",
+                                    "nan": "OSTALO", "NaN": "OSTALO"})
+                    )
+                    df0.loc[ks.ne("OSTALO"), "_summary_key"] = ks[ks.ne("OSTALO")]
+        _recompute_summary_key(df)
 
         # že zagotovljen v review_links; če ni, ga dodamo
         ensure_eff_discount_col(df)
