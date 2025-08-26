@@ -1950,6 +1950,18 @@ def review_links(
                     pass
             return tot
 
+        if (
+            "wsm_sifra" in work.columns
+            and "wsm_naziv" in work.columns
+            and "naziv" in df.columns
+        ):
+            # neknjižene vrstice (brez prave WSM šifre)
+            mask_unbooked = ~_booked_mask_from(work["wsm_sifra"])
+            # poravnaj dobaviteljev naziv na indekse 'work'
+            src_names = df["naziv"].astype(str).reindex(work.index)
+            # pri neknjiženih uporabi dobaviteljev naziv (da se ne zlije v en 'OSTALO')
+            work.loc[mask_unbooked, "wsm_naziv"] = src_names[mask_unbooked]
+
         group_cols = ["wsm_sifra", "wsm_naziv", "eff_discount_pct"]
         if group_by_discount and "_discount_bucket" in work.columns:
             group_cols.append("_discount_bucket")
@@ -2171,10 +2183,13 @@ def review_links(
                 if "wsm_sifra" in df.columns
                 else None
             )
+            if booked_mask is not None and "wsm_naziv" in df.columns:
+                nm = df["wsm_naziv"].fillna("").astype(str).str.strip().str.upper()
+                booked_mask = booked_mask & (nm != "OSTALO")
             booked = int(booked_mask.sum()) if booked_mask is not None else 0
             remaining = (
-                len(df) - booked if booked_mask is not None else len(df)
-            )
+                len(df) - booked
+            ) if booked_mask is not None else len(df)
             indicator_label.config(
                 text="✓" if difference <= tolerance else "✗",
                 style=(
@@ -2326,6 +2341,7 @@ def review_links(
     n2s = dict(zip(wsm_df["wsm_naziv"], wsm_df["wsm_sifra"]))
 
     _accepting_enter = False
+    _suggest_on_focus = {"val": False}
 
     def _dropdown_is_open(widget: tk.Listbox) -> bool:
         return widget.winfo_ismapped()
@@ -2358,6 +2374,7 @@ def review_links(
             return "break"
         entry.delete(0, "end")
         _close_suggestions(entry, lb)
+        _suggest_on_focus["val"] = True
         entry.focus_set()
         try:
             _open_suggestions_if_needed()
@@ -2372,6 +2389,7 @@ def review_links(
         matches = [n for n in nazivi if not txt or txt in n.lower()]
         if matches:
             lb.grid()
+            lb.update_idletasks()
             lb.lift()
             for m in matches:
                 lb.insert("end", m)
@@ -2402,6 +2420,7 @@ def review_links(
         matches = [n for n in nazivi if txt in n.lower()]
         if matches:
             lb.grid()
+            lb.update_idletasks()
             lb.lift()
             for m in matches:
                 lb.insert("end", m)
@@ -2430,6 +2449,7 @@ def review_links(
         _accepting_enter = True
         try:
             _confirm()
+            _suggest_on_focus["val"] = False
             try:
                 globals()["_CURRENT_GRID_DF"] = df
                 _update_summary()
@@ -2446,9 +2466,12 @@ def review_links(
                 tree.focus_set()  # vnos se NE odpre – čaka na Enter
             else:
                 entry.focus_set()
-                _open_suggestions_if_needed()
         finally:
             _accepting_enter = False
+
+    def _on_focus_in(e):
+        if _suggest_on_focus["val"]:
+            _open_suggestions_if_needed()
 
     def _start_editing_from_tree(_evt=None):
         """Enter na tabeli začne vnos (focus v Entry + predlogi)."""
@@ -2477,6 +2500,10 @@ def review_links(
         entry.after(10, lambda: _close_suggestions(entry, lb))
 
     def _on_entry_escape(evt):
+        _close_suggestions(entry, lb)
+        return "break"
+
+    def _lb_escape(_):
         _close_suggestions(entry, lb)
         return "break"
 
@@ -2774,7 +2801,7 @@ def review_links(
     bindings.append((tree, "<<TreeviewSelect>>"))
 
     # Vezave za entry in lb
-    entry.bind("<FocusIn>", lambda e: _open_suggestions_if_needed())
+    entry.bind("<FocusIn>", _on_focus_in)
     bindings.append((entry, "<FocusIn>"))
     entry.bind("<KeyRelease>", _suggest)
     bindings.append((entry, "<KeyRelease>"))
@@ -2796,13 +2823,24 @@ def review_links(
     bindings.append((lb, "<Return>"))
     lb.bind("<KP_Enter>", _on_return_accept)
     bindings.append((lb, "<KP_Enter>"))
+    lb.bind("<Escape>", _lb_escape)
+    bindings.append((lb, "<Escape>"))
 
     def _on_lb_click(_):
+        # izberi element pod miško, še preden potrdiš
+        try:
+            i = lb.nearest(lb.winfo_pointery() - lb.winfo_rooty())
+            lb.selection_clear(0, "end")
+            lb.selection_set(i)
+        except Exception:
+            pass
         _accept_current_suggestion(entry, lb)
         lb.after(0, _confirm_and_move_down)
 
-    lb.bind("<Button-1>", _on_lb_click)
-    bindings.append((lb, "<Button-1>"))
+    lb.bind("<ButtonRelease-1>", _on_lb_click)
+    bindings.append((lb, "<ButtonRelease-1>"))
+    lb.bind("<Double-Button-1>", _on_lb_click)
+    bindings.append((lb, "<Double-Button-1>"))
     lb.bind("<Down>", _nav_list)
     bindings.append((lb, "<Down>"))
     lb.bind("<Up>", _nav_list)
