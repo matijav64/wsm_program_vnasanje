@@ -1331,40 +1331,169 @@ def review_links(
     vsb.pack(side="right", fill="y")
     tree.pack(side="left", fill="both", expand=True)
 
-    # ------------------------------
-    # VEDNO ENTER ZA ZAČETEK PISANJA
-    # ------------------------------
-    def _is_entry_like(widget: tk.Widget | None) -> bool:
-        if widget is None:
-            return False
-        try:
-            cls = widget.winfo_class()
-        except Exception:
-            cls = ""
-        return cls in ("Entry", "TEntry", "TCombobox", "Combobox")
+    # --------------------------------------------------------
+    # Urejanje: ENTER/F2 za začetek; po potrditvi NI kurzorja
+    # (brez auto-typing ob navigaciji po Treeview)
+    # --------------------------------------------------------
 
-    def _block_typing_outside_edit(evt: tk.Event):
-        """
-        Če fokus NI na Entry/Combobox, blokiraj vse 'printable' tipke,
-        razen Enter/KP_Enter/F2, ki jih pustimo skozi (ti običajno
-        sprožijo vstop v urejanje).
-        """
-        try:
-            focused = root.focus_get()
-        except Exception:
-            focused = None
+    # Guard flag: med programskim premikom selekcije začasno blokiramo auto-edit
+    _suspend_auto_edit = {"val": False}
 
-        if _is_entry_like(focused):
-            return
-
-        if evt.keysym in ("Return", "KP_Enter", "F2"):
-            return
-
-        ch = getattr(evt, "char", "") or ""
-        if ch and ch.isprintable():
+    def _guard_select(evt: tk.Event):
+        if _suspend_auto_edit["val"]:
             return "break"
 
-    root.bind_all("<Key>", _block_typing_outside_edit, add="+")
+    # Vstavi "guard" bindtag pred obstoječe bindtage, da se izvede prej
+    _GUARD_TAG = "TreeviewGuard"
+    tree.bind_class(_GUARD_TAG, "<<TreeviewSelect>>", _guard_select, add="+")
+    tree.bindtags((_GUARD_TAG, *tree.bindtags()))
+
+    _active_editor = {"widget": None}
+
+    def _remember_editor(evt: tk.Event):
+        # Vsakokrat ko Entry/Combobox dobi fokus, si ga zapomnimo
+        _active_editor["widget"] = evt.widget
+
+    root.bind_class("Entry", "<FocusIn>", _remember_editor, add="+")
+    root.bind_class("TEntry", "<FocusIn>", _remember_editor, add="+")
+    root.bind_class("Combobox", "<FocusIn>", _remember_editor, add="+")
+    root.bind_class("TCombobox", "<FocusIn>", _remember_editor, add="+")
+
+    def _move_selection(delta: int = 1):
+        cur = tree.focus()
+        if not cur:
+            children = tree.get_children("")
+            if children:
+                tree.focus(children[0])
+                tree.selection_set(children[0])
+            return
+        kids = tree.get_children("")
+        if cur in kids:
+            i = kids.index(cur) + delta
+            i = max(0, min(i, len(kids) - 1))
+            nxt = kids[i]
+            tree.focus(nxt)
+            # začasno blokiraj auto-edit, dokler ne končamo premika
+            _suspend_auto_edit["val"] = True
+            try:
+                tree.selection_set(nxt)
+            finally:
+                root.after_idle(lambda: _suspend_auto_edit.__setitem__("val", False))
+            tree.see(nxt)
+
+    def _finish_edit_and_move_next(evt: tk.Event | None = None):
+        """
+        Pokliče se, ko v editorju pritisnemo Enter ali izberemo vrednost.
+        Zaključi urejanje, vrne fokus na tree in premakne na naslednjo vrstico.
+        """
+        try:
+            w = _active_editor.get("widget")
+            if w and w.winfo_exists():
+                # poskusi sprožiti commit, nato odstrani editor
+                try:
+                    w.event_generate("<<Commit>>")
+                except Exception:
+                    pass
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+            tree.focus_set()  # odmakni fokus s polja (brez kurzorja)
+        except Exception:
+            pass
+        finally:
+            _active_editor["widget"] = None
+
+        _move_selection(+1)
+        return "break"
+
+    # Potrditev edita: Enter / KP_Enter + preklic z Esc
+    root.bind_class("Entry", "<Return>", _finish_edit_and_move_next, add="+")
+    root.bind_class("TEntry", "<Return>", _finish_edit_and_move_next, add="+")
+    root.bind_class("Entry", "<KP_Enter>", _finish_edit_and_move_next, add="+")
+    root.bind_class("TEntry", "<KP_Enter>", _finish_edit_and_move_next, add="+")
+    root.bind_class("Entry", "<Escape>", lambda e: (tree.focus_set(), "break"), add="+")
+    root.bind_class("TEntry", "<Escape>", lambda e: (tree.focus_set(), "break"), add="+")
+
+    root.bind_class("Combobox", "<Return>", _finish_edit_and_move_next, add="+")
+    root.bind_class("TCombobox", "<Return>", _finish_edit_and_move_next, add="+")
+    root.bind_class("Combobox", "<KP_Enter>", _finish_edit_and_move_next, add="+")
+    root.bind_class("TCombobox", "<KP_Enter>", _finish_edit_and_move_next, add="+")
+    root.bind_class(
+        "Combobox", "<Escape>", lambda e: (tree.focus_set(), "break"), add="+"
+    )
+    root.bind_class(
+        "TCombobox", "<Escape>", lambda e: (tree.focus_set(), "break"), add="+"
+    )
+    root.bind_class("TCombobox", "<<ComboboxSelected>>", _finish_edit_and_move_next, add="+")
+
+    # V Treeviewu blokiraj tipkanje (da se edit ne začne sam od sebe).
+    # Urejanje dovoli samo z Enter/KP_Enter/F2 (tvoj obstoječi handler).
+    def _tree_keypress_guard(evt: tk.Event):
+        if evt.keysym in ("Return", "KP_Enter", "F2"):
+            return  # pusti obstoječim handlerjem
+        ch = getattr(evt, "char", "") or ""
+        if ch and ch.isprintable():
+            return "break"  # blokiraj direktno tipkanje v grid
+
+    tree.bind("<Key>", _tree_keypress_guard, add="+")
+
+    # Eksplicitni začetek urejanja: ENTER / KP_Enter / F2 na izbrani vrstici
+    def _begin_edit_current(evt=None):
+        # če smo že v editorju, ne začenjaj znova
+        try:
+            w = _active_editor.get("widget")
+            if w and w.winfo_exists():
+                return "break"
+        except Exception:
+            pass
+        # poskusi uporabiti obstoječo logiko za začetek edita (npr. double-click handler)
+        try:
+            tree.event_generate("<Double-1>")
+        except Exception:
+            pass
+        return "break"
+
+    tree.bind("<Return>", _begin_edit_current, add="+")
+    tree.bind("<KP_Enter>", _begin_edit_current, add="+")
+    tree.bind("<F2>", _begin_edit_current, add="+")
+
+    # Če editor izgubi fokus (klik nekam drugam), zapri editor in skrij kurzor
+    def _editor_focus_out(evt):
+        """
+        Če fokus prehaja na drug editor-like widget (npr. dropdown pri Comboboxu),
+        ne jemlji fokusa – sicer pa fokus vrni na tree in počisti aktivni editor.
+        """
+        try:
+            nf = root.focus_get()
+            cls = ""
+            if nf:
+                try:
+                    cls = nf.winfo_class()
+                except Exception:
+                    cls = ""
+            # Pusti FokusOut pri prehodu na druge "editor" komponente (vključno s Combobox dropdown)
+            if cls in (
+                "Entry",
+                "TEntry",
+                "Combobox",
+                "TCombobox",
+                "Listbox",
+                "TComboboxPopdown",
+            ):
+                return
+        except Exception:
+            pass
+        try:
+            tree.focus_set()
+        except Exception:
+            pass
+        _active_editor["widget"] = None
+
+    root.bind_class("Entry", "<FocusOut>", _editor_focus_out, add="+")
+    root.bind_class("TEntry", "<FocusOut>", _editor_focus_out, add="+")
+    root.bind_class("Combobox", "<FocusOut>", _editor_focus_out, add="+")
+    root.bind_class("TCombobox", "<FocusOut>", _editor_focus_out, add="+")
 
     for c, h in zip(cols, heads):
         tree.heading(c, text=h)
