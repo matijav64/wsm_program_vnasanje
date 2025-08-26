@@ -1806,7 +1806,7 @@ def review_links(
                 row["WSM Naziv"],
                 _fmt(_clean_neg_zero(row["Količina"])),
                 _fmt(_clean_neg_zero(row["Znesek"])),
-                _fmt(_clean_neg_zero(row["Rabat (%)"])),
+                _fmt(_clean_neg_zero(row.get("Rabat (%)", Decimal("0.00")))),
                 _fmt(_clean_neg_zero(row["Neto po rabatu"])),
             ]
             summary_tree.insert("", "end", values=vals)
@@ -2024,14 +2024,19 @@ def review_links(
                 )
                 df_b = sums.merge(names, on="WSM šifra", how="left")
                 df_b["WSM Naziv"] = df_b["WSM Naziv"].fillna(df_b["WSM šifra"])
+                if "Rabat (%)" in df_summary.columns:
+                    rabats = (
+                        df_summary.loc[booked_mask, ["WSM šifra", "Rabat (%)"]]
+                        .drop_duplicates("WSM šifra")
+                    )
+                    df_b = df_b.merge(rabats, on="WSM šifra", how="left")
                 df_summary = pd.concat(
                     [df_b, df_summary.loc[~booked_mask]], ignore_index=True
                 )
 
         # --- Vse neknjižene normaliziraj v ENO vrstico "ostalo" ---
-        if (
-            "WSM šifra" in df_summary.columns
-            and "WSM Naziv" in df_summary.columns
+        if ("WSM šifra" in df_summary.columns) and (
+            "WSM Naziv" in df_summary.columns
         ):
             sifra = df_summary["WSM šifra"].fillna("").astype(str).str.strip()
             naziv = df_summary["WSM Naziv"].fillna("").astype(str)
@@ -2040,12 +2045,18 @@ def review_links(
                 | sifra.str.upper().isin(EXCLUDED_CODES)
                 | naziv.str.lower().eq("ostalo")
             )
+
             if mask_ostalo.any():
+                # nastavi oznake za ostalo
                 df_summary.loc[mask_ostalo, "WSM šifra"] = ""
                 df_summary.loc[mask_ostalo, "WSM Naziv"] = "ostalo"
-                # Ne deli "ostalo" po rabatu – naj bo ena vrstica.
-                if "Rabat (%)" in df_summary.columns:
-                    df_summary.loc[mask_ostalo, "Rabat (%)"] = Decimal("0.00")
+
+                # poskrbi, da "Rabat (%)" vedno obstaja
+                if "Rabat (%)" not in df_summary.columns:
+                    df_summary["Rabat (%)"] = Decimal("0.00")
+                # za "ostalo" naj bo 0.00 in naj se ne deli po rabatu
+                df_summary.loc[mask_ostalo, "Rabat (%)"] = Decimal("0.00")
+
                 num_cols = [
                     c
                     for c in ["Količina", "Znesek", "Neto po rabatu"]
@@ -2056,14 +2067,29 @@ def review_links(
                     for c in ["WSM šifra", "WSM Naziv"]
                     if c in df_summary.columns
                 ]
-                if num_cols:
-                    df_summary = df_summary.groupby(
-                        key_cols, dropna=False, as_index=False
-                    )[num_cols].sum()
+
+                if num_cols and key_cols:
+                    # agregiraj SAMO "ostalo"
+                    agg = (
+                        df_summary.loc[mask_ostalo, key_cols + num_cols]
+                        .groupby(key_cols, dropna=False, as_index=False)
+                        .sum()
+                    )
+                    # po agregaciji vrni "Rabat (%)" = 0.00
+                    agg["Rabat (%)"] = Decimal("0.00")
+
+                    # poravnaj stolpce in zamenjaj "ostalo" del
+                    cols = list(df_summary.columns)
+                    agg = agg.reindex(columns=cols, fill_value=None)
+                    df_summary = pd.concat(
+                        [df_summary.loc[~mask_ostalo, cols], agg], ignore_index=True
+                    )
+
+        # "ostalo" potisni na konec
         if "WSM Naziv" in df_summary.columns:
-            order = (df_summary["WSM Naziv"].str.lower() == "ostalo").astype(
-                int
-            )
+            order = (
+                df_summary["WSM Naziv"].astype(str).str.lower() == "ostalo"
+            ).astype(int)
             df_summary = (
                 df_summary.assign(_o=order)
                 .sort_values(["_o", "WSM Naziv"])
