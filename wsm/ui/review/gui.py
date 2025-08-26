@@ -1459,6 +1459,10 @@ def review_links(
                 except Exception:
                     pass
                 try:
+                    _update_summary()
+                except Exception as e:
+                    log.warning("Povzetka ni bilo mogoče osvežiti: %s", e)
+                try:
                     w.destroy()
                 except Exception:
                     pass
@@ -1939,67 +1943,58 @@ def review_links(
 
         df_summary = summary_df_from_records(records)
 
-        # 1) Normaliziraj oznako OSTALO → prazen WSM šifra, naziv "ostalo"
+        # --- normaliziraj/združi OSTALO ---
         try:
             if "WSM šifra" in df_summary.columns:
-                mask_ostalo_sifra = (
+                mask_ost_sifra = (
                     df_summary["WSM šifra"].astype(str).eq("OSTALO")
                 )
-                df_summary.loc[mask_ostalo_sifra, "WSM šifra"] = ""
-                if "WSM Naziv" in df_summary.columns:
-                    df_summary.loc[mask_ostalo_sifra, "WSM Naziv"] = "ostalo"
-        except Exception:
-            pass
-
-        # 2) Združi VSE 'ostalo' vrstice v ENO (ne glede na rabat/bucket)
-        try:
-            import pandas as pd
-            from decimal import Decimal
-
-            if "WSM Naziv" in df_summary.columns:
-                mask_ost = (
+                df_summary.loc[mask_ost_sifra, "WSM šifra"] = ""
+            else:
+                mask_ost_sifra = (
                     df_summary["WSM Naziv"]
                     .astype(str)
                     .str.lower()
                     .eq("ostalo")
                 )
-            else:
-                # fallback: prazna šifra pomeni 'ostalo'
-                mask_ost = df_summary["WSM šifra"].astype(str).eq("")
 
-            if mask_ost.any():
+            if "WSM Naziv" in df_summary.columns:
+                df_summary.loc[mask_ost_sifra, "WSM Naziv"] = "ostalo"
 
-                def dsum(series):
+            # zlij vse 'ostalo' vrstice v eno vrstico
+            if mask_ost_sifra.any():
+                from decimal import Decimal
+
+                def dsum(col):
                     s = Decimal("0")
-                    for v in series:
-                        if v is None or (hasattr(pd, "isna") and pd.isna(v)):
+                    for v in col:
+                        if v is None:
                             continue
                         s += Decimal(str(v))
                     return s
 
-                agg_row = {
-                    "WSM šifra": "",
-                    "WSM Naziv": "ostalo",
-                }
+                agg = {"WSM šifra": "", "WSM Naziv": "ostalo"}
                 if "Količina" in df_summary.columns:
-                    agg_row["Količina"] = dsum(
-                        df_summary.loc[mask_ost, "Količina"]
+                    agg["Količina"] = dsum(
+                        df_summary.loc[mask_ost_sifra, "Količina"]
                     )
                 if "Znesek" in df_summary.columns:
-                    agg_row["Znesek"] = dsum(
-                        df_summary.loc[mask_ost, "Znesek"]
+                    agg["Znesek"] = dsum(
+                        df_summary.loc[mask_ost_sifra, "Znesek"]
                     )
                 if "Neto po rabatu" in df_summary.columns:
-                    agg_row["Neto po rabatu"] = dsum(
-                        df_summary.loc[mask_ost, "Neto po rabatu"]
+                    agg["Neto po rabatu"] = dsum(
+                        df_summary.loc[mask_ost_sifra, "Neto po rabatu"]
                     )
                 if "Rabat (%)" in df_summary.columns:
-                    # v povzetku nas rabat pri OSTALO ne zanima → 0
-                    agg_row["Rabat (%)"] = Decimal("0")
+                    agg["Rabat (%)"] = Decimal("0")
 
-                df_non = df_summary.loc[~mask_ost].copy()
                 df_summary = pd.concat(
-                    [df_non, pd.DataFrame([agg_row])], ignore_index=True
+                    [
+                        df_summary.loc[~mask_ost_sifra].copy(),
+                        pd.DataFrame([agg]),
+                    ],
+                    ignore_index=True,
                 )
         except Exception:
             pass
