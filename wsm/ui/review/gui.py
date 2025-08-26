@@ -1536,7 +1536,13 @@ def review_links(
                     vals.append("")
                 else:
                     vals.append(str(v))
-        tree.insert("", "end", iid=str(i), values=vals)
+        # obstoječa logika za določanje tagov (price_warn/gratis/linked/...)
+        row_tags: list[str] = []
+        # dodatno: pobarvaj, če še nikoli ni bilo knjiženo
+        if bool(row.get("_never_booked", False)):
+            row_tags.append("unbooked")
+
+        tree.insert("", "end", iid=str(i), values=vals, tags=row_tags)
         log.info(
             "GRID[%s] cena_po_rabatu=%s",
             i,
