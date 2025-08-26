@@ -1971,10 +1971,20 @@ def review_links(
 
         records = []
         for _, r in g.iterrows():
+            code = str(r["wsm_sifra"] or "").strip()
+            name = str(r["wsm_naziv"] or "").strip()
+
+            # Negrupirane postavke ('OSTALO', 'UNKNOWN', …) razbij po nazivu.
+            code_upper = code.upper()
+            if code_upper in EXCLUDED_CODES or code_upper == "":
+                code_for_group = name if name else "OSTALO"
+            else:
+                code_for_group = code
+
             records.append(
                 {
-                    "WSM šifra": r["wsm_sifra"],
-                    "WSM Naziv": r["wsm_naziv"],
+                    "WSM šifra": code_for_group,  # ključ za grupiranje v povzetku
+                    "WSM Naziv": name or "—",
                     "Količina": r["kolicina"],
                     "Znesek": (
                         r["bruto"] if bruto_s is not None else r["znesek"]
@@ -1988,59 +1998,35 @@ def review_links(
 
         df_summary = summary_df_from_records(records)
 
-        # --- normaliziraj/združi OSTALO ---
+        # --- Fallback: uporabi naziv kot ključ, če je šifra prazna ali neknjižena ---
+        if "WSM šifra" in df_summary.columns and "WSM Naziv" in df_summary.columns:
+            _c = df_summary["WSM šifra"].fillna("").astype(str).str.strip()
+            bad = _c.eq("") | _c.str.upper().isin(EXCLUDED_CODES)
+            if bad.any():
+                df_summary.loc[bad, "WSM šifra"] = (
+                    df_summary.loc[bad, "WSM Naziv"].fillna("").astype(str).str.strip()
+                )
+
+                num_cols = [
+                    c
+                    for c in ["Količina", "Znesek", "Neto po rabatu"]
+                    if c in df_summary.columns
+                ]
+                key_cols = [c for c in df_summary.columns if c not in num_cols]
+                if num_cols:
+                    df_summary = (
+                        df_summary.groupby(key_cols, dropna=False, as_index=False)[
+                            num_cols
+                        ].sum()
+                    )
+
+        # (neobvezno) diagnostični izpis prvih par ključev
         try:
-            if "WSM šifra" in df_summary.columns:
-                mask_ost_sifra = (
-                    df_summary["WSM šifra"].astype(str).eq("OSTALO")
-                )
-                df_summary.loc[mask_ost_sifra, "WSM šifra"] = ""
-            else:
-                mask_ost_sifra = (
-                    df_summary["WSM Naziv"]
-                    .astype(str)
-                    .str.lower()
-                    .eq("ostalo")
-                )
+            import logging
 
-            if "WSM Naziv" in df_summary.columns:
-                df_summary.loc[mask_ost_sifra, "WSM Naziv"] = "ostalo"
-
-            # zlij vse 'ostalo' vrstice v eno vrstico
-            if mask_ost_sifra.any():
-                from decimal import Decimal
-
-                def dsum(col):
-                    s = Decimal("0")
-                    for v in col:
-                        if v is None:
-                            continue
-                        s += Decimal(str(v))
-                    return s
-
-                agg = {"WSM šifra": "", "WSM Naziv": "ostalo"}
-                if "Količina" in df_summary.columns:
-                    agg["Količina"] = dsum(
-                        df_summary.loc[mask_ost_sifra, "Količina"]
-                    )
-                if "Znesek" in df_summary.columns:
-                    agg["Znesek"] = dsum(
-                        df_summary.loc[mask_ost_sifra, "Znesek"]
-                    )
-                if "Neto po rabatu" in df_summary.columns:
-                    agg["Neto po rabatu"] = dsum(
-                        df_summary.loc[mask_ost_sifra, "Neto po rabatu"]
-                    )
-                if "Rabat (%)" in df_summary.columns:
-                    agg["Rabat (%)"] = Decimal("0")
-
-                df_summary = pd.concat(
-                    [
-                        df_summary.loc[~mask_ost_sifra].copy(),
-                        pd.DataFrame([agg]),
-                    ],
-                    ignore_index=True,
-                )
+            logging.getLogger(__name__).info(
+                "SUMMARY KEYS %s", list(df_summary["WSM šifra"].head(10))
+            )
         except Exception:
             pass
 
