@@ -1570,6 +1570,8 @@ def review_links(
             existing = set()
         if warn:
             existing.add("price_warn")
+        else:
+            existing.discard("price_warn")
         tree.item(str(i), tags=tuple(existing))
         df.at[i, "warning"] = tooltip
         if GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
