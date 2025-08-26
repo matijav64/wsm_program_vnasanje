@@ -2139,10 +2139,9 @@ def review_links(
                 group_keys = ["WSM šifra"]
                 if "Rabat (%)" in df_summary.columns:
                     group_keys.append("Rabat (%)")
+                # Ne odvrzi praznih nazivov – izpolnili jih bomo spodaj.
                 names = (
                     df_summary.loc[booked_mask, ["WSM šifra", "WSM Naziv"]]
-                    .replace({"WSM Naziv": {"": None}})
-                    .dropna(subset=["WSM Naziv"])
                     .drop_duplicates("WSM šifra")
                 )
                 sums = (
@@ -2154,10 +2153,13 @@ def review_links(
                 )
                 df_b = sums.merge(names, on="WSM šifra", how="left")
                 df_b["WSM Naziv"] = df_b["WSM Naziv"].fillna("")
-                df_summary = pd.concat(
-                    [df_b, df_summary.loc[~booked_mask]], ignore_index=True
-                )
+                # Po združitvi se indeks resetira → stari 'booked_mask' ne velja več.
+                df_summary = pd.concat([df_b, df_summary.loc[~booked_mask]], ignore_index=True)
+                n_booked = len(df_b)
+                booked_mask_new = pd.Series(False, index=df_summary.index)
+                booked_mask_new.iloc[:n_booked] = True
 
+                # Uporabi podani katalog (parametrski wsm_df), ne globals()
                 wdf = wsm_df
                 if wdf is not None and {"wsm_sifra", "wsm_naziv"}.issubset(wdf.columns):
                     m = (
@@ -2166,16 +2168,14 @@ def review_links(
                         .drop_duplicates("wsm_sifra")
                         .set_index("wsm_sifra")["wsm_naziv"]
                     )
-                    s_codes = df_summary.loc[booked_mask, "WSM šifra"].astype(str)
+                    s_codes = df_summary.loc[booked_mask_new, "WSM šifra"].astype(str)
                     fill = s_codes.map(m)
-                    empty_name = (
-                        df_summary.loc[booked_mask, "WSM Naziv"]
-                        .fillna("")
-                        .eq("")
-                    )
-                    df_summary.loc[booked_mask & empty_name, "WSM Naziv"] = (
-                        fill[empty_name].fillna("")
-                    )
+                    empty_name = df_summary.loc[booked_mask_new, "WSM Naziv"].astype(str).eq("")
+                    df_summary.loc[booked_mask_new & empty_name, "WSM Naziv"] = fill[empty_name].fillna("")
+                # Zadnja rešilna bilka: če naziv še vedno manjka, prikaži kodo
+                still_empty = df_summary.loc[booked_mask_new, "WSM Naziv"].astype(str).eq("")
+                df_summary.loc[booked_mask_new & still_empty, "WSM Naziv"] = \
+                    df_summary.loc[booked_mask_new & still_empty, "WSM šifra"]
 
         # --- Vse neknjižene normaliziraj v ENO vrstico "ostalo" ---
         if ("WSM šifra" in df_summary.columns) and (
@@ -2927,6 +2927,7 @@ def review_links(
         try:
             globals()["_CURRENT_GRID_DF"] = df
             _update_summary()
+            # posodobi tudi skupne seštevke po potrditvi
             _schedule_totals()
         except Exception:
             pass
