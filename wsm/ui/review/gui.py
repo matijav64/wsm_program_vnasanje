@@ -1405,6 +1405,9 @@ def review_links(
     tree.bindtags((_GUARD_TAG, *tree.bindtags()))
 
     _active_editor = {"widget": None}
+    # Po potrditvi vnosa za trenutek blokiramo samodejni začetek urejanja,
+    # da se na naslednji vrstici NE odpre editor (brez utripajočega kurzorja)
+    _block_next_begin = {"val": False}
 
     def _remember_editor(evt: tk.Event):
         # Vsakokrat ko Entry/Combobox dobi fokus, si ga zapomnimo
@@ -1456,13 +1459,24 @@ def review_links(
                     w.destroy()
                 except Exception:
                     pass
-            tree.focus_set()  # odmakni fokus s polja (brez kurzorja)
+            # odmakni fokus s polja (brez kurzorja) in blokiraj auto-begin
+            tree.focus_set()
+            _block_next_begin["val"] = True
         except Exception:
             pass
         finally:
             _active_editor["widget"] = None
 
         _move_selection(+1)
+        # Po premiku selekcije še enkrat utrdi fokus na tree
+        # in po kratkem času spusti blokado (da bo Enter naslednjič deloval)
+        try:
+            tree.focus_set()
+            root.after(
+                120, lambda: _block_next_begin.__setitem__("val", False)
+            )
+        except Exception:
+            _block_next_begin["val"] = False
         return "break"
 
     # Potrditev edita: Enter / KP_Enter + preklic z Esc
@@ -1524,6 +1538,10 @@ def review_links(
                 return "break"
         except Exception:
             pass
+        # Če smo ravno zaključili prejšnji vnos in premaknili selekcijo,
+        # ignoriraj sprožitev (da NE začne samodejno urejati naslednje vrstice)
+        if _block_next_begin["val"]:
+            return "break"
         # poskusi uporabiti obstoječo logiko za začetek edita
         # (npr. double-click handler)
         try:
@@ -1535,6 +1553,15 @@ def review_links(
     tree.bind("<Return>", _begin_edit_current, add="+")
     tree.bind("<KP_Enter>", _begin_edit_current, add="+")
     tree.bind("<F2>", _begin_edit_current, add="+")
+
+    def _squelch_return_if_blocked(evt):
+        # Če smo ravno zaključili prejšnji vnos, ignoriraj release,
+        # da se editor na naslednji vrstici ne odpre.
+        if _block_next_begin["val"]:
+            return "break"
+
+    tree.bind("<KeyRelease-Return>", _squelch_return_if_blocked, add="+")
+    tree.bind("<KeyRelease-KP_Enter>", _squelch_return_if_blocked, add="+")
 
     # Če editor izgubi fokus (klik nekam drugam), zapri editor in skrij kurzor
     def _editor_focus_out(evt):
