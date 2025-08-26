@@ -1394,9 +1394,12 @@ def review_links(
     # Guard flag: med programskim premikom selekcije
     # začasno blokiramo auto-edit
     _suspend_auto_edit = {"val": False}
+    _block_next_begin = {"val": False}
 
     def _guard_select(evt: tk.Event):
-        if _suspend_auto_edit["val"]:
+        # blokiraj vse selekcijske side-effekte, ko program premika selekcijo
+        # ali ko smo pravkar zaključili vnos in nočemo auto-edita
+        if _suspend_auto_edit["val"] or _block_next_begin["val"]:
             return "break"
 
     # Vstavi "guard" bindtag pred obstoječe bindtage, da se izvede prej
@@ -1405,9 +1408,6 @@ def review_links(
     tree.bindtags((_GUARD_TAG, *tree.bindtags()))
 
     _active_editor = {"widget": None}
-    # Po potrditvi vnosa za trenutek blokiramo samodejni začetek urejanja,
-    # da se na naslednji vrstici NE odpre editor (brez utripajočega kurzorja)
-    _block_next_begin = {"val": False}
 
     def _remember_editor(evt: tk.Event):
         # Vsakokrat ko Entry/Combobox dobi fokus, si ga zapomnimo
@@ -1444,13 +1444,16 @@ def review_links(
 
     def _finish_edit_and_move_next(evt: tk.Event | None = None):
         """
-        Pokliče se, ko v editorju pritisnemo Enter ali izberemo vrednost.
-        Zaključi urejanje, vrne fokus na tree in premakne na naslednjo vrstico.
+        Commit + zapri editor + premakni se navzdol,
+        na naslednji vrstici pa naj se editor NE odpre sam.
         """
         try:
+            # ➤ vklopi blokado TAKOJ (pred commit),
+            #   da ujamemo morebitni "ostanek" Enterja
+            _block_next_begin["val"] = True
+
             w = _active_editor.get("widget")
             if w and w.winfo_exists():
-                # poskusi sprožiti commit, nato odstrani editor
                 try:
                     w.event_generate("<<Commit>>")
                 except Exception:
@@ -1459,21 +1462,20 @@ def review_links(
                     w.destroy()
                 except Exception:
                     pass
-            # odmakni fokus s polja (brez kurzorja) in blokiraj auto-begin
-            tree.focus_set()
-            _block_next_begin["val"] = True
+
+            tree.focus_set()  # brez kurzorja v polju
         except Exception:
             pass
         finally:
             _active_editor["widget"] = None
 
         _move_selection(+1)
-        # Po premiku selekcije še enkrat utrdi fokus na tree
-        # in po kratkem času spusti blokado (da bo Enter naslednjič deloval)
+
+        # utrdi fokus na tree in po malo daljšem času spusti blokado
         try:
             tree.focus_set()
             root.after(
-                120, lambda: _block_next_begin.__setitem__("val", False)
+                220, lambda: _block_next_begin.__setitem__("val", False)
             )
         except Exception:
             _block_next_begin["val"] = False
@@ -1531,6 +1533,9 @@ def review_links(
 
     # Eksplicitni začetek urejanja: ENTER / KP_Enter / F2 na izbrani vrstici
     def _begin_edit_current(evt=None):
+        # če smo ravno zaključili prejšnji vnos, ignoriraj sprožitev
+        if _block_next_begin["val"]:
+            return "break"
         # če smo že v editorju, ne začenjaj znova
         try:
             w = _active_editor.get("widget")
@@ -1538,10 +1543,6 @@ def review_links(
                 return "break"
         except Exception:
             pass
-        # Če smo ravno zaključili prejšnji vnos in premaknili selekcijo,
-        # ignoriraj sprožitev (da NE začne samodejno urejati naslednje vrstice)
-        if _block_next_begin["val"]:
-            return "break"
         # poskusi uporabiti obstoječo logiko za začetek edita
         # (npr. double-click handler)
         try:
@@ -1553,6 +1554,17 @@ def review_links(
     tree.bind("<Return>", _begin_edit_current, add="+")
     tree.bind("<KP_Enter>", _begin_edit_current, add="+")
     tree.bind("<F2>", _begin_edit_current, add="+")
+
+    def _squelch_return_keypress_if_blocked(evt):
+        if _block_next_begin["val"]:
+            return "break"
+
+    tree.bind(
+        "<KeyPress-Return>", _squelch_return_keypress_if_blocked, add="+"
+    )
+    tree.bind(
+        "<KeyPress-KP_Enter>", _squelch_return_keypress_if_blocked, add="+"
+    )
 
     def _squelch_return_if_blocked(evt):
         # Če smo ravno zaključili prejšnji vnos, ignoriraj release,
