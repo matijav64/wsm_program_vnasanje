@@ -1074,9 +1074,29 @@ def review_links(
         .to_dict("records"),
     )
 
+    # ------------------------------------------------------------------
+    # Vedno privzeto razvrsti VSE pod "OSTALO", nato pa prepiši s wsm_sifra
+    # ------------------------------------------------------------------
+    def _recompute_summary_key(df0: pd.DataFrame) -> None:
+        if df0 is None or df0.empty:
+            return
+        # privzeto "OSTALO"
+        df0["_summary_key"] = "OSTALO"
+        if "wsm_sifra" in df0.columns:
+            ks = df0["wsm_sifra"].astype(object)
+            ks = (
+                ks.where(~pd.isna(ks), "OSTALO")
+                  .replace({None: "OSTALO", "": "OSTALO", "<NA>": "OSTALO",
+                            "nan": "OSTALO", "NaN": "OSTALO"})
+            )
+            # kamor je realna šifra, prepiši "OSTALO"
+            df0.loc[ks.ne("OSTALO"), "_summary_key"] = ks[ks.ne("OSTALO")]
+
+    # izračunaj ključ za povzetek na trenutnem df
+    _recompute_summary_key(df)
+
     # --- Povzetek po WSM šifri z varnim ključem "OSTALO" ---
-    # Ustvarimo "_summary_key" SAMO za povzetek/log,
-    # originalni `wsm_sifra` ostane nespremenjen.
+    # Ustvarimo "_summary_key" SAMO za povzetek/log, originalni `wsm_sifra` ostane nespremenjen.
     try:
         sum_col = next(
             c
@@ -1087,30 +1107,8 @@ def review_links(
         sum_col = None
 
     if sum_col:
+        # vedno uporabljaj sveže izračunan _summary_key
         summary_key_col = "_summary_key"
-        if summary_key_col not in df.columns:
-            if "wsm_sifra" in df.columns:
-                key_series = df["wsm_sifra"].astype(object)
-                # manjkajoče -> "OSTALO"
-                key_series = key_series.where(~pd.isna(key_series), "OSTALO")
-            else:
-                key_series = pd.Series(
-                    ["OSTALO"] * len(df), index=df.index, dtype=object
-                )
-            # dodatna normalizacija (odstrani NA in literal "<NA>")
-            df[summary_key_col] = (
-                key_series.astype(object)
-                .where(~pd.isna(key_series), "OSTALO")
-                .replace(
-                    {
-                        None: "OSTALO",
-                        "": "OSTALO",
-                        "<NA>": "OSTALO",
-                        "nan": "OSTALO",
-                        "NaN": "OSTALO",
-                    }
-                )
-            )
 
         # povzetek po ključu
         summary = (
@@ -1331,6 +1329,17 @@ def review_links(
     vsb.pack(side="right", fill="y")
     tree.pack(side="left", fill="both", expand=True)
 
+    # (opcijsko) pripravi indikator "nikoli knjiženo", če obstaja zgodovinski flag
+    # ničesar ne barvamo tukaj – obstojeci vstavljalni del naj uporablja tree tag "unbooked" po potrebi
+    if "_never_booked" not in df.columns:
+        if "was_ever_booked" in df.columns:
+            df["_never_booked"] = ~df["was_ever_booked"].astype(bool)
+        elif "was_ever_linked" in df.columns:
+            df["_never_booked"] = ~df["was_ever_linked"].astype(bool)
+        else:
+            # brez zgodovine ne sklepamo – pusti prazno
+            df["_never_booked"] = False
+
     # --------------------------------------------------------
     # Urejanje: ENTER/F2 za začetek; po potrditvi NI kurzorja
     # (brez auto-typing ob navigaciji po Treeview)
@@ -1527,7 +1536,13 @@ def review_links(
                     vals.append("")
                 else:
                     vals.append(str(v))
-        tree.insert("", "end", iid=str(i), values=vals)
+        # obstoječa logika za določanje tagov (price_warn/gratis/linked/...)
+        row_tags: list[str] = []
+        # dodatno: pobarvaj, če še nikoli ni bilo knjiženo
+        if bool(row.get("_never_booked", False)):
+            row_tags.append("unbooked")
+
+        tree.insert("", "end", iid=str(i), values=vals, tags=tuple(row_tags))
         log.info(
             "GRID[%s] cena_po_rabatu=%s",
             i,
@@ -1547,7 +1562,17 @@ def review_links(
             prev_price,
             threshold=price_warn_threshold,
         )
-        tree.item(str(i), tags=("price_warn",) if warn else ())
+        # NE prepiši obstoječih tagov (npr. 'unbooked'): jih združi
+        existing = tree.item(str(i), "tags")
+        try:
+            existing = set(existing) if existing else set()
+        except Exception:
+            existing = set()
+        if warn:
+            existing.add("price_warn")
+        else:
+            existing.discard("price_warn")
+        tree.item(str(i), tags=tuple(existing))
         df.at[i, "warning"] = tooltip
         if GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
             val = df.at[i, "_discount_bucket"]
@@ -1557,13 +1582,13 @@ def review_links(
                 # Fallback, če je karkoli ušlo (npr. NaN)
                 pct, ua = _discount_bucket(row)
             tag = f"rabat {pct}% @ {ua}"
-            existing = df.at[i, "warning"]
-            if existing is None or pd.isna(existing):
-                existing = ""
+            warn_existing = df.at[i, "warning"]
+            if warn_existing is None or pd.isna(warn_existing):
+                warn_existing = ""
             else:
-                existing = str(existing)
+                warn_existing = str(warn_existing)
             df.at[i, "warning"] = (
-                (existing + " · ") if existing else ""
+                (warn_existing + " · ") if warn_existing else ""
             ) + tag
             tree.set(str(i), "warning", df.at[i, "warning"])
         key = (str(row["sifra_dobavitelja"]), row["naziv_ckey"])
@@ -1579,10 +1604,15 @@ def review_links(
             if not multiplier.is_finite():
                 multiplier = Decimal("1")
             if multiplier <= 1:
-                current_tags = tree.item(str(i)).get("tags", ())
-                if not isinstance(current_tags, tuple):
-                    current_tags = (current_tags,) if current_tags else ()
-                tree.item(str(i), tags=current_tags + ("unbooked",))
+                current_tags = tree.item(str(i), "tags") or ()
+                try:
+                    tags_set = set(current_tags)
+                except Exception:
+                    tags_set = set(current_tags) if isinstance(current_tags, (list, tuple)) else (
+                        {current_tags} if current_tags else set()
+                    )
+                tags_set.add("unbooked")
+                tree.item(str(i), tags=tuple(tags_set))
             else:
                 logging.debug(
                     "Skipping unbooked tag for row %s due to multiplier %s",
@@ -1682,6 +1712,24 @@ def review_links(
         if df is None or df.empty:
             _render_summary(summary_df_from_records([]))
             return
+
+        # vedno pred povzetkom na novo razporedi "OSTALO" / šifre
+        try:
+            _recompute_summary_key  # type: ignore[name-defined]
+        except NameError:  # pragma: no cover - fallback for isolated tests
+            def _recompute_summary_key(df0: pd.DataFrame) -> None:
+                if df0 is None or df0.empty:
+                    return
+                df0["_summary_key"] = "OSTALO"
+                if "wsm_sifra" in df0.columns:
+                    ks = df0["wsm_sifra"].astype(object)
+                    ks = (
+                        ks.where(~pd.isna(ks), "OSTALO")
+                          .replace({None: "OSTALO", "": "OSTALO", "<NA>": "OSTALO",
+                                    "nan": "OSTALO", "NaN": "OSTALO"})
+                    )
+                    df0.loc[ks.ne("OSTALO"), "_summary_key"] = ks[ks.ne("OSTALO")]
+        _recompute_summary_key(df)
 
         # že zagotovljen v review_links; če ni, ga dodamo
         ensure_eff_discount_col(df)
