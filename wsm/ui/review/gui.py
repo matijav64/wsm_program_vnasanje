@@ -1897,12 +1897,69 @@ def review_links(
             )
 
         df_summary = summary_df_from_records(records)
+
+        # 1) Normaliziraj oznako OSTALO → prazen WSM šifra, naziv "ostalo"
         try:
             if "WSM šifra" in df_summary.columns:
-                mask_ost = df_summary["WSM šifra"].astype(str).eq("OSTALO")
-                df_summary.loc[mask_ost, "WSM šifra"] = ""
+                mask_ostalo_sifra = (
+                    df_summary["WSM šifra"].astype(str).eq("OSTALO")
+                )
+                df_summary.loc[mask_ostalo_sifra, "WSM šifra"] = ""
                 if "WSM Naziv" in df_summary.columns:
-                    df_summary.loc[mask_ost, "WSM Naziv"] = "ostalo"
+                    df_summary.loc[mask_ostalo_sifra, "WSM Naziv"] = "ostalo"
+        except Exception:
+            pass
+
+        # 2) Združi VSE 'ostalo' vrstice v ENO (ne glede na rabat/bucket)
+        try:
+            import pandas as pd
+            from decimal import Decimal
+
+            if "WSM Naziv" in df_summary.columns:
+                mask_ost = (
+                    df_summary["WSM Naziv"]
+                    .astype(str)
+                    .str.lower()
+                    .eq("ostalo")
+                )
+            else:
+                # fallback: prazna šifra pomeni 'ostalo'
+                mask_ost = df_summary["WSM šifra"].astype(str).eq("")
+
+            if mask_ost.any():
+
+                def dsum(series):
+                    s = Decimal("0")
+                    for v in series:
+                        if v is None or (hasattr(pd, "isna") and pd.isna(v)):
+                            continue
+                        s += Decimal(str(v))
+                    return s
+
+                agg_row = {
+                    "WSM šifra": "",
+                    "WSM Naziv": "ostalo",
+                }
+                if "Količina" in df_summary.columns:
+                    agg_row["Količina"] = dsum(
+                        df_summary.loc[mask_ost, "Količina"]
+                    )
+                if "Znesek" in df_summary.columns:
+                    agg_row["Znesek"] = dsum(
+                        df_summary.loc[mask_ost, "Znesek"]
+                    )
+                if "Neto po rabatu" in df_summary.columns:
+                    agg_row["Neto po rabatu"] = dsum(
+                        df_summary.loc[mask_ost, "Neto po rabatu"]
+                    )
+                if "Rabat (%)" in df_summary.columns:
+                    # v povzetku nas rabat pri OSTALO ne zanima → 0
+                    agg_row["Rabat (%)"] = Decimal("0")
+
+                df_non = df_summary.loc[~mask_ost].copy()
+                df_summary = pd.concat(
+                    [df_non, pd.DataFrame([agg_row])], ignore_index=True
+                )
         except Exception:
             pass
 
