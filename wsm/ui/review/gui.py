@@ -1959,7 +1959,7 @@ def review_links(
             mask_unbooked = ~_booked_mask_from(work["wsm_sifra"])
             # poravnaj dobaviteljev naziv na indekse 'work'
             src_names = df["naziv"].astype(str).reindex(work.index)
-            # pri neknjiženih uporabi dobaviteljev naziv (da se ne zlije v en 'OSTALO')
+            # pri neknjiženih uporabi dobaviteljev naziv, da ne bo vse 'OSTALO'
             work.loc[mask_unbooked, "wsm_naziv"] = src_names[mask_unbooked]
 
         group_cols = ["wsm_sifra", "wsm_naziv", "eff_discount_pct"]
@@ -1969,22 +1969,24 @@ def review_links(
             {"znesek": dsum, "kolicina": dsum, "bruto": dsum}
         )
 
+        # Vectorized booked-mask to avoid per-row overhead
+        g["_is_booked"] = _booked_mask_from(g["wsm_sifra"].astype(str))
+
         records = []
         for _, r in g.iterrows():
             code = str(r["wsm_sifra"] or "").strip()
             name = str(r["wsm_naziv"] or "").strip()
-
-            # Negrupirane postavke ('OSTALO', 'UNKNOWN', …) razbij po nazivu.
-            code_upper = code.upper()
-            if code_upper in EXCLUDED_CODES or code_upper == "":
-                code_for_group = name if name else "OSTALO"
-            else:
-                code_for_group = code
+            is_booked = bool(r["_is_booked"])
 
             records.append(
                 {
-                    "WSM šifra": code_for_group,  # ključ za grupiranje v povzetku
-                    "WSM Naziv": name or "—",
+                    # Povzetek: knjižene po šifri+nazivu, ostalo v eno vrstico
+                    "WSM šifra": (code if is_booked else ""),
+                    "WSM Naziv": (
+                        name
+                        if is_booked and name
+                        else (code if is_booked else "ostalo")
+                    ),
                     "Količina": r["kolicina"],
                     "Znesek": (
                         r["bruto"] if bruto_s is not None else r["znesek"]
@@ -1998,37 +2000,75 @@ def review_links(
 
         df_summary = summary_df_from_records(records)
 
-        # --- Fallback: uporabi naziv kot ključ, če je šifra prazna ali neknjižena ---
-        if "WSM šifra" in df_summary.columns and "WSM Naziv" in df_summary.columns:
-            _c = df_summary["WSM šifra"].fillna("").astype(str).str.strip()
-            bad = _c.eq("") | _c.str.upper().isin(EXCLUDED_CODES)
-            if bad.any():
-                df_summary.loc[bad, "WSM šifra"] = (
-                    df_summary.loc[bad, "WSM Naziv"].fillna("").astype(str).str.strip()
-                )
-
+        # Konsolidiraj knjižene po šifri in izberi prvi neprazen naziv
+        if {"WSM šifra", "WSM Naziv"}.issubset(df_summary.columns):
+            booked_mask = df_summary["WSM šifra"].astype(str).str.strip() != ""
+            if booked_mask.any():
                 num_cols = [
                     c
                     for c in ["Količina", "Znesek", "Neto po rabatu"]
                     if c in df_summary.columns
                 ]
-                key_cols = [c for c in df_summary.columns if c not in num_cols]
-                if num_cols:
-                    df_summary = (
-                        df_summary.groupby(key_cols, dropna=False, as_index=False)[
-                            num_cols
-                        ].sum()
-                    )
+                names = (
+                    df_summary.loc[booked_mask, ["WSM šifra", "WSM Naziv"]]
+                    .replace({"WSM Naziv": {"": None}})
+                    .dropna(subset=["WSM Naziv"])
+                    .drop_duplicates("WSM šifra")
+                )
+                sums = (
+                    df_summary.loc[booked_mask]
+                    .groupby("WSM šifra", dropna=False, as_index=False)[
+                        num_cols
+                    ]
+                    .sum()
+                )
+                df_b = sums.merge(names, on="WSM šifra", how="left")
+                df_b["WSM Naziv"] = df_b["WSM Naziv"].fillna(df_b["WSM šifra"])
+                df_summary = pd.concat(
+                    [df_b, df_summary.loc[~booked_mask]], ignore_index=True
+                )
 
-        # (neobvezno) diagnostični izpis prvih par ključev
-        try:
-            import logging
-
-            logging.getLogger(__name__).info(
-                "SUMMARY KEYS %s", list(df_summary["WSM šifra"].head(10))
+        # --- Vse neknjižene normaliziraj v ENO vrstico "ostalo" ---
+        if (
+            "WSM šifra" in df_summary.columns
+            and "WSM Naziv" in df_summary.columns
+        ):
+            sifra = df_summary["WSM šifra"].fillna("").astype(str).str.strip()
+            naziv = df_summary["WSM Naziv"].fillna("").astype(str)
+            mask_ostalo = (
+                sifra.eq("")
+                | sifra.str.upper().isin(EXCLUDED_CODES)
+                | naziv.str.lower().eq("ostalo")
             )
-        except Exception:
-            pass
+            if mask_ostalo.any():
+                df_summary.loc[mask_ostalo, "WSM šifra"] = ""
+                df_summary.loc[mask_ostalo, "WSM Naziv"] = "ostalo"
+                # Ne deli "ostalo" po rabatu – naj bo ena vrstica.
+                if "Rabat (%)" in df_summary.columns:
+                    df_summary.loc[mask_ostalo, "Rabat (%)"] = Decimal("0.00")
+                num_cols = [
+                    c
+                    for c in ["Količina", "Znesek", "Neto po rabatu"]
+                    if c in df_summary.columns
+                ]
+                key_cols = [
+                    c
+                    for c in ["WSM šifra", "WSM Naziv"]
+                    if c in df_summary.columns
+                ]
+                if num_cols:
+                    df_summary = df_summary.groupby(
+                        key_cols, dropna=False, as_index=False
+                    )[num_cols].sum()
+        if "WSM Naziv" in df_summary.columns:
+            order = (df_summary["WSM Naziv"].str.lower() == "ostalo").astype(
+                int
+            )
+            df_summary = (
+                df_summary.assign(_o=order)
+                .sort_values(["_o", "WSM Naziv"])
+                .drop(columns="_o")
+            )
 
         _render_summary(df_summary)
 
@@ -2170,12 +2210,18 @@ def review_links(
                 else None
             )
             if booked_mask is not None and "wsm_naziv" in df.columns:
-                nm = df["wsm_naziv"].fillna("").astype(str).str.strip().str.upper()
+                nm = (
+                    df["wsm_naziv"]
+                    .fillna("")
+                    .astype(str)
+                    .str.strip()
+                    .str.upper()
+                )
                 booked_mask = booked_mask & (nm != "OSTALO")
             booked = int(booked_mask.sum()) if booked_mask is not None else 0
             remaining = (
-                len(df) - booked
-            ) if booked_mask is not None else len(df)
+                (len(df) - booked) if booked_mask is not None else len(df)
+            )
             indicator_label.config(
                 text="✓" if difference <= tolerance else "✗",
                 style=(
