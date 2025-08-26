@@ -2362,7 +2362,8 @@ def review_links(
         lb.delete(0, "end")
         matches = [n for n in nazivi if not txt or txt in n.lower()]
         if matches:
-            lb.pack(side="top", fill="x")
+            if not _dropdown_is_open(lb):
+                lb.pack(side="top", fill="x")
             for m in matches:
                 lb.insert("end", m)
             lb.selection_set(0)
@@ -2391,7 +2392,8 @@ def review_links(
             return
         matches = [n for n in nazivi if txt in n.lower()]
         if matches:
-            lb.pack(side="top", fill="x")
+            if not _dropdown_is_open(lb):
+                lb.pack(side="top", fill="x")
             for m in matches:
                 lb.insert("end", m)
             lb.selection_set(0)
@@ -2696,6 +2698,10 @@ def review_links(
             tree.item(sel_i, tags=tuple(tags))
         except Exception:
             pass
+        # počisti opozorilo/tooltip
+        if "warning" in df.columns:
+            df.at[idx, "warning"] = ""
+        _hide_tooltip()
         log.debug(
             f"Povezava odstranjena: idx={idx}, wsm_naziv=NaN, wsm_sifra=NaN"
         )
