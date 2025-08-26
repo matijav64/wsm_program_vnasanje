@@ -1620,9 +1620,9 @@ def review_links(
                     multiplier,
                 )
         if "is_gratis" in row and row["is_gratis"]:
-            current_tags = tree.item(str(i)).get("tags", ())
-            if not isinstance(current_tags, tuple):
-                current_tags = (current_tags,) if current_tags else ()
+            current_tags = tree.item(str(i), "tags") or ()
+            # odstrani morebitne obstoječe 'gratis', potem ga postavi na začetek
+            current_tags = tuple(t for t in current_tags if t != "gratis")
             #  ➜ 'gratis' naj bo PRVI, da barva vedno prime
             tree.item(str(i), tags=("gratis",) + current_tags)
 
