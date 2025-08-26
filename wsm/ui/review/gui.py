@@ -1075,28 +1075,60 @@ def review_links(
     )
 
     # ------------------------------------------------------------------
-    # Vedno privzeto razvrsti VSE pod "OSTALO", nato pa prepiši s wsm_sifra
+    # BOOKING LOGIKA
+    #  - Predlog (wsm_sifra) je le informativen.
+    #  - "Dejansko knjiženje" (za grid in POVZETEK) držimo v _booked_sifra.
+    #  - Privzeto je VSE pod "OSTALO".
     # ------------------------------------------------------------------
-    def _recompute_summary_key(df0: pd.DataFrame) -> None:
+    def _init_booking_columns(df0: pd.DataFrame) -> None:
         if df0 is None or df0.empty:
             return
-        # privzeto "OSTALO"
-        df0["_summary_key"] = "OSTALO"
-        if "wsm_sifra" in df0.columns:
-            ks = df0["wsm_sifra"].astype(object)
-            ks = (
-                ks.where(~pd.isna(ks), "OSTALO")
-                  .replace({None: "OSTALO", "": "OSTALO", "<NA>": "OSTALO",
-                            "nan": "OSTALO", "NaN": "OSTALO"})
-            )
-            # kamor je realna šifra, prepiši "OSTALO"
-            df0.loc[ks.ne("OSTALO"), "_summary_key"] = ks[ks.ne("OSTALO")]
 
-    # izračunaj ključ za povzetek na trenutnem df
-    _recompute_summary_key(df)
+        # Predlog hranimo posebej (ne vpliva na povzetek)
+        df0["_suggested_wsm_sifra"] = (
+            df0["wsm_sifra"] if "wsm_sifra" in df0.columns else None
+        )
+
+        # Dejansko knjiženje – PRIVZETO SAMO "OSTALO"
+        # (BREZ uporabe was_ever_booked / last_booked_sifra / booked_sifra)
+        df0["_booked_sifra"] = "OSTALO"
+
+        # Ključ za povzetek je vedno _booked_sifra
+        df0["_summary_key"] = (
+            df0["_booked_sifra"]
+            .astype(object)
+            .where(~pd.isna(df0["_booked_sifra"]), "OSTALO")
+            .replace(
+                {
+                    None: "OSTALO",
+                    "": "OSTALO",
+                    "<NA>": "OSTALO",
+                    "nan": "OSTALO",
+                    "NaN": "OSTALO",
+                }
+            )
+        )
+
+        # Prikaz v gridu
+        df0["WSM šifra"] = df0["_summary_key"]
+        df0["WSM naziv"] = df0.apply(
+            lambda r: (
+                "" if r["_summary_key"] == "OSTALO" else r.get("wsm_naziv", "")
+            ),
+            axis=1,
+        )
+
+    # počisti morebitne ostanke iz prejšnje seje
+    df.drop(
+        columns=["_booked_sifra", "_summary_key", "WSM šifra", "WSM naziv"],
+        errors="ignore",
+        inplace=True,
+    )
+    _init_booking_columns(df)
 
     # --- Povzetek po WSM šifri z varnim ključem "OSTALO" ---
-    # Ustvarimo "_summary_key" SAMO za povzetek/log, originalni `wsm_sifra` ostane nespremenjen.
+    # Povzetek vedno temelji na _summary_key (tj. dejanskem knjiženju),
+    # predlogi ne vplivajo na razporeditev v povzetku.
     try:
         sum_col = next(
             c
@@ -1289,6 +1321,10 @@ def review_links(
     root.bind("<Escape>", lambda e: root.state("normal"))
     bindings.append((root, "<Escape>"))
 
+    # Mapiraj 'Skupna neto' -> 'total_net', če je to potrebno
+    if "total_net" not in df.columns and "Skupna neto" in df.columns:
+        df["total_net"] = df["Skupna neto"]
+
     frame = tk.Frame(root)
     frame.pack(fill="both", expand=True)
     cols = [
@@ -1300,7 +1336,8 @@ def review_links(
         "cena_po_rabatu",
         "total_net",
         "warning",
-        "wsm_naziv",
+        "WSM šifra",
+        "WSM naziv",
         "dobavitelj",
     ]
     heads = [
@@ -1312,6 +1349,7 @@ def review_links(
         "Net. po rab.",
         "Skupna neto",
         "Opozorilo",
+        "WSM šifra",  # prikažemo dejansko knjiženje (OSTALO ali šifra)
         "WSM naziv",
         "Dobavitelj",
     ]
@@ -1329,23 +1367,25 @@ def review_links(
     vsb.pack(side="right", fill="y")
     tree.pack(side="left", fill="both", expand=True)
 
-    # (opcijsko) pripravi indikator "nikoli knjiženo", če obstaja zgodovinski flag
-    # ničesar ne barvamo tukaj – obstojeci vstavljalni del naj uporablja tree tag "unbooked" po potrebi
+    # Indikator "nikoli knjiženo" (za rdeče barvanje):
+    #  - če obstaja was_ever_booked => True pomeni da JE bilo kdaj knjiženo
+    #  - če obstaja le was_ever_linked, ga ne štejemo kot knjiženje
     if "_never_booked" not in df.columns:
         if "was_ever_booked" in df.columns:
             df["_never_booked"] = ~df["was_ever_booked"].astype(bool)
-        elif "was_ever_linked" in df.columns:
-            df["_never_booked"] = ~df["was_ever_linked"].astype(bool)
         else:
-            # brez zgodovine ne sklepamo – pusti prazno
+            # brez zgodovine ne ugibamo -> ne barvamo rdeče
             df["_never_booked"] = False
+
+    # (opombo: barvanje izvedemo pri vsakem insertu vrstice spodaj)
 
     # --------------------------------------------------------
     # Urejanje: ENTER/F2 za začetek; po potrditvi NI kurzorja
     # (brez auto-typing ob navigaciji po Treeview)
     # --------------------------------------------------------
 
-    # Guard flag: med programskim premikom selekcije začasno blokiramo auto-edit
+    # Guard flag: med programskim premikom selekcije
+    # začasno blokiramo auto-edit
     _suspend_auto_edit = {"val": False}
 
     def _guard_select(evt: tk.Event):
@@ -1387,7 +1427,9 @@ def review_links(
             try:
                 tree.selection_set(nxt)
             finally:
-                root.after_idle(lambda: _suspend_auto_edit.__setitem__("val", False))
+                root.after_idle(
+                    lambda: _suspend_auto_edit.__setitem__("val", False)
+                )
             tree.see(nxt)
 
     def _finish_edit_and_move_next(evt: tk.Event | None = None):
@@ -1420,21 +1462,40 @@ def review_links(
     root.bind_class("Entry", "<Return>", _finish_edit_and_move_next, add="+")
     root.bind_class("TEntry", "<Return>", _finish_edit_and_move_next, add="+")
     root.bind_class("Entry", "<KP_Enter>", _finish_edit_and_move_next, add="+")
-    root.bind_class("TEntry", "<KP_Enter>", _finish_edit_and_move_next, add="+")
-    root.bind_class("Entry", "<Escape>", lambda e: (tree.focus_set(), "break"), add="+")
-    root.bind_class("TEntry", "<Escape>", lambda e: (tree.focus_set(), "break"), add="+")
+    root.bind_class(
+        "TEntry", "<KP_Enter>", _finish_edit_and_move_next, add="+"
+    )
+    root.bind_class(
+        "Entry", "<Escape>", lambda e: (tree.focus_set(), "break"), add="+"
+    )
+    root.bind_class(
+        "TEntry", "<Escape>", lambda e: (tree.focus_set(), "break"), add="+"
+    )
 
-    root.bind_class("Combobox", "<Return>", _finish_edit_and_move_next, add="+")
-    root.bind_class("TCombobox", "<Return>", _finish_edit_and_move_next, add="+")
-    root.bind_class("Combobox", "<KP_Enter>", _finish_edit_and_move_next, add="+")
-    root.bind_class("TCombobox", "<KP_Enter>", _finish_edit_and_move_next, add="+")
+    root.bind_class(
+        "Combobox", "<Return>", _finish_edit_and_move_next, add="+"
+    )
+    root.bind_class(
+        "TCombobox", "<Return>", _finish_edit_and_move_next, add="+"
+    )
+    root.bind_class(
+        "Combobox", "<KP_Enter>", _finish_edit_and_move_next, add="+"
+    )
+    root.bind_class(
+        "TCombobox", "<KP_Enter>", _finish_edit_and_move_next, add="+"
+    )
     root.bind_class(
         "Combobox", "<Escape>", lambda e: (tree.focus_set(), "break"), add="+"
     )
     root.bind_class(
         "TCombobox", "<Escape>", lambda e: (tree.focus_set(), "break"), add="+"
     )
-    root.bind_class("TCombobox", "<<ComboboxSelected>>", _finish_edit_and_move_next, add="+")
+    root.bind_class(
+        "TCombobox",
+        "<<ComboboxSelected>>",
+        _finish_edit_and_move_next,
+        add="+",
+    )
 
     # V Treeviewu blokiraj tipkanje (da se edit ne začne sam od sebe).
     # Urejanje dovoli samo z Enter/KP_Enter/F2 (tvoj obstoječi handler).
@@ -1456,7 +1517,8 @@ def review_links(
                 return "break"
         except Exception:
             pass
-        # poskusi uporabiti obstoječo logiko za začetek edita (npr. double-click handler)
+        # poskusi uporabiti obstoječo logiko za začetek edita
+        # (npr. double-click handler)
         try:
             tree.event_generate("<Double-1>")
         except Exception:
@@ -1470,8 +1532,10 @@ def review_links(
     # Če editor izgubi fokus (klik nekam drugam), zapri editor in skrij kurzor
     def _editor_focus_out(evt):
         """
-        Če fokus prehaja na drug editor-like widget (npr. dropdown pri Comboboxu),
-        ne jemlji fokusa – sicer pa fokus vrni na tree in počisti aktivni editor.
+        Če fokus prehaja na drug editor-like widget
+        (npr. dropdown pri Comboboxu),
+        ne jemlji fokusa – sicer pa fokus vrni na tree
+        in počisti aktivni editor.
         """
         try:
             nf = root.focus_get()
@@ -1481,7 +1545,8 @@ def review_links(
                     cls = nf.winfo_class()
                 except Exception:
                     cls = ""
-            # Pusti FokusOut pri prehodu na druge "editor" komponente (vključno s Combobox dropdown)
+            # Pusti FokusOut pri prehodu na druge "editor" komponente
+            # (vključno s Combobox dropdown)
             if cls in (
                 "Entry",
                 "TEntry",
@@ -1519,6 +1584,7 @@ def review_links(
         except Exception:
             return default
 
+    booked_keys = locals().get("booked_keys", set())
     for i, row in df.iterrows():
         vals = []
         for c in cols:
@@ -1538,8 +1604,8 @@ def review_links(
                     vals.append(str(v))
         # obstoječa logika za določanje tagov (price_warn/gratis/linked/...)
         row_tags: list[str] = []
-        # dodatno: pobarvaj, če še nikoli ni bilo knjiženo
-        if bool(row.get("_never_booked", False)):
+        key = (str(row.get("sifra_dobavitelja")), row.get("naziv_ckey"))
+        if bool(row.get("_never_booked", False)) and key not in booked_keys:
             row_tags.append("unbooked")
 
         tree.insert("", "end", iid=str(i), values=vals, tags=tuple(row_tags))
@@ -1562,17 +1628,20 @@ def review_links(
             prev_price,
             threshold=price_warn_threshold,
         )
-        # NE prepiši obstoječih tagov (npr. 'unbooked'): jih združi
-        existing = tree.item(str(i), "tags")
-        try:
-            existing = set(existing) if existing else set()
-        except Exception:
-            existing = set()
+        # združi tag-e in uredi po prioriteti: gratis > unbooked > price_warn
+        existing = tree.item(str(i), "tags") or ()
+        tags = set(existing)
         if warn:
-            existing.add("price_warn")
+            tags.add("price_warn")
         else:
-            existing.discard("price_warn")
-        tree.item(str(i), tags=tuple(existing))
+            tags.discard("price_warn")
+        ordered: list[str] = []
+        for t in ("gratis", "unbooked", "price_warn"):
+            if t in tags:
+                ordered.append(t)
+                tags.remove(t)
+        ordered.extend(sorted(tags))  # ostali tagi brez posebne prioritete
+        tree.item(str(i), tags=tuple(ordered))
         df.at[i, "warning"] = tooltip
         if GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
             val = df.at[i, "_discount_bucket"]
@@ -1591,37 +1660,10 @@ def review_links(
                 (warn_existing + " · ") if warn_existing else ""
             ) + tag
             tree.set(str(i), "warning", df.at[i, "warning"])
-        key = (str(row["sifra_dobavitelja"]), row["naziv_ckey"])
-        if key not in booked_keys:
-            if "multiplier" in row:
-                multiplier_raw = row.get("multiplier", 1)
-            else:
-                multiplier_raw = old_multiplier_dict.get(key, 1)
-            try:
-                multiplier = Decimal(str(multiplier_raw))
-            except Exception:
-                multiplier = Decimal("1")
-            if not multiplier.is_finite():
-                multiplier = Decimal("1")
-            if multiplier <= 1:
-                current_tags = tree.item(str(i), "tags") or ()
-                try:
-                    tags_set = set(current_tags)
-                except Exception:
-                    tags_set = set(current_tags) if isinstance(current_tags, (list, tuple)) else (
-                        {current_tags} if current_tags else set()
-                    )
-                tags_set.add("unbooked")
-                tree.item(str(i), tags=tuple(tags_set))
-            else:
-                logging.debug(
-                    "Skipping unbooked tag for row %s due to multiplier %s",
-                    i,
-                    multiplier,
-                )
         if "is_gratis" in row and row["is_gratis"]:
             current_tags = tree.item(str(i), "tags") or ()
-            # odstrani morebitne obstoječe 'gratis', potem ga postavi na začetek
+            # odstrani morebitne obstoječe 'gratis',
+            # potem ga postavi na začetek
             current_tags = tuple(t for t in current_tags if t != "gratis")
             #  ➜ 'gratis' naj bo PRVI, da barva vedno prime
             tree.item(str(i), tags=("gratis",) + current_tags)
@@ -1713,23 +1755,29 @@ def review_links(
             _render_summary(summary_df_from_records([]))
             return
 
-        # vedno pred povzetkom na novo razporedi "OSTALO" / šifre
-        try:
-            _recompute_summary_key  # type: ignore[name-defined]
-        except NameError:  # pragma: no cover - fallback for isolated tests
-            def _recompute_summary_key(df0: pd.DataFrame) -> None:
-                if df0 is None or df0.empty:
-                    return
-                df0["_summary_key"] = "OSTALO"
-                if "wsm_sifra" in df0.columns:
-                    ks = df0["wsm_sifra"].astype(object)
-                    ks = (
-                        ks.where(~pd.isna(ks), "OSTALO")
-                          .replace({None: "OSTALO", "": "OSTALO", "<NA>": "OSTALO",
-                                    "nan": "OSTALO", "NaN": "OSTALO"})
-                    )
-                    df0.loc[ks.ne("OSTALO"), "_summary_key"] = ks[ks.ne("OSTALO")]
-        _recompute_summary_key(df)
+        # pred povzetkom vedno znova izpelji _summary_key iz _booked_sifra
+        if "_booked_sifra" in df.columns:
+            df["_summary_key"] = (
+                df["_booked_sifra"]
+                .astype(object)
+                .where(~pd.isna(df["_booked_sifra"]), "OSTALO")
+                .replace(
+                    {
+                        None: "OSTALO",
+                        "": "OSTALO",
+                        "<NA>": "OSTALO",
+                        "nan": "OSTALO",
+                        "NaN": "OSTALO",
+                    }
+                )
+            )
+        else:
+            # fallback – če česa manjka, vse pod OSTALO
+            df["_summary_key"] = "OSTALO"
+            try:
+                df["_summary_key"] = df["_summary_key"].reindex(df.index)
+            except Exception:
+                pass
 
         # že zagotovljen v review_links; če ni, ga dodamo
         ensure_eff_discount_col(df)
@@ -1744,7 +1792,7 @@ def review_links(
         qty_s = first_existing_series(df, ["Količina", "kolicina_norm"])
         # za prikaz povzetka vedno raje vzemi _summary_key (če obstaja)
         wsm_s = first_existing_series(
-            df, ["_summary_key", "wsm_sifra", "WSM šifra"]
+            df, ["_summary_key", "WSM šifra", "wsm_sifra"]
         )
         # normaliziraj ključ na "OSTALO" kjer je prazno/NA
         if wsm_s is not None:
