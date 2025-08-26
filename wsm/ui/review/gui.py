@@ -76,9 +76,7 @@ EXCLUDED_CODES = {"UNKNOWN", "OSTALO", "OTHER", "NAN"}
 def _booked_mask_from(df_or_sr: pd.DataFrame | pd.Series) -> pd.Series:
     """True, če je vrstica KNJIŽENA (status == 'POVEZANO')."""
     if isinstance(df_or_sr, pd.DataFrame) and "status" in df_or_sr.columns:
-        st = (
-            df_or_sr["status"].fillna("").astype(str).str.upper().str.strip()
-        )
+        st = df_or_sr["status"].fillna("").astype(str).str.upper().str.strip()
         return st.eq("POVEZANO")
     if isinstance(df_or_sr, pd.Series):
         sr = df_or_sr
@@ -2010,7 +2008,11 @@ def review_links(
         try:
             if "status" in work.columns:
                 work["_is_booked"] = (
-                    work["status"].fillna("").astype(str).str.upper().eq("POVEZANO")
+                    work["status"]
+                    .fillna("")
+                    .astype(str)
+                    .str.upper()
+                    .eq("POVEZANO")
                 ).astype(int)
             else:
                 work["_is_booked"] = _booked_mask_from(work).astype(int)
@@ -2140,10 +2142,9 @@ def review_links(
                 if "Rabat (%)" in df_summary.columns:
                     group_keys.append("Rabat (%)")
                 # Ne odvrzi praznih nazivov – izpolnili jih bomo spodaj.
-                names = (
-                    df_summary.loc[booked_mask, ["WSM šifra", "WSM Naziv"]]
-                    .drop_duplicates("WSM šifra")
-                )
+                names = df_summary.loc[
+                    booked_mask, ["WSM šifra", "WSM Naziv"]
+                ].drop_duplicates("WSM šifra")
                 sums = (
                     df_summary.loc[booked_mask]
                     .groupby(group_keys, dropna=False, as_index=False)[
@@ -2153,37 +2154,67 @@ def review_links(
                 )
                 df_b = sums.merge(names, on="WSM šifra", how="left")
                 df_b["WSM Naziv"] = df_b["WSM Naziv"].fillna("")
-                # Po združitvi se indeks resetira → stari 'booked_mask' ne velja več.
-                df_summary = pd.concat([df_b, df_summary.loc[~booked_mask]], ignore_index=True)
+                # Po združitvi se indeks resetira → zgradi nov mask za knjižene
+                df_summary = pd.concat(
+                    [df_b, df_summary.loc[~booked_mask]], ignore_index=True
+                )
                 n_booked = len(df_b)
                 booked_mask_new = pd.Series(False, index=df_summary.index)
                 booked_mask_new.iloc[:n_booked] = True
 
                 # Uporabi podani katalog (parametrski wsm_df), ne globals()
                 wdf = wsm_df
-                if wdf is not None and {"wsm_sifra", "wsm_naziv"}.issubset(wdf.columns):
+                if wdf is not None and {"wsm_sifra", "wsm_naziv"}.issubset(
+                    wdf.columns
+                ):
                     m = (
                         wdf.assign(wsm_sifra=wdf["wsm_sifra"].astype(str))
                         .dropna(subset=["wsm_naziv"])
                         .drop_duplicates("wsm_sifra")
                         .set_index("wsm_sifra")["wsm_naziv"]
                     )
-                    s_codes = df_summary.loc[booked_mask_new, "WSM šifra"].astype(str)
+                    s_codes = df_summary.loc[
+                        booked_mask_new, "WSM šifra"
+                    ].astype(str)
                     fill = s_codes.map(m)
-                    empty_name = df_summary.loc[booked_mask_new, "WSM Naziv"].astype(str).eq("")
-                    df_summary.loc[booked_mask_new & empty_name, "WSM Naziv"] = fill[empty_name].fillna("")
+                    # "ostalo" obravnavaj kot prazno in ga nadomesti
+                    _names = df_summary.loc[
+                        booked_mask_new, "WSM Naziv"
+                    ].astype(str)
+                    empty_name = _names.str.strip().eq(
+                        ""
+                    ) | _names.str.lower().eq("ostalo")
+                    df_summary.loc[
+                        booked_mask_new & empty_name, "WSM Naziv"
+                    ] = fill[empty_name].fillna("")
                 # Zadnja rešilna bilka: če naziv še vedno manjka, prikaži kodo
-                still_empty = df_summary.loc[booked_mask_new, "WSM Naziv"].astype(str).eq("")
-                df_summary.loc[booked_mask_new & still_empty, "WSM Naziv"] = \
+                _names2 = df_summary.loc[booked_mask_new, "WSM Naziv"].astype(
+                    str
+                )
+                still_empty = _names2.str.strip().eq(
+                    ""
+                ) | _names2.str.lower().eq("ostalo")
+                df_summary.loc[booked_mask_new & still_empty, "WSM Naziv"] = (
                     df_summary.loc[booked_mask_new & still_empty, "WSM šifra"]
+                )
 
         # --- Vse neknjižene normaliziraj v ENO vrstico "ostalo" ---
         if ("WSM šifra" in df_summary.columns) and (
             "WSM Naziv" in df_summary.columns
         ):
+            # Izloči knjižene, da jih ne potegnemo v "ostalo"
+            try:
+                bm2 = _booked_mask_from(df_summary)
+            except Exception:
+                _ws2 = (
+                    df_summary["WSM šifra"].fillna("").astype(str).str.strip()
+                )
+                bm2 = _ws2.ne("") & ~_ws2.str.upper().isin(
+                    globals().get("EXCLUDED_CODES", set())
+                )
             sifra = df_summary["WSM šifra"].fillna("").astype(str).str.strip()
             naziv = df_summary["WSM Naziv"].fillna("").astype(str)
-            mask_ostalo = (
+            mask_ostalo = (~bm2) & (
                 sifra.eq("")
                 | sifra.str.upper().isin(
                     globals().get("EXCLUDED_CODES", set())
@@ -2852,19 +2883,64 @@ def review_links(
             else entry.get().strip()
         )
         idx = int(sel_i)
+        # 1) Ugotovi kodo tudi, če je uporabnik vpisal kodo (ne naziv)
         code = n2s.get(choice, pd.NA)
-        name = choice
+        if (pd.isna(code) or str(code).strip() == "") and str(
+            choice
+        ).strip() != "":
+            try:
+                s_codes = set(wsm_df["wsm_sifra"].astype(str))
+            except Exception:
+                s_codes = set()
+            if str(choice).strip() in s_codes:
+                code = str(choice).strip()
+
+        # 2) Pridobi pravi naziv iz kataloga glede na kodo
+        name_from_catalog = None
+        if not pd.isna(code):
+            try:
+                _map = (
+                    wsm_df.assign(wsm_sifra=wsm_df["wsm_sifra"].astype(str))
+                    .dropna(subset=["wsm_naziv"])
+                    .drop_duplicates("wsm_sifra")
+                    .set_index("wsm_sifra")["wsm_naziv"]
+                )
+                name_from_catalog = _map.get(str(code))
+            except Exception:
+                name_from_catalog = None
+
+        # 3) Odloči končni naziv:
+        #    - če imamo naziv iz kataloga, uporabi njega
+        #    - sicer, če je uporabniški 'choice' prazen ali 'ostalo',
+        #      uporabi kar kodo
+        #    - v nasprotnem primeru pusti 'choice'
+        if name_from_catalog and str(name_from_catalog).strip():
+            name = str(name_from_catalog)
+        else:
+            if (
+                str(choice).strip() == ""
+                or str(choice).strip().lower() == "ostalo"
+            ):
+                name = "" if pd.isna(code) else str(code)
+            else:
+                name = str(choice).strip()
+
+        # VARNOSTNI PAS: nikoli ne pusti 'ostalo' pri knjiženih
+        if name.strip().lower() == "ostalo" and not pd.isna(code):
+            name = str(code)
+
+        # Zapiši v DataFrame (interno in display kopije)
         df.at[idx, "wsm_sifra"] = pd.NA if pd.isna(code) else str(code)
-        df.at[idx, "wsm_naziv"] = pd.NA if pd.isna(name) else str(name)
+        df.at[idx, "wsm_naziv"] = pd.NA if name == "" else str(name)
         df.at[idx, "status"] = "POVEZANO"
         if "WSM šifra" in df.columns:
             df.at[idx, "WSM šifra"] = "" if pd.isna(code) else str(code)
         if "WSM Naziv" in df.columns:
-            df.at[idx, "WSM Naziv"] = "" if pd.isna(name) else str(name)
+            df.at[idx, "WSM Naziv"] = "" if name == "" else str(name)
         row_id = str(idx)
         try:
             tree.set(row_id, "WSM šifra", "" if pd.isna(code) else str(code))
-            tree.set(row_id, "WSM Naziv", "" if pd.isna(name) else str(name))
+            tree.set(row_id, "WSM Naziv", "" if name == "" else str(name))
         except Exception:
             pass
         # vizualni tagi
