@@ -1604,10 +1604,15 @@ def review_links(
             if not multiplier.is_finite():
                 multiplier = Decimal("1")
             if multiplier <= 1:
-                current_tags = tree.item(str(i)).get("tags", ())
-                if not isinstance(current_tags, tuple):
-                    current_tags = (current_tags,) if current_tags else ()
-                tree.item(str(i), tags=current_tags + ("unbooked",))
+                current_tags = tree.item(str(i), "tags") or ()
+                try:
+                    tags_set = set(current_tags)
+                except Exception:
+                    tags_set = set(current_tags) if isinstance(current_tags, (list, tuple)) else (
+                        {current_tags} if current_tags else set()
+                    )
+                tags_set.add("unbooked")
+                tree.item(str(i), tags=tuple(tags_set))
             else:
                 logging.debug(
                     "Skipping unbooked tag for row %s due to multiplier %s",
