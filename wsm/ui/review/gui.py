@@ -20,7 +20,10 @@ from wsm.utils import short_supplier_name, _clean, _build_header_totals
 from wsm.constants import PRICE_DIFF_THRESHOLD
 from wsm.parsing.eslog import get_supplier_info, XML_PARSER
 from wsm.supplier_store import _norm_vat
-from wsm.ui.review.helpers import ensure_eff_discount_col
+from wsm.ui.review.helpers import (
+    ensure_eff_discount_col,
+    first_existing_series,
+)
 from .helpers import (
     _fmt,
     _norm_unit,
@@ -62,8 +65,15 @@ DEC_PCT_MAX = Decimal("100")
 EXCLUDED_CODES = {"UNKNOWN", "OSTALO", "OTHER", "NAN"}
 
 
-def _booked_mask_from(sr: pd.Series) -> pd.Series:
+def _booked_mask_from(df_or_sr: pd.DataFrame | pd.Series) -> pd.Series:
     """True, če je vrstica KNJIŽENA (ima smiselno wsm_sifra)."""
+    if isinstance(df_or_sr, pd.Series):
+        sr = df_or_sr
+    else:
+        col = first_existing_series(df_or_sr, ["WSM šifra", "wsm_sifra"])
+        if col is None:
+            return pd.Series(False, index=df_or_sr.index)
+        sr = col
     _ws = sr.fillna("").astype(str).str.strip()
     _wsU = _ws.str.upper()
     return (_ws != "") & (~_wsU.isin(EXCLUDED_CODES))
@@ -1861,10 +1871,10 @@ def review_links(
 
         # Vzemi potrebne stolpce čim bolj robustno
         val_s = first_existing_series(
-            df, ["Neto po rabatu", "vrednost", "Skupna neto", "total_net"]
+            df, ["Neto po rabatu", "Skupna neto", "vrednost", "total_net"]
         )
         bruto_s = first_existing_series(
-            df, ["Bruto", "vrednost_bruto", "Skupna bruto"]
+            df, ["Bruto", "vrednost_bruto", "Skupna bruto", "vrednost"]
         )
         qty_s = first_existing_series(df, ["Količina", "kolicina_norm"])
 
@@ -1874,7 +1884,9 @@ def review_links(
         )
 
         # Naziv prav tako iz grida, če obstaja
-        name_s = first_existing_series(df, ["WSM naziv", "wsm_naziv"])
+        name_s = first_existing_series(
+            df, ["WSM Naziv", "WSM naziv", "wsm_naziv"]
+        )
         if name_s is None:
             name_s = pd.Series([""] * len(df), index=df.index, dtype=object)
 
@@ -1931,8 +1943,8 @@ def review_links(
             }
         )
         # Po želji pokaži le knjižene postavke
-        if ONLY_BOOKED_IN_SUMMARY:
-            work = work[_booked_mask_from(work["wsm_sifra"])]
+        if globals().get("ONLY_BOOKED_IN_SUMMARY"):
+            work = work[_booked_mask_from(work)]
             if work.empty:
                 _render_summary(summary_df_from_records([]))
                 return
@@ -1956,7 +1968,7 @@ def review_links(
             and "naziv" in df.columns
         ):
             # neknjižene vrstice (brez prave WSM šifre)
-            mask_unbooked = ~_booked_mask_from(work["wsm_sifra"])
+            mask_unbooked = ~_booked_mask_from(work)
             # poravnaj dobaviteljev naziv na indekse 'work'
             src_names = df["naziv"].astype(str).reindex(work.index)
             # pri neknjiženih uporabi dobaviteljev naziv, da ne bo vse 'OSTALO'
@@ -1970,7 +1982,13 @@ def review_links(
         )
 
         # Vectorized booked-mask to avoid per-row overhead
-        g["_is_booked"] = _booked_mask_from(g["wsm_sifra"].astype(str))
+        try:
+            g["_is_booked"] = _booked_mask_from(g)
+        except NameError:
+            _ws = g["wsm_sifra"].fillna("").astype(str).str.strip()
+            g["_is_booked"] = _ws.ne("") & ~_ws.str.upper().isin(
+                globals().get("EXCLUDED_CODES", set())
+            )
 
         records = []
         for _, r in g.iterrows():
@@ -1991,24 +2009,54 @@ def review_links(
                     "Znesek": (
                         r["bruto"] if bruto_s is not None else r["znesek"]
                     ),
-                    "Rabat (%)": r[
-                        "eff_discount_pct"
-                    ],  # Decimal s 2 decimalkama
+                    "Rabat (%)": (
+                        r["eff_discount_pct"].quantize(Decimal("0.01"))
+                        if isinstance(r["eff_discount_pct"], Decimal)
+                        else Decimal(str(r["eff_discount_pct"])).quantize(
+                            Decimal("0.01")
+                        )
+                    ),
                     "Neto po rabatu": r["znesek"],
                 }
             )
 
         df_summary = summary_df_from_records(records)
 
+        df_summary["WSM šifra"] = (
+            first_existing_series(df_summary, ["WSM šifra", "wsm_sifra"])
+            .fillna("")
+            .astype(str)
+        )
+        df_summary["WSM Naziv"] = (
+            first_existing_series(
+                df_summary, ["WSM Naziv", "WSM naziv", "wsm_naziv"]
+            )
+            .fillna("")
+            .astype(str)
+        )
+        try:
+            bm = _booked_mask_from(df_summary)
+        except NameError:
+            _ws = df_summary["WSM šifra"].fillna("").astype(str).str.strip()
+            bm = _ws.ne("") & ~_ws.str.upper().isin(
+                globals().get("EXCLUDED_CODES", set())
+            )
+        log.info(
+            "SUMMARY booked=%d, unbooked=%d", int(bm.sum()), int((~bm).sum())
+        )
+
         # Konsolidiraj knjižene po šifri in izberi prvi neprazen naziv
         if {"WSM šifra", "WSM Naziv"}.issubset(df_summary.columns):
-            booked_mask = df_summary["WSM šifra"].astype(str).str.strip() != ""
+            booked_mask = bm
             if booked_mask.any():
                 num_cols = [
                     c
                     for c in ["Količina", "Znesek", "Neto po rabatu"]
                     if c in df_summary.columns
                 ]
+                group_keys = ["WSM šifra"]
+                if "Rabat (%)" in df_summary.columns:
+                    group_keys.append("Rabat (%)")
                 names = (
                     df_summary.loc[booked_mask, ["WSM šifra", "WSM Naziv"]]
                     .replace({"WSM Naziv": {"": None}})
@@ -2017,19 +2065,13 @@ def review_links(
                 )
                 sums = (
                     df_summary.loc[booked_mask]
-                    .groupby("WSM šifra", dropna=False, as_index=False)[
+                    .groupby(group_keys, dropna=False, as_index=False)[
                         num_cols
                     ]
                     .sum()
                 )
                 df_b = sums.merge(names, on="WSM šifra", how="left")
                 df_b["WSM Naziv"] = df_b["WSM Naziv"].fillna(df_b["WSM šifra"])
-                if "Rabat (%)" in df_summary.columns:
-                    rabats = (
-                        df_summary.loc[booked_mask, ["WSM šifra", "Rabat (%)"]]
-                        .drop_duplicates("WSM šifra")
-                    )
-                    df_b = df_b.merge(rabats, on="WSM šifra", how="left")
                 df_summary = pd.concat(
                     [df_b, df_summary.loc[~booked_mask]], ignore_index=True
                 )
@@ -2042,7 +2084,9 @@ def review_links(
             naziv = df_summary["WSM Naziv"].fillna("").astype(str)
             mask_ostalo = (
                 sifra.eq("")
-                | sifra.str.upper().isin(EXCLUDED_CODES)
+                | sifra.str.upper().isin(
+                    globals().get("EXCLUDED_CODES", set())
+                )
                 | naziv.str.lower().eq("ostalo")
             )
 
@@ -2082,7 +2126,8 @@ def review_links(
                     cols = list(df_summary.columns)
                     agg = agg.reindex(columns=cols, fill_value=None)
                     df_summary = pd.concat(
-                        [df_summary.loc[~mask_ostalo, cols], agg], ignore_index=True
+                        [df_summary.loc[~mask_ostalo, cols], agg],
+                        ignore_index=True,
                     )
 
         # "ostalo" potisni na konec
@@ -2733,6 +2778,11 @@ def review_links(
             for c in cols
         ]
         tree.item(sel_i, values=new_vals)
+        try:
+            globals()["_CURRENT_GRID_DF"] = df
+            _update_summary()
+        except Exception:
+            pass
         log.debug(
             "Potrjeno: idx=%s, wsm_naziv=%s, wsm_sifra=%s, "
             "sifra_dobavitelja=%s",
