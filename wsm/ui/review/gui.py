@@ -950,6 +950,32 @@ def review_links(
         changed = int(((before_backfill == 0) & (after_backfill != 0)).sum())
         _t("STEP1a backfilled discount pct from prices for %d rows", changed)
 
+    # 1b) stolpec 'Rabat (%)' uporablja rabata_pct -> poravnaj iz eff_discount_pct
+    try:
+        if "eff_discount_pct" in df.columns:
+            eff = df["eff_discount_pct"].apply(_dec_or_zero)
+            if "rabata_pct" not in df.columns:
+                df["rabata_pct"] = eff
+                _t("STEP1b rabata_pct created from eff_discount_pct for all rows")
+            else:
+                rp = df["rabata_pct"].apply(_dec_or_zero)
+                mask_sync = (rp == 0) & (eff != 0)
+                if bool(mask_sync.any()):
+                    df.loc[mask_sync, "rabata_pct"] = eff[mask_sync]
+                    _t(
+                        "STEP1b rabata_pct synced from eff_discount_pct for %d rows",
+                        int(mask_sync.sum()),
+                    )
+    except Exception as _e:
+        _t("STEP1b sync skipped: %s", _e)
+
+    # 1c) po sinhronizaciji ponovno zgradi prikazni opis rabata
+    try:
+        df["rabat_opis"] = df.apply(_rab_opis, axis=1).astype("string")
+        _t("STEP1c rabat_opis rebuilt after pct sync")
+    except Exception as _e:
+        _t("STEP1c rabat_opis rebuild skipped: %s", _e)
+
     # Označi GRATIS vrstice (količina > 0 in neto = 0), da se ne izgubijo
     from wsm.ui.review.helpers import first_existing_series
 
@@ -2721,6 +2747,9 @@ def review_links(
                         tree.set(rid, "rabat_opis", df.at[idx, "rabat_opis"] or "")
                     if "status" in df.columns and tree.exists(rid):
                         tree.set(rid, "status", (df.at[idx, "status"] or ""))
+                    # dodatno osveži prikazni stolpec "Rabat (%)" (bere rabata_pct)
+                    if "rabata_pct" in df.columns and tree.exists(rid):
+                        tree.set(rid, "rabata_pct", _fmt(df.at[idx, "rabata_pct"]))
             except Exception as e:
                 log.warning("Osvežitev grid celic ni uspela: %s", e)
             _update_summary()
