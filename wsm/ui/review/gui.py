@@ -2935,12 +2935,17 @@ def review_links(
         df.at[idx, "status"] = "POVEZANO"
         if "WSM šifra" in df.columns:
             df.at[idx, "WSM šifra"] = "" if pd.isna(code) else str(code)
-        if "WSM Naziv" in df.columns:
-            df.at[idx, "WSM Naziv"] = "" if name == "" else str(name)
-        row_id = str(idx)
+        # posodobi oba možna stolpca imena, če obstajata
+        for name_col in ("WSM naziv", "WSM Naziv"):
+            if name_col in df.columns:
+                df.at[idx, name_col] = "" if name == "" else str(name)
         try:
-            tree.set(row_id, "WSM šifra", "" if pd.isna(code) else str(code))
-            tree.set(row_id, "WSM Naziv", "" if name == "" else str(name))
+            tree.set(sel_i, "WSM šifra", "" if pd.isna(code) else str(code))
+            tree_cols = set(tree["columns"])
+            if "WSM naziv" in tree_cols:
+                tree.set(sel_i, "WSM naziv", "" if name == "" else str(name))
+            elif "WSM Naziv" in tree_cols:
+                tree.set(sel_i, "WSM Naziv", "" if name == "" else str(name))
         except Exception:
             pass
         # vizualni tagi
