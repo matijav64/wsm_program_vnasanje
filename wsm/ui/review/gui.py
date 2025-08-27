@@ -1894,6 +1894,42 @@ def review_links(
     root.bind_class("TEntry", "<FocusOut>", _editor_focus_out, add="+")
     root.bind_class("Combobox", "<FocusOut>", _editor_focus_out, add="+")
     root.bind_class("TCombobox", "<FocusOut>", _editor_focus_out, add="+")
+    # --- ENTER handlers: commit + close + clear + refresh summary ---
+    def _on_combobox_return(event):
+        try:
+            # 1) commit kot da bi kliknil izbiro
+            event.widget.event_generate("<<ComboboxSelected>>")
+        except Exception:
+            pass
+        try:
+            # 2) zapri dropdown/popup
+            event.widget.event_generate("<Escape>")
+        except Exception:
+            pass
+        try:
+            # 3) počisti vnos (nov vnos brez stare izbire)
+            event.widget.set("")
+        except Exception:
+            pass
+        try:
+            # 4) osveži povzetek in vrni fokus v grid
+            _update_summary()
+            _schedule_totals()
+            tree.focus_set()
+        except Exception:
+            pass
+        return "break"
+
+    def _on_entry_return(event):
+        try:
+            _editor_focus_out(event)
+            _update_summary()
+            _schedule_totals()
+            tree.focus_set()
+        except Exception:
+            pass
+        return "break"
+
 
     for c, h in zip(cols, heads):
         tree.heading(c, text=h)
@@ -1903,6 +1939,15 @@ def review_links(
             else 80 if c == "enota_norm" else 160 if c == "warning" else 140 if c == "rabat_opis" else 120
         )
         tree.column(c, width=width, anchor="w")
+    # ENTER naj deluje enako v vseh editorjih
+    try:
+        root.bind_class("Combobox", "<Return>", _on_combobox_return, add="+")
+        root.bind_class("TCombobox", "<Return>", _on_combobox_return, add="+")
+        root.bind_class("Entry", "<Return>", _on_entry_return, add="+")
+        root.bind_class("TEntry", "<Return>", _on_entry_return, add="+")
+    except Exception:
+        pass
+
 
     def _safe_get(row, col, default=""):
         try:
