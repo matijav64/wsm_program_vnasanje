@@ -21,7 +21,6 @@ from wsm.constants import PRICE_DIFF_THRESHOLD
 from wsm.parsing.eslog import get_supplier_info, XML_PARSER
 from wsm.supplier_store import _norm_vat
 from wsm.ui.review.helpers import (
-    ensure_eff_discount_col,
     first_existing_series,
 )
 from .helpers import (
@@ -171,6 +170,29 @@ def _fill_names_from_catalog(
         str
     ).str.strip().ne("")
     df.loc[mask, "wsm_naziv"] = df.loc[mask, "wsm_sifra"].astype(str).map(nm)
+    return df
+
+
+def _dec_or_zero(x):
+    try:
+        return Decimal(str(x))
+    except Exception:
+        return Decimal("0")
+
+
+def _ensure_eff_discount_pct(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    UI uporablja eff_discount_pct za prikaz (kolona 'Rabat (%)' in za
+    'Opozorilo'). Če je ta stolpec prazen ali 0, ga zapolnimo iz rabata_pct.
+    """
+    if "eff_discount_pct" not in df.columns:
+        df["eff_discount_pct"] = None
+    df["eff_discount_pct"] = df["eff_discount_pct"].apply(_dec_or_zero)
+    if "rabata_pct" in df.columns:
+        rp = df["rabata_pct"].apply(_dec_or_zero)
+        mask = df["eff_discount_pct"].isna() | (df["eff_discount_pct"] == 0)
+        df.loc[mask, "eff_discount_pct"] = rp[mask]
+    df["eff_discount_pct"] = df["eff_discount_pct"].fillna(Decimal("0"))
     return df
 
 
@@ -333,9 +355,9 @@ def _format_opozorilo(row: pd.Series) -> str:
                 Decimal("0.0000"), rounding=ROUND_HALF_UP
             )
             return f"rabat 100.00% @ {unit} - GRATIS"
-        # uporabi efektivni rabat, če ga imamo; sicer standardnega
+        # uporabi efektivni rabat; če ga ni, vzemi surovega
         # (negativno ničlo sproti počistimo)
-        pct = row.get("rabata_pct", row.get("eff_discount_pct", Decimal("0")))
+        pct = row.get("eff_discount_pct", row.get("rabata_pct", Decimal("0")))
         if not isinstance(pct, Decimal):
             try:
                 import pandas as pd
@@ -855,7 +877,7 @@ def review_links(
     # (premaknjeno) opozorila bomo preračunali po združevanju
 
     # 1) obvezno: zagotovimo eff_discount_pct še pred merge
-    df = ensure_eff_discount_col(df)
+    df = _ensure_eff_discount_pct(df)
     _t(
         "STEP1 after ensure_eff_discount_pct: nulls=%s sample=%s",
         (
@@ -2003,9 +2025,9 @@ def review_links(
         import pandas as pd
         from decimal import Decimal
         from wsm.ui.review.helpers import (
-            ensure_eff_discount_col,
             first_existing_series,
         )
+        from wsm.ui.review.gui import _ensure_eff_discount_pct
 
         df = globals().get("_CURRENT_GRID_DF")
         if df is None:
@@ -2040,7 +2062,7 @@ def review_links(
                 pass
 
         # že zagotovljen v review_links; če ni, ga dodamo
-        ensure_eff_discount_col(df)
+        _ensure_eff_discount_pct(df)
 
         # Vzemi potrebne stolpce čim bolj robustno
         val_s = first_existing_series(
