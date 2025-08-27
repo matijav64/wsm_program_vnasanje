@@ -75,8 +75,9 @@ DEC_PCT_MAX = Decimal("100")
 EXCLUDED_CODES = {"UNKNOWN", "OSTALO", "OTHER", "NAN"}
 
 
-
-def _apply_links_to_df(df: pd.DataFrame, links_df: pd.DataFrame) -> pd.DataFrame:
+def _apply_links_to_df(
+    df: pd.DataFrame, links_df: pd.DataFrame
+) -> pd.DataFrame:
     """
     Zapiše shranjene povezave (naziv_ckey + enota_norm -> wsm_sifra, wsm_naziv)
     neposredno v grid DataFrame. Uporabi se samo tam, kjer je trenutno prazno
@@ -125,13 +126,13 @@ def _apply_links_to_df(df: pd.DataFrame, links_df: pd.DataFrame) -> pd.DataFrame
     excluded = globals().get("EXCLUDED_CODES", set())
     fill_mask = curU.eq("") | curU.isin(excluded)
 
-    merged.loc[fill_mask & merged["wsm_sifra_lk"].notna(), "wsm_sifra"] = merged[
-        "wsm_sifra_lk"
-    ]
+    merged.loc[fill_mask & merged["wsm_sifra_lk"].notna(), "wsm_sifra"] = (
+        merged["wsm_sifra_lk"]
+    )
     if "wsm_naziv_lk" in merged.columns:
-        merged.loc[fill_mask & merged["wsm_naziv_lk"].notna(), "wsm_naziv"] = merged[
-            "wsm_naziv_lk"
-        ]
+        merged.loc[fill_mask & merged["wsm_naziv_lk"].notna(), "wsm_naziv"] = (
+            merged["wsm_naziv_lk"]
+        )
 
     st = merged.get("status")
     if st is None:
@@ -142,10 +143,35 @@ def _apply_links_to_df(df: pd.DataFrame, links_df: pd.DataFrame) -> pd.DataFrame
     merged.loc[st_mask & empty_status, "status"] = "AUTO • povezava"
 
     merged = merged.drop(
-        columns=[c for c in ["wsm_sifra_lk", "wsm_naziv_lk"] if c in merged.columns],
+        columns=[
+            c for c in ["wsm_sifra_lk", "wsm_naziv_lk"] if c in merged.columns
+        ],
         errors="ignore",
     )
     return merged
+
+
+def _fill_names_from_catalog(
+    df: pd.DataFrame, wsm_df: pd.DataFrame
+) -> pd.DataFrame:
+    """Populate ``wsm_naziv`` from catalog, ensuring string codes on both sides."""
+    if not isinstance(wsm_df, pd.DataFrame) or not {
+        "wsm_sifra",
+        "wsm_naziv",
+    }.issubset(wsm_df.columns):
+        return df
+    nm = (
+        wsm_df.drop_duplicates("wsm_sifra")
+        .assign(wsm_sifra=lambda d: d["wsm_sifra"].astype(str).str.strip())
+        .set_index("wsm_sifra")["wsm_naziv"]
+    )
+    if "wsm_sifra" not in df.columns:
+        return df
+    mask = df["wsm_sifra"].notna() & df["wsm_sifra"].astype(
+        str
+    ).str.strip().ne("")
+    df.loc[mask, "wsm_naziv"] = df.loc[mask, "wsm_sifra"].astype(str).map(nm)
+    return df
 
 
 def _booked_mask_from(df_or_sr: pd.DataFrame | pd.Series) -> pd.Series:
@@ -677,11 +703,11 @@ def review_links(
     if AUTO_APPLY_LINKS:
         try:
             df = _apply_links_to_df(df, links_df)
-            # če nazivov ni v povezavah, jih dopolni iz kataloga
-            if isinstance(wsm_df, pd.DataFrame) and {"wsm_sifra", "wsm_naziv"}.issubset(wsm_df.columns):
-                _nm = wsm_df.drop_duplicates("wsm_sifra").set_index("wsm_sifra")["wsm_naziv"]
-                _mask = df["wsm_sifra"].notna() & df["wsm_sifra"].astype(str).ne("") & (df.get("wsm_naziv").isna() if "wsm_naziv" in df.columns else True)
-                df.loc[_mask, "wsm_naziv"] = df.loc[_mask, "wsm_sifra"].map(_nm)
+            df = _fill_names_from_catalog(df, wsm_df)
+            if "WSM šifra" in df.columns:
+                df["WSM šifra"] = df["wsm_sifra"].astype("string").fillna("")
+            if "WSM Naziv" in df.columns:
+                df["WSM Naziv"] = df["wsm_naziv"].astype("string").fillna("")
             globals()["_CURRENT_GRID_DF"] = df
             log.info(
                 "Samodejno uveljavljene povezave: %d vrstic posodobljenih.",
@@ -708,9 +734,9 @@ def review_links(
         df.loc[mask_not_booked, ["wsm_sifra", "wsm_naziv"]] = pd.NA
 
     if "WSM šifra" in df.columns:
-        df["WSM šifra"] = df["wsm_sifra"].fillna("")
+        df["WSM šifra"] = df["wsm_sifra"].astype("string").fillna("")
     if "WSM Naziv" in df.columns:
-        df["WSM Naziv"] = df["wsm_naziv"].fillna("")
+        df["WSM Naziv"] = df["wsm_naziv"].astype("string").fillna("")
 
     df["multiplier"] = Decimal("1")
     log.debug(f"df po inicializaciji: {df.head().to_dict()}")
@@ -956,6 +982,17 @@ def review_links(
     _t("STEP4 call _merge_same_items on %d rows", len(df))
     # STEP4: združi iste artikle po bucketu/rabatu (GRATIS ostane ločeno)
     df = _merge_same_items(df)
+
+    # Po združevanju ponovno napolni imena iz kataloga in poravnaj prikazne stolpce
+    df = _fill_names_from_catalog(df, wsm_df)
+    if "wsm_sifra" in df.columns:
+        if "WSM šifra" not in df.columns:
+            df["WSM šifra"] = ""
+        df["WSM šifra"] = df["wsm_sifra"].astype("string").fillna("")
+    if "wsm_naziv" in df.columns:
+        if "WSM Naziv" not in df.columns:
+            df["WSM Naziv"] = ""
+        df["WSM Naziv"] = df["wsm_naziv"].astype("string").fillna("")
 
     # --- Po MERGE: zagotovimo vse prikazne stolpce, ki jih GUI bere ---
     # 1) 'rabata_pct' – če ga ni, vzemi eff_discount_pct (ali 0)
@@ -2540,25 +2577,36 @@ def review_links(
             return
         try:
             df = _apply_links_to_df(df, links_df)
-            # dopolni nazive iz kataloga, če manjkajo v povezavah
-            if isinstance(wsm_df, pd.DataFrame) and {"wsm_sifra","wsm_naziv"}.issubset(wsm_df.columns):
-                _nm = wsm_df.drop_duplicates("wsm_sifra").set_index("wsm_sifra")["wsm_naziv"]
-                _mask = df["wsm_sifra"].notna() & df["wsm_sifra"].astype(str).ne("") & (df.get("wsm_naziv").isna() if "wsm_naziv" in df.columns else True)
-                df.loc[_mask, "wsm_naziv"] = df.loc[_mask, "wsm_sifra"].map(_nm)
-            # poravnaj display stolpce
+            df = _fill_names_from_catalog(df, wsm_df)
             if "WSM šifra" in df.columns:
-                df["WSM šifra"] = df["wsm_sifra"].fillna("")
+                df["WSM šifra"] = df["wsm_sifra"].astype("string").fillna("")
             if "WSM Naziv" in df.columns:
-                df["WSM Naziv"] = df["wsm_naziv"].fillna("")
+                df["WSM Naziv"] = df["wsm_naziv"].astype("string").fillna("")
             globals()["_CURRENT_GRID_DF"] = df
             # osveži vidne celice v gridu (Treeview)
             try:
                 for idx in df.index:
                     rid = str(idx)
                     if "WSM šifra" in df.columns and tree.exists(rid):
-                        tree.set(rid, "WSM šifra", df.at[idx, "WSM šifra"] if pd.notna(df.at[idx, "WSM šifra"]) else "")
+                        tree.set(
+                            rid,
+                            "WSM šifra",
+                            (
+                                df.at[idx, "WSM šifra"]
+                                if pd.notna(df.at[idx, "WSM šifra"])
+                                else ""
+                            ),
+                        )
                     if "WSM Naziv" in df.columns and tree.exists(rid):
-                        tree.set(rid, "WSM Naziv", df.at[idx, "WSM Naziv"] if pd.notna(df.at[idx, "WSM Naziv"]) else "")
+                        tree.set(
+                            rid,
+                            "WSM Naziv",
+                            (
+                                df.at[idx, "WSM Naziv"]
+                                if pd.notna(df.at[idx, "WSM Naziv"])
+                                else ""
+                            ),
+                        )
                     if "status" in df.columns and tree.exists(rid):
                         tree.set(rid, "status", (df.at[idx, "status"] or ""))
             except Exception as e:
