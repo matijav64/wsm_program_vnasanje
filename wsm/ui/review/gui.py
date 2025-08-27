@@ -983,16 +983,16 @@ def review_links(
     # STEP4: združi iste artikle po bucketu/rabatu (GRATIS ostane ločeno)
     df = _merge_same_items(df)
 
-    # Po združevanju ponovno napolni imena iz kataloga in poravnaj prikazne stolpce
+    # -- po združevanju posodobi imena in prikazne stolpce za GRID --
     df = _fill_names_from_catalog(df, wsm_df)
-    if "wsm_sifra" in df.columns:
-        if "WSM šifra" not in df.columns:
-            df["WSM šifra"] = ""
-        df["WSM šifra"] = df["wsm_sifra"].astype("string").fillna("")
-    if "wsm_naziv" in df.columns:
-        if "WSM Naziv" not in df.columns:
-            df["WSM Naziv"] = ""
-        df["WSM Naziv"] = df["wsm_naziv"].astype("string").fillna("")
+
+    # poskrbi za prikazne stolpce (vedno prepiši iz baznih)
+    if "WSM šifra" not in df.columns:
+        df["WSM šifra"] = ""
+    if "WSM Naziv" not in df.columns:
+        df["WSM Naziv"] = ""
+    df["WSM šifra"] = df.get("wsm_sifra").astype("string").fillna("")
+    df["WSM Naziv"] = df.get("wsm_naziv").astype("string").fillna("")
 
     # --- Po MERGE: zagotovimo vse prikazne stolpce, ki jih GUI bere ---
     # 1) 'rabata_pct' – če ga ni, vzemi eff_discount_pct (ali 0)
