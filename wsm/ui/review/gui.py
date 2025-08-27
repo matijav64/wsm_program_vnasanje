@@ -153,7 +153,10 @@ def _apply_links_to_df(
 def _fill_names_from_catalog(
     df: pd.DataFrame, wsm_df: pd.DataFrame
 ) -> pd.DataFrame:
-    """Populate ``wsm_naziv`` from catalog, ensuring string codes on both sides."""
+    """Populate ``wsm_naziv`` from catalog.
+
+    Ensures string codes on both sides.
+    """
     if not isinstance(wsm_df, pd.DataFrame) or not {
         "wsm_sifra",
         "wsm_naziv",
@@ -180,6 +183,52 @@ def _dec_or_zero(x):
         return Decimal("0")
 
 
+def _dec_or_none(x):
+    try:
+        return Decimal(str(x))
+    except Exception:
+        return None
+
+
+def _backfill_rebate_amount_from_prices(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Če je znesek rabata 0/manjkajoč, ga izračunamo iz cen pred/po in količine:
+        rabata = (cena_pred - cena_po) * količina
+    """
+    from wsm.ui.review.helpers import first_existing_series
+
+    if df is None or df.empty:
+        return df
+
+    s_pred = first_existing_series(
+        df, ["cena_bruto", "Neto pred rab.", "Neto pred rabatu", "cena_pred"]
+    )
+    s_po = first_existing_series(
+        df, ["cena_po_rabatu", "cena_netto", "Neto po rab.", "Neto po rabatu"]
+    )
+    s_qty = first_existing_series(
+        df, ["kolicina_norm", "Količina", "kolicina"]
+    )
+
+    if s_pred is None or s_po is None or s_qty is None:
+        return df
+
+    pred = s_pred.apply(_dec_or_zero)
+    po = s_po.apply(_dec_or_zero)
+    qty = s_qty.apply(_dec_or_zero)
+
+    if "rabata" not in df.columns:
+        df["rabata"] = Decimal("0")
+    rab = df["rabata"].apply(_dec_or_zero)
+
+    mask = (rab == 0) & (pred != 0) & (qty != 0)
+    try:
+        df.loc[mask, "rabata"] = (pred - po) * qty
+    except Exception as e:
+        _t("backfill rabata failed: %s", e)
+    return df
+
+
 def _ensure_eff_discount_pct(df: pd.DataFrame) -> pd.DataFrame:
     """
     UI uporablja eff_discount_pct za prikaz (kolona 'Rabat (%)' in za
@@ -193,6 +242,58 @@ def _ensure_eff_discount_pct(df: pd.DataFrame) -> pd.DataFrame:
         mask = df["eff_discount_pct"].isna() | (df["eff_discount_pct"] == 0)
         df.loc[mask, "eff_discount_pct"] = rp[mask]
     df["eff_discount_pct"] = df["eff_discount_pct"].fillna(Decimal("0"))
+    return df
+
+
+def _backfill_discount_pct_from_prices(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Če procenta še nimamo, ga izračunamo iz cene pred/po rabatu:
+        pct = (1 - cena_po / cena_pred) * 100
+    Vzame prvi razpoložljivi par stolpcev
+    (robustno preko `first_existing_series`).
+    """
+    from wsm.ui.review.helpers import first_existing_series
+
+    if df is None or df.empty:
+        return df
+
+    # poskusi najti 'ceno pred' in 'ceno po' v različnih možnih imenih
+    s_pred = first_existing_series(
+        df, ["cena_bruto", "Neto pred rab.", "Neto pred rabatu", "cena_pred"]
+    )
+    s_po = first_existing_series(
+        df, ["cena_po_rabatu", "cena_netto", "Neto po rab.", "Neto po rabatu"]
+    )
+    if s_pred is None or s_po is None:
+        return df
+
+    pred = s_pred.apply(_dec_or_zero)
+    po = s_po.apply(_dec_or_zero)
+
+    if "eff_discount_pct" not in df.columns:
+        df["eff_discount_pct"] = Decimal("0")
+    eff = df["eff_discount_pct"].apply(_dec_or_zero)
+
+    # maska: tam kjer eff=0 in cena_pred > 0
+    mask = (eff == 0) & (pred != 0)
+    if bool(mask.any()):
+
+        def _calc(p_before, p_after):
+            try:
+                return (
+                    (p_before - p_after) / p_before * Decimal("100")
+                ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+            except Exception:
+                return Decimal("0")
+
+        df.loc[mask, "eff_discount_pct"] = [
+            _calc(pb, pa) for pb, pa in zip(pred[mask], po[mask])
+        ]
+        if "rabata_pct" in df.columns:
+            rp = df["rabata_pct"].apply(_dec_or_zero)
+            df.loc[(rp == 0) & mask, "rabata_pct"] = df.loc[
+                (rp == 0) & mask, "eff_discount_pct"
+            ]
     return df
 
 
@@ -246,8 +347,19 @@ def _discount_bucket(row: dict) -> Tuple[Decimal, Decimal]:
     'Net. pred rab.', 'Net. po rab.'.
     Če je mogoče, unit_after preračunamo iz Skupna neto / Količina.
     """
-    # 1) najprej išči izračunan efektivni rabat; šele nato surove vrednosti
-    rab_keys = ("eff_discount_pct", "rabata_pct", "Rabat (%)", "rabat_pct")
+    # 1) raje uporabi izračunan efektivni rabat;
+    #    če je 0, pade nazaj na rabata_pct
+    pct = _safe_pct(row.get("eff_discount_pct"))
+    if pct in (None, Decimal("0")):
+        pct = _safe_pct(row.get("rabata_pct"))
+    if pct in (None, Decimal("0")):
+        for k in ("Rabat (%)", "rabat_pct"):
+            if k in row:
+                v = _safe_pct(row.get(k))
+                if v not in (None, Decimal("0")):
+                    pct = v
+                    break
+
     before_keys = (
         "cena_pred_rabatom",
         "net_pred_rab",
@@ -267,13 +379,6 @@ def _discount_bucket(row: dict) -> Tuple[Decimal, Decimal]:
     # pomembno: raje uporabi normalizirano količino, če obstaja
     qty_keys = ("kolicina_norm", "Količina", "kolicina")
     total_net_keys = ("Skupna neto", "vrednost", "Neto po rabatu", "total_net")
-
-    pct = None
-    for k in rab_keys:
-        if k in row:
-            pct = _safe_pct(row.get(k))
-            if pct is not None:
-                break
 
     unit_before = None
     for k in before_keys:
@@ -739,7 +844,8 @@ def review_links(
             log.exception("Napaka pri auto-uveljavitvi povezav: %s", e)
     else:
         log.info(
-            "AUTO_APPLY_LINKS=0 → shranjene povezave NE bodo uveljavljene samodejno."
+            "AUTO_APPLY_LINKS=0 → shranjene povezave NE bodo "
+            "uveljavljene samodejno."
         )
 
     # Poskrbi za prisotnost in tipe stolpcev za WSM povezave
@@ -813,13 +919,13 @@ def review_links(
     # subsequent calculations and when saving the file. Previously the column
     # was cast to ``float`` which could introduce rounding errors.
     df["warning"] = pd.NA
-    
+
     # --- Lep opis rabata za prikaz v mreži ---
     def _q2(x):
         try:
-            return (
-                x if isinstance(x, Decimal) else Decimal(str(x))
-            ).quantize(DEC2, ROUND_HALF_UP)
+            return (x if isinstance(x, Decimal) else Decimal(str(x))).quantize(
+                DEC2, ROUND_HALF_UP
+            )
         except Exception:
             return Decimal("0.00")
 
@@ -837,6 +943,8 @@ def review_links(
             return f"{pct:.2f} % (−{_fmt_eur(amt)} €)"
         return ""
 
+    # pred opisom poskusi zapolniti znesek rabata iz cen
+    df = _backfill_rebate_amount_from_prices(df)
     df["rabat_opis"] = df.apply(_rab_opis, axis=1).astype("string")
 
     log.debug("df po normalizaciji: %s", df.head().to_dict())
@@ -891,6 +999,67 @@ def review_links(
             else "n/a"
         ),
     )
+    # 1a) če procenta še vedno ni, ga izračunamo iz cen pred/po
+    before_backfill = (
+        df["eff_discount_pct"].apply(_dec_or_zero)
+        if "eff_discount_pct" in df.columns
+        else None
+    )
+    df = _backfill_discount_pct_from_prices(df)
+    if before_backfill is not None:
+        after_backfill = df["eff_discount_pct"].apply(_dec_or_zero)
+        changed = int(((before_backfill == 0) & (after_backfill != 0)).sum())
+        _t("STEP1a backfilled discount pct from prices for %d rows", changed)
+        try:
+            _t(
+                "STEP1a sample pct pairs=%s",
+                df[
+                    [
+                        "rabata_pct",
+                        "eff_discount_pct",
+                        "cena_bruto",
+                        "cena_po_rabatu",
+                    ]
+                ]
+                .head(5)
+                .to_dict("records"),
+            )
+        except Exception:
+            pass
+
+    # 1b) stolpec "Rabat (%)" uporablja rabata_pct,
+    #     zato ga poravnaj z eff_discount_pct
+    if "eff_discount_pct" in df.columns:
+        eff = df["eff_discount_pct"].apply(_dec_or_zero)
+        if "rabata_pct" not in df.columns:
+            df["rabata_pct"] = eff
+            _t("STEP1b rabata_pct created from eff_discount_pct for all rows")
+        else:
+            rp = df["rabata_pct"].apply(_dec_or_zero)
+            mask_sync = (rp == 0) & (eff != 0)
+            synced = int(mask_sync.sum())
+            if synced:
+                df.loc[mask_sync, "rabata_pct"] = eff[mask_sync]
+            _t(
+                "STEP1b rabata_pct synced from eff_discount_pct for %d rows",
+                synced,
+            )
+
+    # 1c) po sinhronizaciji ponovno zgradi prikazni opis rabata
+    try:
+        df["rabat_opis"] = df.apply(_rab_opis, axis=1).astype("string")
+        _t("STEP1c rabat_opis rebuilt after pct sync")
+    except Exception as e:
+        _t("STEP1c rabat_opis rebuild skipped: %s", e)
+    try:
+        _t(
+            "STEP1c sample for grid=%s",
+            df[["naziv", "rabata_pct", "eff_discount_pct", "rabat_opis"]]
+            .head(5)
+            .to_dict("records"),
+        )
+    except Exception:
+        pass
 
     # Označi GRATIS vrstice (količina > 0 in neto = 0), da se ne izgubijo
     from wsm.ui.review.helpers import first_existing_series
@@ -1816,7 +1985,15 @@ def review_links(
         width = (
             300
             if c == "naziv"
-            else 80 if c == "enota_norm" else 160 if c == "warning" else 140 if c == "rabat_opis" else 120
+            else (
+                80
+                if c == "enota_norm"
+                else (
+                    160
+                    if c == "warning"
+                    else 140 if c == "rabat_opis" else 120
+                )
+            )
         )
         tree.column(c, width=width, anchor="w")
 
@@ -2660,7 +2837,9 @@ def review_links(
                             ),
                         )
                     if "rabat_opis" in df.columns and tree.exists(rid):
-                        tree.set(rid, "rabat_opis", df.at[idx, "rabat_opis"] or "")
+                        tree.set(
+                            rid, "rabat_opis", df.at[idx, "rabat_opis"] or ""
+                        )
                     if "status" in df.columns and tree.exists(rid):
                         tree.set(rid, "status", (df.at[idx, "status"] or ""))
             except Exception as e:
