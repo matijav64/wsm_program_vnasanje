@@ -180,6 +180,13 @@ def _dec_or_zero(x):
         return Decimal("0")
 
 
+def _dec_or_none(x):
+    try:
+        return Decimal(str(x))
+    except Exception:
+        return None
+
+
 def _ensure_eff_discount_pct(df: pd.DataFrame) -> pd.DataFrame:
     """
     UI uporablja eff_discount_pct za prikaz (kolona 'Rabat (%)' in za
@@ -193,6 +200,50 @@ def _ensure_eff_discount_pct(df: pd.DataFrame) -> pd.DataFrame:
         mask = df["eff_discount_pct"].isna() | (df["eff_discount_pct"] == 0)
         df.loc[mask, "eff_discount_pct"] = rp[mask]
     df["eff_discount_pct"] = df["eff_discount_pct"].fillna(Decimal("0"))
+    return df
+
+
+def _backfill_discount_pct_from_prices(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Če procenta še nimamo, ga izračunamo iz cene pred/po rabatu:
+        pct = (1 - cena_po / cena_pred) * 100
+    Vzame prvi razpoložljivi par stolpcev (robustno preko `first_existing_series`).
+    """
+    from wsm.ui.review.helpers import first_existing_series
+    if df is None or df.empty:
+        return df
+
+    # poskusi najti 'ceno pred' in 'ceno po' v različnih možnih imenih
+    s_pred = first_existing_series(
+        df, ["cena_bruto", "Neto pred rab.", "Neto pred rabatu", "cena_pred"]
+    )
+    s_po = first_existing_series(
+        df, ["cena_po_rabatu", "cena_netto", "Neto po rab.", "Neto po rabatu"]
+    )
+    if s_pred is None or s_po is None:
+        return df
+
+    pred = s_pred.apply(_dec_or_zero)
+    po = s_po.apply(_dec_or_zero)
+
+    if "eff_discount_pct" not in df.columns:
+        df["eff_discount_pct"] = Decimal("0")
+    eff = df["eff_discount_pct"].apply(_dec_or_zero)
+
+    # maska: tam kjer eff=0 in cena_pred > 0
+    mask = (eff == 0) & (pred != 0)
+    if bool(mask.any()):
+        def _calc(p_before, p_after):
+            try:
+                return ((p_before - p_after) / p_before * Decimal("100")).quantize(Decimal("0.01"), ROUND_HALF_UP)
+            except Exception:
+                return Decimal("0")
+        df.loc[mask, "eff_discount_pct"] = [
+            _calc(pb, pa) for pb, pa in zip(pred[mask], po[mask])
+        ]
+        if "rabata_pct" in df.columns:
+            rp = df["rabata_pct"].apply(_dec_or_zero)
+            df.loc[(rp == 0) & mask, "rabata_pct"] = df.loc[(rp == 0) & mask, "eff_discount_pct"]
     return df
 
 
@@ -891,6 +942,13 @@ def review_links(
             else "n/a"
         ),
     )
+    # 1a) če procenta še vedno ni, ga izračunamo iz cen pred/po
+    before_backfill = df["eff_discount_pct"].apply(_dec_or_zero) if "eff_discount_pct" in df.columns else None
+    df = _backfill_discount_pct_from_prices(df)
+    if before_backfill is not None:
+        after_backfill = df["eff_discount_pct"].apply(_dec_or_zero)
+        changed = int(((before_backfill == 0) & (after_backfill != 0)).sum())
+        _t("STEP1a backfilled discount pct from prices for %d rows", changed)
 
     # Označi GRATIS vrstice (količina > 0 in neto = 0), da se ne izgubijo
     from wsm.ui.review.helpers import first_existing_series
