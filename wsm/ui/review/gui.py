@@ -1887,6 +1887,47 @@ def review_links(
             )
         log.debug(f"Povzetek posodobljen: {len(df_summary)} WSM šifer")
 
+    def _fallback_count_from_grid(df):
+        import pandas as pd
+
+        try:
+            s = (
+                df["wsm_sifra"].fillna("").astype(str).str.strip().str.upper()
+                if "wsm_sifra" in df.columns
+                else pd.Series("", index=df.index)
+            )
+            excluded = globals().get("EXCLUDED_CODES", set())
+            by_code = s.ne("") & ~s.isin(excluded)
+
+            by_status = (
+                df["status"]
+                .fillna("")
+                .astype(str)
+                .str.upper()
+                .str.startswith(("POVEZANO", "AUTO"))
+                if "status" in df.columns
+                else pd.Series(False, index=df.index)
+            )
+
+            booked_mask = by_code | by_status
+
+            # nikoli ne štej kot knjiženo, če je še vedno “OSTALO”
+            if "wsm_naziv" in df.columns:
+                nm = (
+                    df["wsm_naziv"]
+                    .fillna("")
+                    .astype(str)
+                    .str.strip()
+                    .str.upper()
+                )
+                booked_mask &= nm != "OSTALO"
+
+            booked = int(booked_mask.sum())
+            remaining = int(len(df) - booked)
+            return booked, remaining
+        except Exception:
+            return 0, len(df)
+
     def _update_summary():
         import pandas as pd
         from decimal import Decimal
@@ -1900,6 +1941,7 @@ def review_links(
             df = globals().get("df")
         if df is None or df.empty:
             _render_summary(summary_df_from_records([]))
+            globals()["_SUMMARY_COUNTS"] = (0, 0)
             return
 
         # pred povzetkom vedno znova izpelji _summary_key iz _booked_sifra
@@ -2128,6 +2170,7 @@ def review_links(
         log.info(
             "SUMMARY booked=%d, unbooked=%d", int(bm.sum()), int((~bm).sum())
         )
+        booked_mask_new = bm
 
         # Konsolidiraj knjižene po šifri in izberi prvi neprazen naziv
         if {"WSM šifra", "WSM Naziv"}.issubset(df_summary.columns):
@@ -2272,7 +2315,8 @@ def review_links(
                 .sort_values(["_o", "WSM Naziv"])
                 .drop(columns="_o")
             )
-
+        b, u = _fallback_count_from_grid(df)
+        globals()["_SUMMARY_COUNTS"] = (b, u)
         _render_summary(df_summary)
 
     # Skupni zneski pod povzetkom
@@ -2346,7 +2390,8 @@ def review_links(
         total_frame, text="", style="Indicator.Red.TLabel"
     )
     indicator_label.pack(side="left", padx=5)
-    status_count_label = ttk.Label(total_frame, text="")
+    _status_var = tk.StringVar(value="")
+    status_count_label = ttk.Label(total_frame, textvariable=_status_var)
     status_count_label.pack(side="left", padx=5)
 
     _last_warn_msg = {"val": None}
@@ -2407,24 +2452,6 @@ def review_links(
         try:
             if indicator_label is None or not indicator_label.winfo_exists():
                 return
-            booked_mask = (
-                _booked_mask_from(df["wsm_sifra"])
-                if "wsm_sifra" in df.columns
-                else None
-            )
-            if booked_mask is not None and "wsm_naziv" in df.columns:
-                nm = (
-                    df["wsm_naziv"]
-                    .fillna("")
-                    .astype(str)
-                    .str.strip()
-                    .str.upper()
-                )
-                booked_mask = booked_mask & (nm != "OSTALO")
-            booked = int(booked_mask.sum()) if booked_mask is not None else 0
-            remaining = (
-                (len(df) - booked) if booked_mask is not None else len(df)
-            )
             indicator_label.config(
                 text="✓" if difference <= tolerance else "✗",
                 style=(
@@ -2433,13 +2460,6 @@ def review_links(
                     else "Indicator.Red.TLabel"
                 ),
             )
-            try:
-                if status_count_label and status_count_label.winfo_exists():
-                    status_count_label.config(
-                        text=f"Knjiženo: {booked}  Ostane: {remaining}"
-                    )
-            except Exception:
-                pass
         except tk.TclError:
             return
         widget = total_frame.children.get("total_net")
@@ -2466,6 +2486,13 @@ def review_links(
         if closing or not root.winfo_exists():
             return
         _after_totals_id = root.after(250, _safe_update_totals)
+        try:
+            b, u = globals().get("_SUMMARY_COUNTS", (None, None))
+            if b is None:
+                raise KeyError
+        except Exception:
+            b, u = _fallback_count_from_grid(df)
+        _status_var.set(f"Knjiženo: {b} | Ostane: {u}")
 
     def _on_close(_=None):
         nonlocal closing, _after_totals_id
