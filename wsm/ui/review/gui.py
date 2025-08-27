@@ -20,14 +20,12 @@ from wsm.utils import short_supplier_name, _clean, _build_header_totals
 from wsm.constants import PRICE_DIFF_THRESHOLD
 from wsm.parsing.eslog import get_supplier_info, XML_PARSER
 from wsm.supplier_store import _norm_vat
-from wsm.ui.review.helpers import (
-    first_existing_series,
-)
 from .helpers import (
     _fmt,
     _norm_unit,
     _merge_same_items,
     _apply_price_warning,
+    first_existing_series,  # ← potrebujemo v _backfill_* in drugje
 )
 from .io import _save_and_close, _load_supplier_map
 from .summary_columns import SUMMARY_COLS, SUMMARY_KEYS, SUMMARY_HEADS
@@ -209,7 +207,7 @@ def _backfill_discount_pct_from_prices(df: pd.DataFrame) -> pd.DataFrame:
         pct = (1 - cena_po / cena_pred) * 100
     Vzame prvi razpoložljivi par stolpcev (robustno preko `first_existing_series`).
     """
-    from wsm.ui.review.helpers import first_existing_series
+
     if df is None or df.empty:
         return df
 
@@ -233,17 +231,23 @@ def _backfill_discount_pct_from_prices(df: pd.DataFrame) -> pd.DataFrame:
     # maska: tam kjer eff=0 in cena_pred > 0
     mask = (eff == 0) & (pred != 0)
     if bool(mask.any()):
+
         def _calc(p_before, p_after):
             try:
-                return ((p_before - p_after) / p_before * Decimal("100")).quantize(Decimal("0.01"), ROUND_HALF_UP)
+                return (
+                    (p_before - p_after) / p_before * Decimal("100")
+                ).quantize(Decimal("0.01"), ROUND_HALF_UP)
             except Exception:
                 return Decimal("0")
+
         df.loc[mask, "eff_discount_pct"] = [
             _calc(pb, pa) for pb, pa in zip(pred[mask], po[mask])
         ]
         if "rabata_pct" in df.columns:
             rp = df["rabata_pct"].apply(_dec_or_zero)
-            df.loc[(rp == 0) & mask, "rabata_pct"] = df.loc[(rp == 0) & mask, "eff_discount_pct"]
+            df.loc[(rp == 0) & mask, "rabata_pct"] = df.loc[
+                (rp == 0) & mask, "eff_discount_pct"
+            ]
     return df
 
 
@@ -251,7 +255,19 @@ def _booked_mask_from(df_or_sr: pd.DataFrame | pd.Series) -> pd.Series:
     """True, če je vrstica KNJIŽENA (status POVEZANO ali AUTO)."""
     if isinstance(df_or_sr, pd.DataFrame) and "status" in df_or_sr.columns:
         st = df_or_sr["status"].fillna("").astype(str).str.upper().str.strip()
-        return st.str.startswith(("POVEZANO", "AUTO"))
+        mask = st.str.startswith(("POVEZANO", "AUTO"))
+        # Če je status prazen, a je WSM šifra vnešena, štej kot knjiženo
+        try:
+            col = first_existing_series(df_or_sr, ["wsm_sifra", "WSM šifra"])
+        except Exception:
+            col = None
+        if col is not None:
+            s = col.fillna("").astype(str).str.strip().str.upper()
+            excluded = globals().get("EXCLUDED_CODES", set())
+            mask = mask | (
+                st.str.strip().eq("") & s.ne("") & ~s.isin(excluded)
+            )
+        return mask
     if isinstance(df_or_sr, pd.Series):
         sr = df_or_sr
     else:
@@ -864,13 +880,13 @@ def review_links(
     # subsequent calculations and when saving the file. Previously the column
     # was cast to ``float`` which could introduce rounding errors.
     df["warning"] = pd.NA
-    
+
     # --- Lep opis rabata za prikaz v mreži ---
     def _q2(x):
         try:
-            return (
-                x if isinstance(x, Decimal) else Decimal(str(x))
-            ).quantize(DEC2, ROUND_HALF_UP)
+            return (x if isinstance(x, Decimal) else Decimal(str(x))).quantize(
+                DEC2, ROUND_HALF_UP
+            )
         except Exception:
             return Decimal("0.00")
 
@@ -896,6 +912,9 @@ def review_links(
         df["multiplier"] = Decimal("1")
     else:
         df["multiplier"] = df["multiplier"].map(lambda v: _as_dec(v, "1"))
+
+    # Naj povzetek in UI handlerji vedno uporabljajo zadnjo verzijo df
+    globals()["_CURRENT_GRID_DF"] = df
     # STEP0: surovi podatki
     try:
         cols_dbg = [
@@ -943,7 +962,11 @@ def review_links(
         ),
     )
     # 1a) če procenta še vedno ni, ga izračunamo iz cen pred/po
-    before_backfill = df["eff_discount_pct"].apply(_dec_or_zero) if "eff_discount_pct" in df.columns else None
+    before_backfill = (
+        df["eff_discount_pct"].apply(_dec_or_zero)
+        if "eff_discount_pct" in df.columns
+        else None
+    )
     df = _backfill_discount_pct_from_prices(df)
     if before_backfill is not None:
         after_backfill = df["eff_discount_pct"].apply(_dec_or_zero)
@@ -956,7 +979,9 @@ def review_links(
             eff = df["eff_discount_pct"].apply(_dec_or_zero)
             if "rabata_pct" not in df.columns:
                 df["rabata_pct"] = eff
-                _t("STEP1b rabata_pct created from eff_discount_pct for all rows")
+                _t(
+                    "STEP1b rabata_pct created from eff_discount_pct for all rows"
+                )
             else:
                 rp = df["rabata_pct"].apply(_dec_or_zero)
                 mask_sync = (rp == 0) & (eff != 0)
@@ -977,7 +1002,6 @@ def review_links(
         _t("STEP1c rabat_opis rebuild skipped: %s", _e)
 
     # Označi GRATIS vrstice (količina > 0 in neto = 0), da se ne izgubijo
-    from wsm.ui.review.helpers import first_existing_series
 
     if "is_gratis" not in df.columns:
         df["is_gratis"] = False
@@ -1931,12 +1955,159 @@ def review_links(
         return "break"
 
 
+    # Poravnava prikaznih in internih WSM stolpcev, da povzetek šteje pravilno
+    def _sync_wsm_cols_local():
+        try:
+            if "wsm_sifra" in df.columns and "WSM šifra" in df.columns:
+                src = df["WSM šifra"].astype("string")
+                m = (
+                    df["wsm_sifra"]
+                    .astype("string")
+                    .fillna("")
+                    .str.strip()
+                    .eq("")
+                )
+                if bool(m.any()):
+                    df.loc[m, "wsm_sifra"] = src[m]
+            if "wsm_naziv" in df.columns and "WSM Naziv" in df.columns:
+                srcn = df["WSM Naziv"].astype("string")
+                mn = (
+                    df["wsm_naziv"]
+                    .astype("string")
+                    .fillna("")
+                    .str.strip()
+                    .eq("")
+                )
+                if bool(mn.any()):
+                    df.loc[mn, "wsm_naziv"] = srcn[mn]
+        except Exception as _e:
+            _t(f"_sync_wsm_cols_local skipped: {_e}")
+
+    def _refresh_summary_ui():
+        # po poravnavi WSM polj, če imamo prazni status a izpolnjeno WSM šifro,
+        # nastavi status, da bo povzetek pravilen
+        _sync_wsm_cols_local()
+        try:
+            if "status" in df.columns and "wsm_sifra" in df.columns:
+                st = df["status"].astype("string").fillna("")
+                filled = (
+                    df["wsm_sifra"]
+                    .astype("string")
+                    .fillna("")
+                    .str.strip()
+                    .ne("")
+                )
+                empty = st.str.strip().eq("")
+                mask = filled & empty
+                if bool(mask.any()):
+                    df.loc[mask, "status"] = "POVEZANO • ročno"
+                    # odrazi v mreži
+                    for idx in df.index[mask]:
+                        rid = str(idx)
+                        try:
+                            if tree.exists(rid):
+                                tree.set(
+                                    rid, "status", df.at[idx, "status"] or ""
+                                )
+                                # osveži tudi prikaz WSM šifre/naziva in Rabat (%), če sta v mreži
+                                if "WSM šifra" in df.columns:
+                                    tree.set(
+                                        rid,
+                                        "WSM šifra",
+                                        df.at[idx, "WSM šifra"] or "",
+                                    )
+                                if "WSM Naziv" in df.columns:
+                                    tree.set(
+                                        rid,
+                                        "WSM Naziv",
+                                        df.at[idx, "WSM Naziv"] or "",
+                                    )
+                                if "rabata_pct" in df.columns:
+                                    tree.set(
+                                        rid,
+                                        "rabata_pct",
+                                        _fmt(df.at[idx, "rabata_pct"]),
+                                    )
+                        except Exception:
+                            pass
+        except Exception as _e:
+            _t(f"_refresh_summary_ui status sync skipped: {_e}")
+        globals()["_CURRENT_GRID_DF"] = df
+        _update_summary()
+        _schedule_totals()
+        try:
+            tree.focus_set()
+        except Exception:
+            pass
+
+    # --- ENTER handlers: commit + close + clear + refresh summary ---
+    def _on_combobox_return(event):
+        try:
+            # 0) commit kot FocusOut (zanesljivo zapiše vrednosti v df)
+            _editor_focus_out(event)
+        except Exception:
+            pass
+        try:
+            # 1) sproži še <<ComboboxSelected>> (za obstoječe handlerje)
+            event.widget.event_generate("<<ComboboxSelected>>")
+        except Exception:
+            pass
+        try:
+            # 2) zapri dropdown/popup (če je odprt)
+            event.widget.event_generate("<Escape>")
+        except Exception:
+            pass
+        try:
+            # 3) počisti vnos in izbiro – po idle, da ne prepiše Tk interni handler
+            w = event.widget
+
+            def _clear_after():
+                try:
+                    # odstrani izbrani index v listi in pobriši text
+                    if hasattr(w, "current"):
+                        w.current(-1)
+                except Exception:
+                    pass
+                try:
+                    w.set("")
+                except Exception:
+                    pass
+
+            try:
+                root.after_idle(_clear_after)
+            except Exception:
+                _clear_after()
+        except Exception:
+            pass
+        try:
+            # 4) osveži povzetek + fokus v grid
+            _refresh_summary_ui()
+        except Exception:
+            pass
+        return "break"
+
+    def _on_entry_return(event):
+        try:
+            _editor_focus_out(event)
+            _refresh_summary_ui()
+        except Exception:
+            pass
+        return "break"
+
     for c, h in zip(cols, heads):
         tree.heading(c, text=h)
         width = (
             300
             if c == "naziv"
-            else 80 if c == "enota_norm" else 160 if c == "warning" else 140 if c == "rabat_opis" else 120
+            else (
+                80
+                if c == "enota_norm"
+                else (
+                    160
+                    if c == "warning"
+                    else 140 if c == "rabat_opis" else 120
+                )
+            )
         )
         tree.column(c, width=width, anchor="w")
     # ENTER naj deluje enako v vseh editorjih
@@ -1948,6 +2119,72 @@ def review_links(
     except Exception:
         pass
 
+
+    def _tree_has_col(name: str) -> bool:
+        """Ali ima Treeview stolpec z danim ID? Prepreči set() na neobstoječ stolpec."""
+        try:
+            return name in set(tree["columns"])
+        except Exception:
+            return False
+
+    # ENTER naj deluje enako v vseh editorjih
+    try:
+        root.bind_class("Combobox", "<Return>", _on_combobox_return, add="+")
+        root.bind_class("TCombobox", "<Return>", _on_combobox_return, add="+")
+        root.bind_class("Entry", "<Return>", _on_entry_return, add="+")
+        root.bind_class("TEntry", "<Return>", _on_entry_return, add="+")
+        # Numpad Enter
+        root.bind_class("Combobox", "<KP_Enter>", _on_combobox_return, add="+")
+        root.bind_class(
+            "TCombobox", "<KP_Enter>", _on_combobox_return, add="+"
+        )
+        root.bind_class("Entry", "<KP_Enter>", _on_entry_return, add="+")
+        root.bind_class("TEntry", "<KP_Enter>", _on_entry_return, add="+")
+        # Miškina izbira naj tudi osveži povzetek/sync
+
+        def _on_combobox_selected(event):
+            try:
+                # 0) najprej zanesljivo zapiši vrednost (kot pri Enter)
+                try:
+                    _editor_focus_out(event)
+                except Exception:
+                    pass
+                # 1) posodobi in tudi "pozabi" izbiro,
+                #    da naslednje tipkanje začne na prazno
+                _refresh_summary_ui()
+                w = event.widget
+
+                def _clear_after_sel():
+                    try:
+                        if hasattr(w, "current"):
+                            w.current(-1)
+                        # pobriši tudi vnosno polje (ne drži prejšnje vrednosti)
+                        if hasattr(w, "set"):
+                            w.set("")
+                    except Exception:
+                        pass
+
+                try:
+                    root.after_idle(_clear_after_sel)
+                except Exception:
+                    _clear_after_sel()
+            except Exception:
+                pass
+
+        root.bind_class(
+            "Combobox",
+            "<<ComboboxSelected>>",
+            _on_combobox_selected,
+            add="+",
+        )
+        root.bind_class(
+            "TCombobox",
+            "<<ComboboxSelected>>",
+            _on_combobox_selected,
+            add="+",
+        )
+    except Exception:
+        pass
 
     def _safe_get(row, col, default=""):
         try:
@@ -2153,10 +2390,8 @@ def review_links(
     def _update_summary():
         import pandas as pd
         from decimal import Decimal
-        from wsm.ui.review.helpers import (
-            first_existing_series,
-        )
-        from wsm.ui.review.gui import _ensure_eff_discount_pct
+
+        # _ensure_eff_discount_pct je na voljo v istem modulu
 
         df = globals().get("_CURRENT_GRID_DF")
         if df is None:
@@ -2763,12 +2998,15 @@ def review_links(
                 df["WSM šifra"] = df["wsm_sifra"].astype("string").fillna("")
             if "WSM Naziv" in df.columns:
                 df["WSM Naziv"] = df["wsm_naziv"].astype("string").fillna("")
-            globals()["_CURRENT_GRID_DF"] = df
             # osveži vidne celice v gridu (Treeview)
             try:
                 for idx in df.index:
                     rid = str(idx)
-                    if "WSM šifra" in df.columns and tree.exists(rid):
+                    if (
+                        "WSM šifra" in df.columns
+                        and tree.exists(rid)
+                        and _tree_has_col("WSM šifra")
+                    ):
                         tree.set(
                             rid,
                             "WSM šifra",
@@ -2778,7 +3016,11 @@ def review_links(
                                 else ""
                             ),
                         )
-                    if "WSM Naziv" in df.columns and tree.exists(rid):
+                    if (
+                        "WSM Naziv" in df.columns
+                        and tree.exists(rid)
+                        and _tree_has_col("WSM Naziv")
+                    ):
                         tree.set(
                             rid,
                             "WSM Naziv",
@@ -2788,15 +3030,33 @@ def review_links(
                                 else ""
                             ),
                         )
-                    if "rabat_opis" in df.columns and tree.exists(rid):
-                        tree.set(rid, "rabat_opis", df.at[idx, "rabat_opis"] or "")
-                    if "status" in df.columns and tree.exists(rid):
+                    if (
+                        "rabat_opis" in df.columns
+                        and tree.exists(rid)
+                        and _tree_has_col("rabat_opis")
+                    ):
+                        tree.set(
+                            rid, "rabat_opis", df.at[idx, "rabat_opis"] or ""
+                        )
+                    if (
+                        "status" in df.columns
+                        and tree.exists(rid)
+                        and _tree_has_col("status")
+                    ):
                         tree.set(rid, "status", (df.at[idx, "status"] or ""))
                     # dodatno osveži prikazni stolpec "Rabat (%)" (bere rabata_pct)
-                    if "rabata_pct" in df.columns and tree.exists(rid):
-                        tree.set(rid, "rabata_pct", _fmt(df.at[idx, "rabata_pct"]))
+                    if (
+                        "rabata_pct" in df.columns
+                        and tree.exists(rid)
+                        and _tree_has_col("rabata_pct")
+                    ):
+                        tree.set(
+                            rid, "rabata_pct", _fmt(df.at[idx, "rabata_pct"])
+                        )
             except Exception as e:
                 log.warning("Osvežitev grid celic ni uspela: %s", e)
+            # posodobi referenco na aktualni df pred povzetkom
+            globals()["_CURRENT_GRID_DF"] = df
             _update_summary()
             _schedule_totals()
             messagebox.showinfo(
