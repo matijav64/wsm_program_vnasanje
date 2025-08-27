@@ -791,6 +791,32 @@ def review_links(
     # subsequent calculations and when saving the file. Previously the column
     # was cast to ``float`` which could introduce rounding errors.
     df["warning"] = pd.NA
+    
+    # --- Lep opis rabata za prikaz v mreži ---
+    def _q2(x):
+        try:
+            return (
+                x if isinstance(x, Decimal) else Decimal(str(x))
+            ).quantize(DEC2, ROUND_HALF_UP)
+        except Exception:
+            return Decimal("0.00")
+
+    def _fmt_eur(x: Decimal) -> str:
+        return f"{_q2(x):.2f}"
+
+    def _rab_opis(row) -> str:
+        if bool(row.get("is_gratis")) or (
+            _q2(row.get("rabata_pct", 0)) >= Decimal("99.90")
+        ):
+            return "100 % (GRATIS)"
+        pct = _q2(row.get("rabata_pct", 0))
+        if pct > 0:
+            amt = _q2(row.get("rabata", 0))
+            return f"{pct:.2f} % (−{_fmt_eur(amt)} €)"
+        return ""
+
+    df["rabat_opis"] = df.apply(_rab_opis, axis=1).astype("string")
+
     log.debug("df po normalizaciji: %s", df.head().to_dict())
     # Ensure 'multiplier' is a sane Decimal for later comparisons/UI
     if "multiplier" not in df.columns:
@@ -1481,6 +1507,8 @@ def review_links(
         "warning",
         "WSM šifra",
         "WSM naziv",
+        "rabat_opis",
+        "status",
         "dobavitelj",
     ]
     heads = [
@@ -1494,6 +1522,8 @@ def review_links(
         "Opozorilo",
         "WSM šifra",  # prikažemo dejansko knjiženje (OSTALO ali šifra)
         "WSM naziv",
+        "Rabat",
+        "Status",
         "Dobavitelj",
     ]
     tree = ttk.Treeview(
@@ -1764,7 +1794,7 @@ def review_links(
         width = (
             300
             if c == "naziv"
-            else 80 if c == "enota_norm" else 160 if c == "warning" else 120
+            else 80 if c == "enota_norm" else 160 if c == "warning" else 140 if c == "rabat_opis" else 120
         )
         tree.column(c, width=width, anchor="w")
 
@@ -2607,6 +2637,8 @@ def review_links(
                                 else ""
                             ),
                         )
+                    if "rabat_opis" in df.columns and tree.exists(rid):
+                        tree.set(rid, "rabat_opis", df.at[idx, "rabat_opis"] or "")
                     if "status" in df.columns and tree.exists(rid):
                         tree.set(rid, "status", (df.at[idx, "status"] or ""))
             except Exception as e:

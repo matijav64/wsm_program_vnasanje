@@ -1494,6 +1494,137 @@ def _line_tax(
     return tax_amount, rate_percent
 
 
+def _alc_pcd_moa_discount(sg26: LET._Element, qty: Decimal) -> tuple[Decimal, Decimal, bool]:
+    """Extract discount percent/amount from ``G_SG39`` ALC/PCD/MOA segments."""
+    pri_nodes = sg26.xpath(
+        ".//e:S_PRI[e:C_C509/e:D_5125='AAA']/e:C_C509/e:D_5118",
+        namespaces=NS,
+    )
+    if pri_nodes:
+        unit_price_after = _decimal(pri_nodes[0])
+    else:
+        nodes = sg26.xpath(
+            ".//S_PRI[C_C509/D_5125='AAA']/C_C509/D_5118"
+        )
+        unit_price_after = _decimal(nodes[0]) if nodes else None
+
+    pri_nodes = sg26.xpath(
+        ".//e:S_PRI[e:C_C509/e:D_5125='AAB']/e:C_C509/e:D_5118",
+        namespaces=NS,
+    )
+    if pri_nodes:
+        unit_price_list = _decimal(pri_nodes[0])
+    else:
+        nodes = sg26.xpath(
+            ".//S_PRI[C_C509/D_5125='AAB']/C_C509/D_5118"
+        )
+        unit_price_list = _decimal(nodes[0]) if nodes else None
+
+    moa_nodes = sg26.xpath(
+        ".//e:S_MOA[e:C_C516/e:D_5025='203']/e:C_C516/e:D_5004",
+        namespaces=NS,
+    )
+    if not moa_nodes:
+        moa_nodes = sg26.xpath(
+            ".//S_MOA[C_C516/D_5025='203']/C_C516/D_5004"
+        )
+    moa203 = _decimal(moa_nodes[0]) if moa_nodes else None
+
+    discount_pct = Decimal("0")
+    discount_amt = Decimal("0")
+    has_charge = False
+    for sg39 in sg26.findall(".//e:G_SG39", NS) + sg26.findall(".//G_SG39"):
+        alc_code = (
+            _text(sg39.find("./e:S_ALC/e:D_5463", NS))
+            or _text(sg39.find("./S_ALC/D_5463"))
+            or ""
+        ).strip()
+        if alc_code == "C":
+            has_charge = True
+        if alc_code != "A":
+            continue
+        for pcd in sg39.findall(".//e:S_PCD", NS) + sg39.findall(".//S_PCD"):
+            qual = _text(pcd.find("./e:C_C501/e:D_5245", NS)) or _text(
+                pcd.find("./C_C501/D_5245")
+            )
+            if qual.strip() == "1":
+                val_el = pcd.find("./e:C_C501/e:D_5482", NS) or pcd.find(
+                    "./C_C501/D_5482"
+                )
+                val = _decimal(val_el)
+                if val:
+                    discount_pct = val
+        for moa in sg39.findall(".//e:S_MOA", NS) + sg39.findall(".//S_MOA"):
+            qual = _text(moa.find("./e:C_C516/e:D_5025", NS)) or _text(
+                moa.find("./C_C516/D_5025")
+            )
+            if qual.strip() == "204":
+                val_el = moa.find("./e:C_C516/e:D_5004", NS) or moa.find(
+                    "./C_C516/D_5004"
+                )
+                discount_amt += _decimal(val_el)
+
+    if (
+        discount_pct == 0
+        and unit_price_list is not None
+        and unit_price_after is not None
+        and unit_price_list
+        and not has_charge
+    ):
+        try:
+            discount_pct = (
+                (unit_price_list - unit_price_after)
+                / unit_price_list
+                * Decimal("100")
+            )
+        except Exception:
+            pass
+    if (
+        discount_amt == 0
+        and unit_price_list is not None
+        and unit_price_after is not None
+    ):
+        discount_amt = (unit_price_list - unit_price_after) * qty
+    if discount_amt == 0 and unit_price_list is not None and moa203 is not None:
+        discount_amt = unit_price_list * qty - moa203
+    if (
+        discount_pct == 0
+        and unit_price_list is not None
+        and moa203 is not None
+        and unit_price_list * qty
+    ):
+        try:
+            discount_pct = (
+                (unit_price_list * qty - moa203)
+                / (unit_price_list * qty)
+                * Decimal("100")
+            )
+        except Exception:
+            pass
+
+    is_gratis = bool(
+        discount_pct >= 100
+        or (
+            unit_price_after is not None
+            and unit_price_after == 0
+            and unit_price_list is not None
+            and unit_price_list > 0
+        )
+    )
+    if discount_pct < 0 or discount_amt < 0:
+        is_gratis = False
+    if is_gratis and discount_pct < 100:
+        discount_pct = Decimal("100")
+
+    # vrni lepo zaokroženo na 2 decimalki
+    q2 = Decimal("0.01")
+    return (
+        discount_pct.quantize(q2, ROUND_HALF_UP),
+        discount_amt.quantize(q2, ROUND_HALF_UP),
+        is_gratis,
+    )
+
+
 # ──────────────────── glavni parser za ESLOG INVOIC ────────────────────
 def parse_eslog_invoice(
     xml_path: str | Path,
@@ -1594,9 +1725,22 @@ def parse_eslog_invoice(
         net_amount = _line_net(sg26)
         net_before = _line_net_before_discount(sg26, net_amount)
         disc_direct, disc_moa, pct_disc = _line_discount_components(sg26)
-        rebate_moa = disc_direct + disc_moa
-        pct_rebate = pct_disc
-        rebate = rebate_moa + pct_rebate
+        rebate = disc_direct + disc_moa + pct_disc
+        explicit_pct: Decimal | None = None
+        pct_fallback, amt_fallback, gratis_fallback = _alc_pcd_moa_discount(sg26, qty)
+        # če smo dobili znesek popusta, ga uporabi
+        if rebate == 0 and amt_fallback != 0:
+            rebate = amt_fallback
+        # % je samo za prikaz – ne mešamo ga z zneskom
+        if explicit_pct is None and pct_fallback != 0:
+            explicit_pct = pct_fallback.quantize(Decimal("0.01"), ROUND_HALF_UP)
+        # če zneska ni, ga lahko izračunamo iz % in net_before
+        if rebate == 0 and pct_fallback != 0 and net_before > 0:
+            rebate = (pct_fallback / Decimal("100")) * net_before
+
+        # Če smo popust inferirali in MOA 203 ni podal bruto zneska, dvigni net_before
+        if rebate > 0 and net_before == net_amount:
+            net_before = (net_amount + rebate).quantize(Decimal("0.01"), ROUND_HALF_UP)
 
         tax_amount, vat_rate = _line_tax(
             sg26, header_rate if header_rate != 0 else None
@@ -1654,7 +1798,6 @@ def parse_eslog_invoice(
         )
 
         # rabat na ravni vrstice
-        explicit_pct: Decimal | None = None
         for sg39 in sg26.findall(".//e:G_SG39", NS):
             if _text(sg39.find("./e:S_ALC/e:D_5463", NS)) != "A":
                 continue
@@ -1690,6 +1833,11 @@ def parse_eslog_invoice(
         is_gratis = (qty > 0 and net_amount == 0) or rabata_pct >= Decimal(
             "99.9"
         )
+        if not is_gratis and gratis_fallback:
+            is_gratis = True
+        if is_gratis and rabata_pct < Decimal("100"):
+            rabata_pct = Decimal("100")
+            eff_discount_pct = rabata_pct
         item.update(
             {
                 "sifra_dobavitelja": supplier_code,
