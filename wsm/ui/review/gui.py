@@ -60,7 +60,9 @@ ONLY_BOOKED_IN_SUMMARY = os.getenv("WSM_SUMMARY_ONLY_BOOKED", "0") not in {
 
 # Naj se shranjene povezave uporabijo samodejno ob odprtju?
 # (privzeto NE)
-AUTO_APPLY_LINKS = os.getenv("WSM_AUTO_APPLY_LINKS", "0") not in {
+AUTO_APPLY_LINKS = os.getenv(
+    "AUTO_APPLY_LINKS", os.getenv("WSM_AUTO_APPLY_LINKS", "0")
+) not in {
     "0",
     "false",
     "False",
@@ -74,10 +76,10 @@ EXCLUDED_CODES = {"UNKNOWN", "OSTALO", "OTHER", "NAN"}
 
 
 def _booked_mask_from(df_or_sr: pd.DataFrame | pd.Series) -> pd.Series:
-    """True, če je vrstica KNJIŽENA (status == 'POVEZANO')."""
+    """True, če je vrstica KNJIŽENA (status POVEZANO ali AUTO)."""
     if isinstance(df_or_sr, pd.DataFrame) and "status" in df_or_sr.columns:
         st = df_or_sr["status"].fillna("").astype(str).str.upper().str.strip()
-        return st.eq("POVEZANO")
+        return st.str.startswith(("POVEZANO", "AUTO"))
     if isinstance(df_or_sr, pd.Series):
         sr = df_or_sr
     else:
@@ -87,9 +89,9 @@ def _booked_mask_from(df_or_sr: pd.DataFrame | pd.Series) -> pd.Series:
         if col is None:
             return pd.Series(False, index=df_or_sr.index)
         sr = col
-    _ws = sr.fillna("").astype(str).str.strip()
-    _wsU = _ws.str.upper()
-    return (_ws != "") & (~_wsU.isin(EXCLUDED_CODES))
+    s = sr.fillna("").astype(str).str.strip().str.upper()
+    excluded = globals().get("EXCLUDED_CODES", set())
+    return s.ne("") & ~s.isin(excluded)
 
 
 def _safe_pct(v) -> Optional[Decimal]:
@@ -510,6 +512,12 @@ def review_links(
     # importov v tej funkciji ter poskrbi za Decimal util.
     import pandas as pd
     from decimal import Decimal, ROUND_HALF_UP
+
+    log.info(
+        "AUTO_APPLY_LINKS=%s → shranjene povezave %s.",
+        AUTO_APPLY_LINKS,
+        "BODO uveljavljene" if AUTO_APPLY_LINKS else "NE bodo",
+    )
 
     df = df.copy()
     log.debug("Initial invoice DataFrame:\n%s", df.to_string())
