@@ -3027,13 +3027,14 @@ def review_links(
     btn_frame = tk.Frame(entry_frame)
     btn_frame.grid(row=2, column=0, pady=(0, 6), sticky="ew")
 
-    def _apply_saved_links_now():
+    def _apply_saved_links_now(_silent: bool = False):
         nonlocal df
         links_df = globals().get("_PENDING_LINKS_DF")
         if links_df is None or getattr(links_df, "empty", True):
-            messagebox.showinfo(
-                "Povezave", "Ni shranjenih povezav za uveljavitev."
-            )
+            if not _silent:
+                messagebox.showinfo(
+                    "Povezave", "Ni shranjenih povezav za uveljavitev."
+                )
             return
         try:
             df, upd_cnt = _apply_links_to_df(df, links_df)
@@ -3106,17 +3107,26 @@ def review_links(
             globals()["_CURRENT_GRID_DF"] = df
             _update_summary()
             _schedule_totals()
-            messagebox.showinfo(
-                "Povezave", f"Uveljavljenih povezav: {upd_cnt}"
-            )
+            if not _silent:
+                messagebox.showinfo(
+                    "Povezave", f"Uveljavljenih povezav: {upd_cnt}"
+                )
         except Exception as e:
             log.exception("Ročna uveljavitev povezav ni uspela: %s", e)
-            messagebox.showerror(
-                "Povezave", f"Napaka pri uveljavitvi povezav:\n{e}"
-            )
+            if not _silent:
+                messagebox.showerror(
+                    "Povezave", f"Napaka pri uveljavitvi povezav:\n{e}"
+                )
 
     # --- Unit change widgets ---
     unit_options = ["kos", "kg", "L"]
+
+    # Če smo povezave auto-uveljavili že ob odpiranju, zdaj osveži še grid.
+    if AUTO_APPLY_LINKS:
+        try:
+            root.after(0, lambda: _apply_saved_links_now(_silent=True))
+        except Exception as e:
+            log.debug("AUTO refresh WSM stolpcev v gridu preskočen: %s", e)
 
     def _cleanup():
         nonlocal closing, price_tip, last_warn_item
