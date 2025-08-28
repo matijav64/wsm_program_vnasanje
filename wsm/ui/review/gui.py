@@ -2462,12 +2462,17 @@ def review_links(
             except Exception:
                 pass
 
-        # ---- Novi grupirni ključ za povzetek: WSM naziv + enota + rabat ----
-        name_s = first_existing_series(df, ["wsm_naziv", "WSM Naziv"])
-        if name_s is None:
-            # fallback, če po nesreči naziva še ni
-            name_s = pd.Series(["OSTALO"] * len(df), index=df.index)
-        name_s = name_s.astype(object).fillna("OSTALO").map(str).str.strip()
+        # ---- Grupirni ključ: WSM šifra (zanesljivo) + enota + rabat ----
+        # šifra → najprej normaliziraj
+        code_s = first_existing_series(df, ["wsm_sifra", "WSM šifra"])
+        if code_s is None:
+            code_s = pd.Series([""] * len(df), index=df.index)
+        code_s = code_s.astype(object).fillna("").map(str).str.strip()
+        excluded = {x.upper() for x in globals().get("EXCLUDED_CODES", set())}
+        is_booked = code_s.ne("") & ~code_s.str.upper().isin(excluded)
+        df["_is_booked"] = is_booked
+        # za neknjižene uporabimo fiksni “OSTALO” (ime bo samo prikaz)
+        code_or_ostalo = code_s.where(is_booked, "OSTALO")
 
         unit_s = first_existing_series(df, ["enota_norm", "enota"])
         if unit_s is None:
@@ -2495,8 +2500,9 @@ def review_links(
         if not globals().get("GROUP_BY_DISCOUNT", True):
             rab_s[:] = Decimal("0.00")
 
+        # ključ povzetka: (WSM šifra ali 'OSTALO', enota, rabat)
         df["_summary_gkey"] = list(
-            zip(name_s.tolist(), unit_s.tolist(), rab_s.tolist())
+            zip(code_or_ostalo.tolist(), unit_s.tolist(), rab_s.tolist())
         )
 
         # že zagotovljen v review_links; če ni, ga dodamo
@@ -2637,32 +2643,25 @@ def review_links(
 
         records = []
         for key, g in groups:
-            codes = []
-            if "wsm_sifra" in g.columns:
-                codes = sorted(
-                    {
-                        str(x).strip()
-                        for x in g["wsm_sifra"]
-                        if pd.notna(x) and str(x).strip()
-                    }
-                )
-            show_code = (
-                codes[0]
-                if len(codes) == 1
-                else ("več" if len(codes) > 1 else "")
-            )
+            # ključ je (code_or_ostalo, unit, rab)
+            code, _, rab = key
+            is_booked = code != "OSTALO"
+            show_code = code if is_booked else "OSTALO"
 
-            name, _, rab = key
-            is_booked = bool(g["_is_booked"].max())
+            # ime je samo prikaz: vzemi prvo ne-prazno/ne-‘ostalo’ iz grupe,
+            # sicer ga kasneje dopolnimo iz kataloga (spodaj je že koda za to)
+            disp_name = ""
+            nm_s = first_existing_series(g, ["WSM Naziv", "wsm_naziv"])
+            if nm_s is not None:
+                _nm = nm_s.astype(str).str.strip()
+                _nm = _nm[(_nm != "") & (_nm.str.lower() != "ostalo")]
+                if len(_nm):
+                    disp_name = _nm.iloc[0]
 
             records.append(
                 {
-                    "WSM šifra": show_code if is_booked else "OSTALO",
-                    "WSM Naziv": (
-                        name
-                        if is_booked and name
-                        else ("ostalo" if not is_booked else "")
-                    ),
+                    "WSM šifra": show_code,
+                    "WSM Naziv": disp_name if is_booked else "OSTALO",
                     "Količina": dsum(g["kolicina"]),
                     "Znesek": (
                         dsum(g["bruto"])
