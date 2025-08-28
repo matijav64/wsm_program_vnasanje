@@ -1366,6 +1366,19 @@ def review_links(
         .to_dict("records"),
     )
 
+    # Po združevanju lahko 'rabat_opis' izgine – ga ponovno zgradimo.
+    try:
+        if "rabata_pct" in df.columns:
+            df["rabat_opis"] = df.apply(_rab_opis, axis=1).astype("string")
+            _t("STEP5c rabat_opis rebuilt after merge")
+        else:
+            # V skrajnem primeru zagotovi prazen stolpec, da grid ne pade
+            if "rabat_opis" not in df.columns:
+                df["rabat_opis"] = ""
+                _t("STEP5c rabat_opis added as empty (rabata_pct missing)")
+    except Exception as _e:
+        _t(f"STEP5c rabat_opis rebuild skipped: {_e}")
+
     # ------------------------------------------------------------------
     # BOOKING LOGIKA
     #  - Predlog (wsm_sifra) je le informativen.
@@ -1918,42 +1931,6 @@ def review_links(
     root.bind_class("TEntry", "<FocusOut>", _editor_focus_out, add="+")
     root.bind_class("Combobox", "<FocusOut>", _editor_focus_out, add="+")
     root.bind_class("TCombobox", "<FocusOut>", _editor_focus_out, add="+")
-    # --- ENTER handlers: commit + close + clear + refresh summary ---
-    def _on_combobox_return(event):
-        try:
-            # 1) commit kot da bi kliknil izbiro
-            event.widget.event_generate("<<ComboboxSelected>>")
-        except Exception:
-            pass
-        try:
-            # 2) zapri dropdown/popup
-            event.widget.event_generate("<Escape>")
-        except Exception:
-            pass
-        try:
-            # 3) počisti vnos (nov vnos brez stare izbire)
-            event.widget.set("")
-        except Exception:
-            pass
-        try:
-            # 4) osveži povzetek in vrni fokus v grid
-            _update_summary()
-            _schedule_totals()
-            tree.focus_set()
-        except Exception:
-            pass
-        return "break"
-
-    def _on_entry_return(event):
-        try:
-            _editor_focus_out(event)
-            _update_summary()
-            _schedule_totals()
-            tree.focus_set()
-        except Exception:
-            pass
-        return "break"
-
 
     # Poravnava prikaznih in internih WSM stolpcev, da povzetek šteje pravilno
     def _sync_wsm_cols_local():
@@ -1984,10 +1961,10 @@ def review_links(
             _t(f"_sync_wsm_cols_local skipped: {_e}")
 
     def _refresh_summary_ui():
-        # po poravnavi WSM polj, če imamo prazni status a izpolnjeno WSM šifro,
-        # nastavi status, da bo povzetek pravilen
+        # poravnaj WSM stolpce (display → internal)
         _sync_wsm_cols_local()
         try:
+            # če je status prazen, a je vnešena wsm_sifra → označi kot knjiženo
             if "status" in df.columns and "wsm_sifra" in df.columns:
                 st = df["status"].astype("string").fillna("")
                 filled = (
@@ -2001,40 +1978,18 @@ def review_links(
                 mask = filled & empty
                 if bool(mask.any()):
                     df.loc[mask, "status"] = "POVEZANO • ročno"
-                    # odrazi v mreži
                     for idx in df.index[mask]:
                         rid = str(idx)
-                        try:
-                            if tree.exists(rid):
-                                tree.set(
-                                    rid, "status", df.at[idx, "status"] or ""
-                                )
-                                # osveži tudi prikaz WSM šifre/naziva in Rabat (%), če sta v mreži
-                                if "WSM šifra" in df.columns:
-                                    tree.set(
-                                        rid,
-                                        "WSM šifra",
-                                        df.at[idx, "WSM šifra"] or "",
-                                    )
-                                if "WSM Naziv" in df.columns:
-                                    tree.set(
-                                        rid,
-                                        "WSM Naziv",
-                                        df.at[idx, "WSM Naziv"] or "",
-                                    )
-                                if "rabata_pct" in df.columns:
-                                    tree.set(
-                                        rid,
-                                        "rabata_pct",
-                                        _fmt(df.at[idx, "rabata_pct"]),
-                                    )
-                        except Exception:
-                            pass
+                        if tree.exists(rid) and _tree_has_col("status"):
+                            tree.set(rid, "status", df.at[idx, "status"] or "")
         except Exception as _e:
             _t(f"_refresh_summary_ui status sync skipped: {_e}")
         globals()["_CURRENT_GRID_DF"] = df
-        _update_summary()
-        _schedule_totals()
+        try:
+            _update_summary()
+            _schedule_totals()
+        except Exception as _e:
+            _t(f"_refresh_summary_ui refresh skipped: {_e}")
         try:
             tree.focus_set()
         except Exception:
@@ -2058,7 +2013,7 @@ def review_links(
         except Exception:
             pass
         try:
-            # 3) počisti vnos in izbiro – po idle, da ne prepiše Tk interni handler
+            # 3) počisti vnos in izbiro po idle (ne prepiši Tk handlerja)
             w = event.widget
 
             def _clear_after():
@@ -2110,15 +2065,6 @@ def review_links(
             )
         )
         tree.column(c, width=width, anchor="w")
-    # ENTER naj deluje enako v vseh editorjih
-    try:
-        root.bind_class("Combobox", "<Return>", _on_combobox_return, add="+")
-        root.bind_class("TCombobox", "<Return>", _on_combobox_return, add="+")
-        root.bind_class("Entry", "<Return>", _on_entry_return, add="+")
-        root.bind_class("TEntry", "<Return>", _on_entry_return, add="+")
-    except Exception:
-        pass
-
 
     def _tree_has_col(name: str) -> bool:
         """Ali ima Treeview stolpec z danim ID? Prepreči set() na neobstoječ stolpec."""
@@ -2158,7 +2104,7 @@ def review_links(
                     try:
                         if hasattr(w, "current"):
                             w.current(-1)
-                        # pobriši tudi vnosno polje (ne drži prejšnje vrednosti)
+                        # pobriši tudi vnosno polje
                         if hasattr(w, "set"):
                             w.set("")
                     except Exception:
@@ -3544,15 +3490,26 @@ def review_links(
             tree.item(sel_i, tags=tuple(tset))
             tree.set(sel_i, "warning", "GRATIS")
 
-        new_vals = [
-            (
-                _fmt(df.at[idx, c])
-                if isinstance(df.at[idx, c], (Decimal, float, int))
-                else ("" if pd.isna(df.at[idx, c]) else str(df.at[idx, c]))
-            )
-            for c in cols
-        ]
-        tree.item(sel_i, values=new_vals)
+        def _safe_cell(idx, c, default=""):
+            # Ne zaupaj, da stolpec vedno obstaja po merge/urejanju
+            if c not in df.columns:
+                return default
+            try:
+                v = df.at[idx, c]
+            except Exception:
+                return default
+            if isinstance(v, (Decimal, float, int)) and not isinstance(
+                v, bool
+            ):
+                return _fmt(_clean_neg_zero(v))
+            if v is None or (hasattr(pd, "isna") and pd.isna(v)):
+                return ""
+            return str(v)
+
+        new_vals = [_safe_cell(idx, c) for c in cols]
+        for j, c in enumerate(cols):
+            if _tree_has_col(c):
+                tree.set(sel_i, c, new_vals[j])
         try:
             globals()["_CURRENT_GRID_DF"] = df
             _update_summary()
