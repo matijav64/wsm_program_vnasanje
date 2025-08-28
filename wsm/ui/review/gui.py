@@ -65,6 +65,11 @@ AUTO_APPLY_LINKS = os.getenv(
     "False",
 }
 
+# Ali naj pri knjiženih vrsticah prepišemo tudi 'ostalo' z nazivom iz kataloga?
+OVERWRITE_OSTALO_IN_GRID = os.getenv(
+    "WSM_OVERWRITE_OSTALO_IN_GRID", "1"
+) not in {"0", "false", "False"}
+
 DEC2 = Decimal("0.01")
 DEC_PCT_MIN = Decimal("-100")
 DEC_PCT_MAX = Decimal("100")
@@ -215,42 +220,41 @@ def _apply_links_to_df(
 def _fill_names_from_catalog(
     df: pd.DataFrame, wsm_df: pd.DataFrame
 ) -> pd.DataFrame:
-    """Populate ``wsm_naziv`` from catalog.
-
-    Ensures string codes on both sides.
-    """
+    """Zapolni/poravna ``wsm_naziv`` iz kataloga glede na kodo."""
     if not isinstance(wsm_df, pd.DataFrame) or not {
         "wsm_sifra",
         "wsm_naziv",
     }.issubset(wsm_df.columns):
         return df
+    if "wsm_sifra" not in df.columns:
+        return df
+
     nm = (
         wsm_df.drop_duplicates("wsm_sifra")
         .assign(wsm_sifra=lambda d: d["wsm_sifra"].astype(str).str.strip())
         .set_index("wsm_sifra")["wsm_naziv"]
     )
-    if "wsm_sifra" not in df.columns:
-        return df
-    has_code = df["wsm_sifra"].notna() & df["wsm_sifra"].astype(
-        str
-    ).str.strip().ne("")
+
+    excluded = {x.upper() for x in globals().get("EXCLUDED_CODES", set())}
+    codes = df["wsm_sifra"].astype(str).str.strip()
+    has_code = codes.ne("") & ~codes.str.upper().isin(excluded)
 
     cur = df.get("wsm_naziv")
-    keep_ostalo = (
-        cur.astype(str).str.strip().str.lower().eq("ostalo")
-        if cur is not None
-        else pd.Series(False, index=df.index)
-    )
-    need_fill = (
-        cur.isna() | cur.astype(str).str.strip().eq("")
-        if cur is not None
-        else pd.Series(True, index=df.index)
-    )
+    if cur is None:
+        df["wsm_naziv"] = pd.Series(pd.NA, index=df.index, dtype="string")
+        cur = df["wsm_naziv"]
+    cur_s = cur.astype(str)
 
-    fill_mask = has_code & ~keep_ostalo & need_fill
-    df.loc[fill_mask, "wsm_naziv"] = (
-        df.loc[fill_mask, "wsm_sifra"].astype(str).map(nm)
-    )
+    # manjkajoče ime ali 'ostalo' – slednje le, če stikalo to dovoli
+    need_fill = cur.isna() | cur_s.str.strip().eq("")
+    if globals().get("OVERWRITE_OSTALO_IN_GRID", True):
+        need_fill = need_fill | cur_s.str.strip().str.lower().eq("ostalo")
+
+    fill_mask = has_code & need_fill
+    val = codes[fill_mask].map(nm)
+    df.loc[fill_mask, "wsm_naziv"] = val.where(
+        val.notna(), cur.loc[fill_mask]
+    ).astype("string")
     return df
 
 
