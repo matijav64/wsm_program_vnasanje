@@ -76,6 +76,37 @@ DEC_PCT_MAX = Decimal("100")
 
 EXCLUDED_CODES = {"UNKNOWN", "OSTALO", "OTHER", "NAN"}
 
+def _normalize_wsm_display_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Enotno poimenuj prikazne stolpce v gridu:
+      - 'WSM naziv' (mali n) -> 'WSM Naziv' (veliki N)
+      - posodobi 'WSM šifra' in 'WSM Naziv' iz baznih 'wsm_sifra' / 'wsm_naziv'.
+    Ne povzroči napake, če stolpcev ni.
+    """
+    if df is None or df.empty:
+        return df
+    # 1) preimenuj morebitni 'WSM naziv' -> 'WSM Naziv'
+    rename_map = {}
+    for c in list(df.columns):
+        if c.strip().lower() == "wsm naziv".lower() and c != "WSM Naziv":
+            rename_map[c] = "WSM Naziv"
+    if rename_map:
+        df = df.rename(columns=rename_map)
+    # če imamo po naključju oba stolpca, združi in odstrani starega
+    if "WSM naziv" in df.columns and "WSM Naziv" in df.columns:
+        df["WSM Naziv"] = df["WSM Naziv"].fillna(df["WSM naziv"])
+        df = df.drop(columns=["WSM naziv"])
+    # 2) zapolni prikazne iz baznih, če obstajajo
+    if "wsm_sifra" in df.columns:
+        if "WSM šifra" not in df.columns:
+            df["WSM šifra"] = pd.Series(pd.NA, index=df.index, dtype="string")
+        df["WSM šifra"] = df["wsm_sifra"].astype("string").fillna("")
+    if "wsm_naziv" in df.columns:
+        if "WSM Naziv" not in df.columns:
+            df["WSM Naziv"] = pd.Series(pd.NA, index=df.index, dtype="string")
+        df["WSM Naziv"] = df["wsm_naziv"].astype("string").fillna("")
+    return df
+
 
 def _apply_links_to_df(
     df: pd.DataFrame, links_df: pd.DataFrame
@@ -881,10 +912,7 @@ def review_links(
         try:
             df, upd_cnt = _apply_links_to_df(df, links_df)
             df = _fill_names_from_catalog(df, wsm_df)
-            if "WSM šifra" in df.columns:
-                df["WSM šifra"] = df["wsm_sifra"].astype("string").fillna("")
-            if "WSM Naziv" in df.columns:
-                df["WSM Naziv"] = df["wsm_naziv"].astype("string").fillna("")
+            df = _normalize_wsm_display_columns(df)
             globals()["_CURRENT_GRID_DF"] = df
             log.info(
                 "Samodejno uveljavljene povezave: %d vrstic posodobljenih.",
@@ -905,16 +933,17 @@ def review_links(
         else:
             df[c] = df[c].astype("string")
 
+    # Enotno ime prikaznih stolpcev v gridu (tudi ko AUTO_APPLY_LINKS=0)
+    df = _normalize_wsm_display_columns(df)
+
     if not AUTO_APPLY_LINKS:
         if "status" not in df.columns:
             df["status"] = ""
         mask_not_booked = df["status"].astype(str).str.upper().ne("POVEZANO")
         df.loc[mask_not_booked, ["wsm_sifra", "wsm_naziv"]] = pd.NA
 
-    if "WSM šifra" in df.columns:
-        df["WSM šifra"] = df["wsm_sifra"].astype("string").fillna("")
-    if "WSM Naziv" in df.columns:
-        df["WSM Naziv"] = df["wsm_naziv"].astype("string").fillna("")
+    # Po morebitnem praznjenju ponovno poravnaj prikazne vrednosti
+    df = _normalize_wsm_display_columns(df)
 
     df["multiplier"] = Decimal("1")
     log.debug(f"df po inicializaciji: {df.head().to_dict()}")
@@ -3042,10 +3071,7 @@ def review_links(
         try:
             df, upd_cnt = _apply_links_to_df(df, links_df)
             df = _fill_names_from_catalog(df, wsm_df)
-            if "WSM šifra" in df.columns:
-                df["WSM šifra"] = df["wsm_sifra"].astype("string").fillna("")
-            if "WSM Naziv" in df.columns:
-                df["WSM Naziv"] = df["wsm_naziv"].astype("string").fillna("")
+            df = _normalize_wsm_display_columns(df)
             # osveži vidne celice v gridu (Treeview)
             try:
                 for idx in df.index:
@@ -3064,20 +3090,14 @@ def review_links(
                                 else ""
                             ),
                         )
-                    if (
-                        "WSM Naziv" in df.columns
-                        and tree.exists(rid)
-                        and _tree_has_col("WSM Naziv")
-                    ):
-                        tree.set(
-                            rid,
-                            "WSM Naziv",
-                            (
-                                df.at[idx, "WSM Naziv"]
-                                if pd.notna(df.at[idx, "WSM Naziv"])
-                                else ""
-                            ),
-                        )
+                    # od tu naprej je ime enotno v df: "WSM Naziv"
+                    if tree.exists(rid):
+                        for col_alias in ("WSM Naziv", "WSM naziv"):
+                            if _tree_has_col(col_alias):
+                                tree.set(
+                                    rid, col_alias, (df.at[idx, "WSM Naziv"] or "")
+                                )
+                                break
                     if (
                         "rabat_opis" in df.columns
                         and tree.exists(rid)
