@@ -76,11 +76,13 @@ DEC_PCT_MAX = Decimal("100")
 
 EXCLUDED_CODES = {"UNKNOWN", "OSTALO", "OTHER", "NAN"}
 
+
 def _normalize_wsm_display_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Enotno poimenuj prikazne stolpce v gridu:
       - 'WSM naziv' (mali n) -> 'WSM Naziv' (veliki N)
-      - posodobi 'WSM šifra' in 'WSM Naziv' iz baznih 'wsm_sifra' / 'wsm_naziv'.
+      - posodobi 'WSM šifra' in 'WSM Naziv'
+        iz baznih 'wsm_sifra' / 'wsm_naziv'.
     Ne povzroči napake, če stolpcev ni.
     """
     if df is None or df.empty:
@@ -949,6 +951,10 @@ def review_links(
     log.debug(f"df po inicializaciji: {df.head().to_dict()}")
 
     df_doc = df[df["sifra_dobavitelja"] == "_DOC_"]
+    # poskrbi, da je df_doc skladen z df
+    df_doc = _normalize_wsm_display_columns(df_doc)
+    df_doc = df_doc.loc[:, ~df_doc.columns.duplicated()].copy()
+
     doc_discount_raw = df_doc["vrednost"].sum()
     doc_discount = (
         doc_discount_raw
@@ -2625,6 +2631,40 @@ def review_links(
         }
         if "status" in df.columns:
             data["status"] = df["status"]
+
+        # poskrbi, da so vsi stolpci 1-D in enake dolžine kot df
+        n = len(df)
+
+        def _to_list(x):
+            # poravnava po indeksu, če je Series/Index
+            if isinstance(x, pd.Series):
+                return x.reindex(df.index).tolist()
+            if isinstance(x, pd.Index):
+                return pd.Series(x).reindex(df.index).tolist()
+            # numpy -> lista
+            try:
+                import numpy as np  # lazy import
+
+                if isinstance(x, np.ndarray):
+                    x = x.reshape(-1).tolist()
+            except Exception:
+                pass
+            # tuple/list -> lista
+            if isinstance(x, (list, tuple)):
+                arr = list(x)
+            else:
+                # skalar -> broadcast
+                arr = [x]
+            # uskladitev dolžin
+            if len(arr) == n:
+                return arr
+            if len(arr) == 1:
+                return arr * n
+            if len(arr) < n:
+                return arr + [None] * (n - len(arr))
+            return arr[:n]
+
+        data = {k: _to_list(v) for k, v in data.items()}
         work = pd.DataFrame(data)
         # Izračunaj knjiženost enkrat in jo nesi naprej skozi agregacijo
         try:
@@ -3094,24 +3134,32 @@ def review_links(
                     if tree.exists(rid):
                         for col_alias in ("WSM Naziv", "WSM naziv"):
                             if _tree_has_col(col_alias):
-                                tree.set(
-                                    rid, col_alias, (df.at[idx, "WSM Naziv"] or "")
+                                v = (
+                                    df.at[idx, "WSM Naziv"]
+                                    if "WSM Naziv" in df.columns
+                                    else None
                                 )
+                                s = "" if pd.isna(v) else str(v)
+                                tree.set(rid, col_alias, s)
                                 break
+
                     if (
                         "rabat_opis" in df.columns
                         and tree.exists(rid)
                         and _tree_has_col("rabat_opis")
                     ):
+                        v = df.at[idx, "rabat_opis"]
                         tree.set(
-                            rid, "rabat_opis", df.at[idx, "rabat_opis"] or ""
+                            rid, "rabat_opis", "" if pd.isna(v) else str(v)
                         )
+
                     if (
                         "status" in df.columns
                         and tree.exists(rid)
                         and _tree_has_col("status")
                     ):
-                        tree.set(rid, "status", (df.at[idx, "status"] or ""))
+                        v = df.at[idx, "status"]
+                        tree.set(rid, "status", "" if pd.isna(v) else str(v))
                         # dodatno osveži prikazni stolpec "Rabat (%)"
                         # (bere rabata_pct)
                         if (
@@ -3851,5 +3899,17 @@ def review_links(
         pass
     if GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
         df = df.drop(columns=["_discount_bucket"])
+
+    # deduplikacija stolpcev in poravnava
+    df = df.loc[:, ~df.columns.duplicated()].copy()
+    # ohrani vrstni red iz df, dodaj manjkajoče iz df_doc na konec
+    all_cols = list(
+        dict.fromkeys(
+            list(df.columns)
+            + [c for c in df_doc.columns if c not in df.columns]
+        )
+    )
+    df = df.reindex(columns=all_cols)
+    df_doc = df_doc.reindex(columns=all_cols)
 
     return pd.concat([df, df_doc], ignore_index=True)
