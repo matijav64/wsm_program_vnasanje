@@ -505,23 +505,18 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
             if k not in ("sifra_dobavitelja", "naziv_ckey")
         ]
     # ➋ Ključ cene/rabata za varno združevanje
-    # (le če je vključeno grupiranje po ceni):
-    #    1) tolerantna cena (0.001) – če obstaja
-    #    2) _discount_bucket (pct, cena) – če obstaja
-    #    3) line_bucket
-    #    4) eff_discount_pct  (zadnji izhod v sili)
-    if GROUP_BY_DISCOUNT and "eff_discount_pct" in df.columns:
-        bucket_keys = ["eff_discount_pct"]
-    elif (
-        GROUP_BY_DISCOUNT
-        and "_price_key" in df.columns
-        and df["_price_key"].notna().all()
-    ):
-        bucket_keys = ["_price_key"]
-    elif GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
-        bucket_keys = ["_discount_bucket"]
-    elif GROUP_BY_DISCOUNT and "line_bucket" in df.columns:
-        bucket_keys = ["line_bucket"]
+    #    vedno dodaj price_key, če obstaja
+    #    + rabat (eff_discount_pct ali fallbacki)
+    if GROUP_BY_DISCOUNT:
+        bucket_keys = []
+        if "_price_key" in df.columns:
+            bucket_keys.append("_price_key")
+        if "eff_discount_pct" in df.columns:
+            bucket_keys.append("eff_discount_pct")
+        elif "_discount_bucket" in df.columns:
+            bucket_keys.append("_discount_bucket")
+        elif "line_bucket" in df.columns:
+            bucket_keys.append("line_bucket")
     else:
         bucket_keys = []
     # ➌ Končni ključ = identitetni + bucket/rabat (brez “šuma”)
