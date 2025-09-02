@@ -2569,11 +2569,12 @@ def review_links(
         )
 
         # Naziv prav tako iz grida, če obstaja
-        name_s = first_existing_series(
-            df, ["WSM Naziv", "WSM naziv", "wsm_naziv"]
-        )
-        if name_s is None:
-            name_s = pd.Series([""] * len(df), index=df.index, dtype=object)
+        if "WSM Naziv" in df.columns:
+            name_s = df["WSM Naziv"].astype("string")
+        elif "wsm_naziv" in df.columns:
+            name_s = df["wsm_naziv"].astype("string")
+        else:
+            name_s = pd.Series([""] * len(df), index=df.index, dtype="string")
 
         # normaliziraj ključ na "OSTALO" kjer je prazno/NA
         if wsm_s is not None:
@@ -2613,7 +2614,7 @@ def review_links(
                 if wsm_s is not None
                 else pd.Series(["OSTALO"] * len(df), index=df.index)
             ),
-            "wsm_naziv": name_s,
+            "wsm_naziv": name_s,  # Series iz bloka zgoraj (nikoli konstanta!)
             "znesek": (
                 val_s
                 if val_s is not None
