@@ -81,7 +81,8 @@ def _normalize_wsm_display_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Enotno poimenuj prikazne stolpce v gridu:
       - 'WSM naziv' (mali n) -> 'WSM Naziv' (veliki N)
-      - posodobi 'WSM šifra' in 'WSM Naziv' iz baznih 'wsm_sifra' / 'wsm_naziv'.
+      - posodobi 'WSM šifra' in 'WSM Naziv' iz baznih
+        'wsm_sifra' / 'wsm_naziv'.
     Ne povzroči napake, če stolpcev ni.
     """
     if df is None or df.empty:
@@ -2107,7 +2108,10 @@ def review_links(
                     for idx in df.index[mask]:
                         rid = str(idx)
                         if tree.exists(rid) and _tree_has_col("status"):
-                            tree.set(rid, "status", df.at[idx, "status"] or "")
+                            v = df.at[idx, "status"]
+                            tree.set(
+                                rid, "status", "" if pd.isna(v) else str(v)
+                            )
         except Exception as _e:
             _t(f"_refresh_summary_ui status sync skipped: {_e}")
         globals()["_CURRENT_GRID_DF"] = df
@@ -2631,23 +2635,35 @@ def review_links(
         if "status" in df.columns:
             data["status"] = df["status"]
 
-        # poskrbi, da so vsi stolpci 1-D (seznami)
-        def _one_d(x):
-            if isinstance(x, (pd.Series, pd.Index)):
-                return x.tolist()
+        # --- VARNOST: poskrbi, da so vsi stolpci 1-D seznami ENAKE dolžine ---
+        n = len(df)
+
+        def _to_list(x):
+            if isinstance(x, pd.Series):
+                return x.reindex(df.index).tolist()
+            if isinstance(x, pd.Index):
+                return pd.Series(x).reindex(df.index).tolist()
             try:
-                import numpy as np
+                import numpy as np  # lazy
 
                 if isinstance(x, np.ndarray):
-                    return x.reshape(-1).tolist()
+                    x = x.reshape(-1).tolist()
             except Exception:
                 pass
             if isinstance(x, (list, tuple)):
-                return list(x)
-            # skalar -> seznam z enim elementom
-            return [x]
+                arr = list(x)
+            else:
+                arr = [x]
+            if len(arr) == n:
+                return arr
+            if len(arr) == 1:
+                return arr * n
+            if len(arr) < n:
+                return arr + [None] * (n - len(arr))
+            return arr[:n]
 
-        data = {k: _one_d(v) for k, v in data.items()}
+        data = {k: _to_list(v) for k, v in data.items()}
+        # --- konec varovalke ---
         work = pd.DataFrame(data)
         # Izračunaj knjiženost enkrat in jo nesi naprej skozi agregacijo
         try:
@@ -3883,9 +3899,15 @@ def review_links(
     if GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
         df = df.drop(columns=["_discount_bucket"])
 
-    # deduplikacija stolpcev in poravnava
+    # deduplikacija stolpcev in poravnava z df_doc,
+    # da se concat ne zalomi in da je vrstni red stabilen
     df = df.loc[:, ~df.columns.duplicated()].copy()
-    all_cols = sorted(set(df.columns) | set(df_doc.columns))
+    all_cols = list(
+        dict.fromkeys(
+            list(df.columns)
+            + [c for c in df_doc.columns if c not in df.columns]
+        )
+    )
     df = df.reindex(columns=all_cols)
     df_doc = df_doc.reindex(columns=all_cols)
 
