@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from pathlib import Path
 from typing import Tuple, Optional
 
@@ -65,7 +65,7 @@ AUTO_APPLY_LINKS = os.getenv(
     "False",
 }
 
-# Ali naj pri knjiženih vrsticah prepišemo tudi 'ostalo' z nazivom iz kataloga?
+# Ali naj pri knjiženih vrsticah prepišemo tudi 'Ostalo' z nazivom iz kataloga?
 OVERWRITE_OSTALO_IN_GRID = os.getenv(
     "WSM_OVERWRITE_OSTALO_IN_GRID", "1"
 ) not in {"0", "false", "False"}
@@ -75,6 +75,79 @@ DEC_PCT_MIN = Decimal("-100")
 DEC_PCT_MAX = Decimal("100")
 
 EXCLUDED_CODES = {"UNKNOWN", "OSTALO", "OTHER", "NAN"}
+
+
+def _excluded_codes_upper() -> frozenset[str]:
+    """Return ``EXCLUDED_CODES`` uppercased.
+
+    Evaluated on each call so tests/plugins may adjust ``EXCLUDED_CODES`` at
+    runtime without stale cached values.
+    """
+    return frozenset(x.upper() for x in EXCLUDED_CODES)
+
+
+# Regex za prepoznavo "glavin" vrstic (Dobavnica/Račun/...).
+# Možno razširiti z okoljsko spremenljivko ``WSM_HEADER_PREFIX``.
+HDR_PREFIX_RE = re.compile(
+    os.environ.get(
+        "WSM_HEADER_PREFIX",
+        (
+            r"(?i)^\s*(Dobavnica|Ra[cč]un|Predra[cč]un|"
+            r"Dobropis|Bremepis|Storno|Stornirano)\b"
+        ),
+    )
+)
+
+
+# Enotna normalizacija WSM šifre:
+# - None, "", "<NA>", "nan" ali 0-ovne vrednosti → "OSTALO"
+# - vejico zamenjaj s piko, rezultat vrni v velikih črkah
+def _norm_wsm_code(x) -> str:
+    if pd.isna(x):
+        return "OSTALO"
+    s = str(x).strip().replace(",", ".")
+    if s in ("", "nan", "NaN", "<NA>"):
+        return "OSTALO"
+    try:
+        if Decimal(s) == 0:
+            return "OSTALO"
+    except InvalidOperation:
+        pass
+    return s.upper()
+
+
+def _mask_header_like_rows(
+    df: pd.DataFrame,
+    name_col: str = "naziv",
+    qty_col: str = "kolicina_norm",
+    val_col: str = "vrednost",
+    eps: float = 1e-9,
+) -> pd.Series:
+    """Return True for rows that look like document headers.
+
+    Header-like rows ("Dobavnica", "Račun", etc.) often appear in the XML
+    with zero quantity and zero value.  Such rows should be hidden from the
+    review grid and summary.
+    """
+
+    name = (
+        df.get(name_col, pd.Series([""] * len(df), index=df.index))
+        .fillna("")
+        .astype(str)
+    )
+    qty = pd.to_numeric(
+        df.get(qty_col, pd.Series([0] * len(df), index=df.index)),
+        errors="coerce",
+    ).fillna(0)
+    val = pd.to_numeric(
+        df.get(val_col, pd.Series([0] * len(df), index=df.index)),
+        errors="coerce",
+    ).fillna(0)
+    return (
+        name.str.match(HDR_PREFIX_RE, na=False)
+        & (qty.abs() <= eps)
+        & (val.abs() <= eps)
+    )
 
 
 def _normalize_wsm_display_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -133,7 +206,7 @@ def _apply_links_to_df(
             return "kos"
         return s
 
-    excluded = {x.upper() for x in globals().get("EXCLUDED_CODES", set())}
+    excluded = _excluded_codes_upper()
 
     def _needs_fill(s: pd.Series) -> pd.Series:
         s = s.astype("string")
@@ -268,7 +341,7 @@ def _fill_names_from_catalog(
         .set_index("wsm_sifra")["wsm_naziv"]
     )
 
-    excluded = {x.upper() for x in globals().get("EXCLUDED_CODES", set())}
+    excluded = _excluded_codes_upper()
     codes = df["wsm_sifra"].astype(str).str.strip()
     has_code = codes.ne("") & ~codes.str.upper().isin(excluded)
 
@@ -383,11 +456,9 @@ def _booked_mask_from(df_or_sr: pd.DataFrame | pd.Series) -> pd.Series:
         except Exception:
             col = None
         if col is not None:
-            s = col.fillna("").astype(str).str.strip().str.upper()
-            excluded = globals().get("EXCLUDED_CODES", set())
-            mask = mask | (
-                st.str.strip().eq("") & s.ne("") & ~s.isin(excluded)
-            )
+            s = col.astype("string").map(_norm_wsm_code)
+            excluded = _excluded_codes_upper()
+            mask = mask | (st.str.strip().eq("") & ~s.isin(excluded))
         return mask
     if isinstance(df_or_sr, pd.Series):
         sr = df_or_sr
@@ -398,9 +469,9 @@ def _booked_mask_from(df_or_sr: pd.DataFrame | pd.Series) -> pd.Series:
         if col is None:
             return pd.Series(False, index=df_or_sr.index)
         sr = col
-    s = sr.fillna("").astype(str).str.strip().str.upper()
-    excluded = globals().get("EXCLUDED_CODES", set())
-    return s.ne("") & ~s.isin(excluded)
+    s = sr.astype("string").map(_norm_wsm_code)
+    excluded = _excluded_codes_upper()
+    return ~s.isin(excluded)
 
 
 def _safe_pct(v) -> Optional[Decimal]:
@@ -1068,6 +1139,29 @@ def review_links(
     except Exception:
         pass
 
+    # STEP0.5: skrij "glavine" vrstice iz eSLOG-a (npr. "Dobavnica: ..."),
+    # ki imajo 0 količine in 0 vrednosti – te niso dejanski artikli,
+    # ampak samo dokumentacijske postavke.
+    # Možno izklopiti z WSM_HIDE_HEADER_LINES=0
+    if os.environ.get("WSM_HIDE_HEADER_LINES", "1") != "0":
+        try:
+            _mask_hdr = _mask_header_like_rows(df)
+            if _mask_hdr.any():
+                removed = int(_mask_hdr.sum())
+                examples = (
+                    df.loc[_mask_hdr, "naziv"].head(2).tolist()
+                    if "naziv" in df.columns
+                    else []
+                )
+                df = df.loc[~_mask_hdr].reset_index(drop=True).copy()
+                _t(
+                    "STEP0.5 hidden header-like rows: %d (e.g. %s)",
+                    removed,
+                    examples,
+                )
+        except Exception:
+            pass
+
     # (premaknjeno) opozorila bomo preračunali po združevanju
 
     # 1) obvezno: zagotovimo eff_discount_pct še pred merge
@@ -1542,7 +1636,7 @@ def review_links(
         )
 
         # Prikaz v gridu je vezan na dejansko knjiženje (_summary_key):
-        #  - če je OSTALO: šifra prazna, naziv "ostalo"
+        #  - če je OSTALO: šifra prazna, naziv "Ostalo"
         #  - sicer: šifra = _summary_key, naziv = wsm_naziv
         def _disp_sifra(r):
             k = str(r.get("_summary_key", "") or "")
@@ -1551,7 +1645,7 @@ def review_links(
         def _disp_naziv(r):
             k = str(r.get("_summary_key", "") or "")
             if k == "OSTALO":
-                return "ostalo"
+                return "Ostalo"
             return str(r.get("wsm_naziv", "") or "")
 
         df0["WSM šifra"] = df0.apply(_disp_sifra, axis=1)
@@ -2434,7 +2528,7 @@ def review_links(
                 if "wsm_sifra" in df.columns
                 else pd.Series("", index=df.index)
             )
-            excluded = globals().get("EXCLUDED_CODES", set())
+            excluded = _excluded_codes_upper()
             by_code = s.ne("") & ~s.isin(excluded)
 
             by_status = (
@@ -2470,6 +2564,9 @@ def review_links(
         import pandas as pd
         from decimal import Decimal, ROUND_HALF_UP
 
+        # uporabi globalno funkcijo neposredno (brez samo-uvoza)
+        _norm_code = _norm_wsm_code
+
         # _ensure_eff_discount_pct je na voljo v istem modulu
 
         df = globals().get("_CURRENT_GRID_DF")
@@ -2483,35 +2580,24 @@ def review_links(
         # pred povzetkom vedno znova izpelji _summary_key iz _booked_sifra
         if "_booked_sifra" in df.columns:
             df["_summary_key"] = (
-                df["_booked_sifra"]
-                .astype(object)
-                .where(~pd.isna(df["_booked_sifra"]), "OSTALO")
-                .replace(
-                    {
-                        None: "OSTALO",
-                        "": "OSTALO",
-                        "<NA>": "OSTALO",
-                        "nan": "OSTALO",
-                        "NaN": "OSTALO",
-                    }
-                )
+                df["_booked_sifra"].map(_norm_code).astype("string")
             )
         else:
             # fallback – če česa manjka, vse pod OSTALO
-            df["_summary_key"] = "OSTALO"
-            try:
-                df["_summary_key"] = df["_summary_key"].reindex(df.index)
-            except Exception:
-                pass
+            df["_summary_key"] = pd.Series(
+                ["OSTALO"] * len(df), index=df.index, dtype="string"
+            )
 
         # ---- Grupirni ključ: WSM šifra (zanesljivo) + enota + rabat ----
         # šifra → najprej normaliziraj
         code_s = first_existing_series(df, ["wsm_sifra", "WSM šifra"])
         if code_s is None:
             code_s = pd.Series([""] * len(df), index=df.index)
-        code_s = code_s.astype(object).fillna("").map(str).str.strip()
-        excluded = {x.upper() for x in globals().get("EXCLUDED_CODES", set())}
-        is_booked = code_s.ne("") & ~code_s.str.upper().isin(excluded)
+        # normaliziraj isto kot drugod (''/0/nan → 'OSTALO', vejica → pika)
+        code_s = code_s.astype("string").fillna("").map(_norm_code)
+
+        excluded = _excluded_codes_upper()
+        is_booked = ~code_s.str.upper().isin(excluded)
         df["_is_booked"] = is_booked
         # za neknjižene uporabimo fiksni “OSTALO” (ime bo samo prikaz)
         code_or_ostalo = code_s.where(is_booked, "OSTALO")
@@ -2568,34 +2654,27 @@ def review_links(
             df, ["wsm_sifra", "WSM šifra", "_summary_key"]
         )
 
-        # Naziv prav tako iz grida, če obstaja
+        # Naziv: vedno vzemi *Series* iz stolpca
+        # (nikoli dobesednega niza "WSM Naziv")
         if "WSM Naziv" in df.columns:
             name_s = df["WSM Naziv"].astype("string")
+        elif "WSM naziv" in df.columns:
+            name_s = df["WSM naziv"].astype("string")
         elif "wsm_naziv" in df.columns:
             name_s = df["wsm_naziv"].astype("string")
         else:
             name_s = pd.Series([""] * len(df), index=df.index, dtype="string")
 
-        # normaliziraj ključ na "OSTALO" kjer je prazno/NA
+        # normaliziraj ključ na "OSTALO" kjer je prazno/NA ali 0
         if wsm_s is not None:
-            wsm_s = (
-                wsm_s.astype(object)
-                .where(~pd.isna(wsm_s), "OSTALO")
-                .replace(
-                    {
-                        None: "OSTALO",
-                        "": "OSTALO",
-                        "<NA>": "OSTALO",
-                        "nan": "OSTALO",
-                        "NaN": "OSTALO",
-                    }
-                )
-            )
+            wsm_s = wsm_s.map(_norm_code).astype("string")
 
-        # če je ključ OSTALO => naziv naj bo vedno "ostalo"
-        name_s = name_s.astype(object).fillna("")
+        # če je ključ OSTALO => naziv naj bo vedno "Ostalo"
+        name_s = name_s.astype("string").fillna("")
         if wsm_s is not None:
-            name_s = name_s.where(~wsm_s.astype(str).eq("OSTALO"), "ostalo")
+            _m = wsm_s.astype(str).eq("OSTALO")
+            if _m.any():
+                name_s = name_s.where(~_m, "Ostalo")
 
         # Če ključni stolpci manjkajo, izpiši prazen povzetek
         if wsm_s is None or val_s is None:
@@ -2614,7 +2693,7 @@ def review_links(
                 if wsm_s is not None
                 else pd.Series(["OSTALO"] * len(df), index=df.index)
             ),
-            "wsm_naziv": name_s,  # Series iz bloka zgoraj (nikoli konstanta!)
+            "wsm_naziv": name_s,  # Series – nikoli konstanta
             "znesek": (
                 val_s
                 if val_s is not None
@@ -2681,7 +2760,7 @@ def review_links(
         except Exception:
             _ws = work["wsm_sifra"].fillna("").astype(str).str.strip()
             work["_is_booked"] = _ws.ne("") & ~_ws.str.upper().isin(
-                globals().get("EXCLUDED_CODES", set())
+                _excluded_codes_upper()
             )
         log.info(
             "SUMMARY pre-group booked=%d / %d",
@@ -2734,7 +2813,7 @@ def review_links(
             records.append(
                 {
                     "WSM šifra": show_code,
-                    "WSM Naziv": disp_name if is_booked else "OSTALO",
+                    "WSM Naziv": disp_name if is_booked else "Ostalo",
                     "Količina": dsum(g["kolicina"]),
                     "Znesek": (
                         dsum(g["bruto"])
@@ -2764,9 +2843,7 @@ def review_links(
             bm = _booked_mask_from(df_summary)
         except Exception:
             _ws = df_summary["WSM šifra"].fillna("").astype(str).str.strip()
-            bm = _ws.ne("") & ~_ws.str.upper().isin(
-                globals().get("EXCLUDED_CODES", set())
-            )
+            bm = _ws.ne("") & ~_ws.str.upper().isin(_excluded_codes_upper())
         log.info(
             "SUMMARY booked=%d, unbooked=%d", int(bm.sum()), int((~bm).sum())
         )
@@ -2824,22 +2901,20 @@ def review_links(
                     df_summary["WSM šifra"].fillna("").astype(str).str.strip()
                 )
                 bm2 = _ws2.ne("") & ~_ws2.str.upper().isin(
-                    globals().get("EXCLUDED_CODES", set())
+                    _excluded_codes_upper()
                 )
             sifra = df_summary["WSM šifra"].fillna("").astype(str).str.strip()
             naziv = df_summary["WSM Naziv"].fillna("").astype(str)
             mask_ostalo = (~bm2) & (
                 sifra.eq("")
-                | sifra.str.upper().isin(
-                    globals().get("EXCLUDED_CODES", set())
-                )
+                | sifra.str.upper().isin(_excluded_codes_upper())
                 | naziv.str.lower().eq("ostalo")
             )
 
             if mask_ostalo.any():
                 # nastavi oznake za ostalo
                 df_summary.loc[mask_ostalo, "WSM šifra"] = ""
-                df_summary.loc[mask_ostalo, "WSM Naziv"] = "ostalo"
+                df_summary.loc[mask_ostalo, "WSM Naziv"] = "Ostalo"
 
                 # poskrbi, da "Rabat (%)" vedno obstaja
                 if "Rabat (%)" not in df_summary.columns:
