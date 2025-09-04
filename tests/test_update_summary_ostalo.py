@@ -11,9 +11,12 @@ import wsm.ui.review.summary_utils as summary_utils
 
 def _extract_update_summary():
     src = inspect.getsource(rl.review_links).splitlines()
-    start = next(i for i, line in enumerate(src) if "def _update_summary" in line)
+    start = next(
+        i for i, line in enumerate(src) if "def _update_summary" in line
+    )
     end = next(
-        i for i, line in enumerate(src[start:], start)
+        i
+        for i, line in enumerate(src[start:], start)
         if line.startswith("    # Skupni zneski")
     )
     snippet = textwrap.dedent("\n".join(src[start:end]))
@@ -26,7 +29,9 @@ def _extract_update_summary():
         "summary_df_from_records": summary_utils.summary_df_from_records,
         "ONLY_BOOKED_IN_SUMMARY": rl.ONLY_BOOKED_IN_SUMMARY,
         "EXCLUDED_CODES": rl.EXCLUDED_CODES,
+        "_excluded_codes_upper": rl._excluded_codes_upper,
         "_booked_mask_from": rl._booked_mask_from,
+        "_norm_wsm_code": rl._norm_wsm_code,
         "wsm_df": pd.DataFrame(),
     }
     exec(snippet, ns)
@@ -57,7 +62,7 @@ def test_update_summary_preserves_discount_for_unbooked():
     df_summary = captured["df_summary"]
     assert "Rabat (%)" in df_summary.columns
     assert df_summary.loc[0, "Rabat (%)"] == Decimal("0.00")
-    assert df_summary.loc[0, "WSM Naziv"] == "ostalo"
+    assert df_summary.loc[0, "WSM Naziv"] == "Ostalo"
 
 
 def test_update_summary_mixed_booked_unbooked():
@@ -83,10 +88,8 @@ def test_update_summary_mixed_booked_unbooked():
 
     out = captured["df_summary"]
     assert any(
-        (out["WSM šifra"] == "123")
-        & (out["Rabat (%)"] == Decimal("15.00"))
+        (out["WSM šifra"] == "123") & (out["Rabat (%)"] == Decimal("15.00"))
     )
     assert any(
-        (out["WSM Naziv"].str.lower() == "ostalo")
-        & (out["Rabat (%)"] == Decimal("0.00"))
+        (out["WSM Naziv"] == "Ostalo") & (out["Rabat (%)"] == Decimal("0.00"))
     )
