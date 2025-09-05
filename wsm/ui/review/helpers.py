@@ -12,7 +12,7 @@ from wsm.constants import (
     PRICE_DIFF_THRESHOLD as DEFAULT_PRICE_DIFF_THRESHOLD,
 )
 
-import numpy as np
+import numpy as np  # required for np.bool_ in _fmt
 import pandas as pd
 
 DEC2 = Decimal("0.01")
@@ -128,12 +128,29 @@ def _fmt(v) -> str:
     Returns:
         str: ``v`` formatted without trailing zeros.
     """
-    if v is None or (isinstance(v, float) and math.isnan(v)) or pd.isna(v):
+    if v is None or (isinstance(v, float) and math.isnan(v)):
         return ""
+    if isinstance(v, pd.Series):
+        if v.empty or pd.isna(v).all():
+            return ""
+        v = v.iloc[0]
+    elif pd.isna(v):
+        return ""
+    if isinstance(v, (bool, np.bool_)):
+        v = int(v)
     d = v if isinstance(v, Decimal) else Decimal(str(v))
     d = d.quantize(Decimal("0.0001"))
     s = format(d, "f")
     return s.rstrip("0").rstrip(".") if "." in s else s
+
+
+def _first_scalar(v):
+    """Return the first scalar value when ``v`` may be a Series."""
+
+    if isinstance(v, pd.Series):
+        v = v.dropna()
+        v = v.iloc[0] if not v.empty else None
+    return v
 
 
 def _safe_set_block(

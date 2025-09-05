@@ -26,6 +26,7 @@ from .helpers import (
     _merge_same_items,
     _apply_price_warning,
     first_existing_series,  # ← potrebujemo v _backfill_* in drugje
+    _first_scalar,
 )
 from .io import _save_and_close, _load_supplier_map
 from .summary_columns import SUMMARY_COLS, SUMMARY_KEYS, SUMMARY_HEADS
@@ -2202,9 +2203,11 @@ def review_links(
                     for idx in df.index[mask]:
                         rid = str(idx)
                         if tree.exists(rid) and _tree_has_col("status"):
-                            v = df.at[idx, "status"]
+                            v = _first_scalar(df.at[idx, "status"])
                             tree.set(
-                                rid, "status", "" if pd.isna(v) else str(v)
+                                rid,
+                                "status",
+                                "" if v is None or pd.isna(v) else str(v),
                             )
         except Exception as _e:
             _t(f"_refresh_summary_ui status sync skipped: {_e}")
@@ -2464,16 +2467,34 @@ def review_links(
         font=("Arial", 12, "bold"),
     ).pack()
 
+    # Levi info-panel za povzetek – ustvarjen enkrat, nato osvežujemo StringVar
+    summary_info_frame = tk.Frame(summary_frame)
+    summary_info_frame.pack(side="left", fill="y", padx=(0, 10))
+    sum_booked_var = tk.StringVar()
+    sum_unbooked_var = tk.StringVar()
+    sum_booked_var.set("Knjiženo: 0")
+    sum_unbooked_var.set(f"Ostane: {len(df)}")
+    ttk.Label(summary_info_frame, textvariable=sum_booked_var).grid(
+        row=0, column=0, sticky="w", padx=(2, 0)
+    )
+    ttk.Label(summary_info_frame, textvariable=sum_unbooked_var).grid(
+        row=1, column=0, sticky="w", padx=(2, 0)
+    )
+
+    # Desni del: drevo povzetka z drsnim trakom v svojem podoknu
+    summary_right = tk.Frame(summary_frame)
+    summary_right.pack(side="left", fill="both", expand=True)
+
     # Column keys and headers derive from :mod:`summary_columns`
     # to stay in sync with :data:`SUMMARY_COLS` used throughout the project.
     summary_cols = SUMMARY_KEYS
     summary_heads = SUMMARY_HEADS
     assert SUMMARY_COLS == summary_heads
     summary_tree = ttk.Treeview(
-        summary_frame, columns=summary_cols, show="headings", height=5
+        summary_right, columns=summary_cols, show="headings", height=5
     )
     vsb_summary = ttk.Scrollbar(
-        summary_frame, orient="vertical", command=summary_tree.yview
+        summary_right, orient="vertical", command=summary_tree.yview
     )
     summary_tree.configure(yscrollcommand=vsb_summary.set)
     vsb_summary.pack(side="right", fill="y")
@@ -2965,6 +2986,12 @@ def review_links(
             "_fallback_count_from_grid", lambda df: (0, len(df))
         )(df)
         globals()["_SUMMARY_COUNTS"] = (b, u)
+        # Posodobi levi info-panel brez ponovnega ustvarjanja Label-ov
+        try:
+            sum_booked_var.set(f"Knjiženo: {b}")
+            sum_unbooked_var.set(f"Ostane: {u}")
+        except Exception:
+            pass
         _render_summary(df_summary)
 
     # Skupni zneski pod povzetkom
@@ -3196,25 +3223,22 @@ def review_links(
                         and tree.exists(rid)
                         and _tree_has_col("WSM šifra")
                     ):
+                        val = _first_scalar(df.at[idx, "WSM šifra"])
                         tree.set(
                             rid,
                             "WSM šifra",
-                            (
-                                df.at[idx, "WSM šifra"]
-                                if pd.notna(df.at[idx, "WSM šifra"])
-                                else ""
-                            ),
+                            "" if val is None or pd.isna(val) else val,
                         )
                     # od tu naprej je ime enotno v df: "WSM Naziv"
                     if tree.exists(rid):
                         for col_alias in ("WSM Naziv", "WSM naziv"):
                             if _tree_has_col(col_alias):
                                 v = (
-                                    df.at[idx, "WSM Naziv"]
+                                    _first_scalar(df.at[idx, "WSM Naziv"])
                                     if "WSM Naziv" in df.columns
                                     else None
                                 )
-                                s = "" if pd.isna(v) else str(v)
+                                s = "" if v is None or pd.isna(v) else str(v)
                                 tree.set(rid, col_alias, s)
                                 break
 
@@ -3223,9 +3247,11 @@ def review_links(
                         and tree.exists(rid)
                         and _tree_has_col("rabat_opis")
                     ):
-                        v = df.at[idx, "rabat_opis"]
+                        v = _first_scalar(df.at[idx, "rabat_opis"])
                         tree.set(
-                            rid, "rabat_opis", "" if pd.isna(v) else str(v)
+                            rid,
+                            "rabat_opis",
+                            "" if v is None or pd.isna(v) else str(v),
                         )
 
                     if (
@@ -3233,10 +3259,12 @@ def review_links(
                         and tree.exists(rid)
                         and _tree_has_col("status")
                     ):
-                        v = df.at[idx, "status"]
-                        tree.set(rid, "status", "" if pd.isna(v) else str(v))
-                        # dodatno osveži prikazni stolpec "Rabat (%)"
-                        # (bere rabata_pct)
+                        v = _first_scalar(df.at[idx, "status"])
+                        tree.set(
+                            rid,
+                            "status",
+                            "" if v is None or pd.isna(v) else str(v),
+                        )
                         if (
                             "rabata_pct" in df.columns
                             and tree.exists(rid)
