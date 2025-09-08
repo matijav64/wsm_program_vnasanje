@@ -2500,6 +2500,9 @@ def review_links(
     vsb_summary.pack(side="right", fill="y")
     summary_tree.pack(side="left", fill="both", expand=True)
 
+    # Mapiranje med internimi ključi in naslovi (za robusten render)
+    key2head = dict(zip(SUMMARY_KEYS, SUMMARY_HEADS))
+
     numeric_cols = {
         # internal keys
         "kolicina_norm",
@@ -2520,25 +2523,53 @@ def review_links(
             anchor="e" if c in numeric_cols else "w",
         )
 
-    def _render_summary(df_summary: pd.DataFrame) -> None:
-        for item in summary_tree.get_children():
-            summary_tree.delete(item)
-        for _, row in df_summary.iterrows():
-            vals = [
-                row["WSM šifra"],
-                row["WSM Naziv"],
-                _fmt(_clean_neg_zero(row["Količina"])),
-                _fmt(_clean_neg_zero(row["Znesek"])),
-                _fmt(_clean_neg_zero(row.get("Rabat (%)", Decimal("0.00")))),
-                _fmt(_clean_neg_zero(row["Neto po rabatu"])),
-            ]
-            summary_tree.insert("", "end", values=vals)
-            log.info(
-                "SUMMARY[%s] cena=%s",
-                row["WSM šifra"],
-                row.get("Neto po rabatu"),
+    def _render_summary(df_summary: pd.DataFrame):
+        """
+        Vrstice v Treeview nariši robustno, ne glede na to ali je
+        ``df_summary`` poimenovan z internimi ključi (``SUMMARY_KEYS``) ali
+        z naslovi (``SUMMARY_HEADS``).
+        """
+        try:
+            cols_in_df = set(df_summary.columns.astype(str))
+
+            # Po potrebi prerazporedi/ustvari stolpce v istem vrstnem redu
+            # kot ``summary_cols`` (vrednosti za manjkajoče stolpce ostanejo
+            # prazne)
+            for iid in summary_tree.get_children():
+                summary_tree.delete(iid)
+
+            for i, row in df_summary.iterrows():
+                values = []
+                for key in summary_cols:
+                    # Izberi pravi izvorni stolpec: najprej ključ, nato naslov
+                    src_col = key if key in cols_in_df else key2head.get(key)
+                    if src_col in cols_in_df:
+                        v = row[src_col]
+                    else:
+                        v = ""
+
+                    # Številske vrednosti formatiraj,
+                    # ostale prikaži kot besedilo
+                    if key in numeric_cols or (
+                        src_col and src_col in numeric_cols
+                    ):
+                        values.append(_fmt(v))
+                    else:
+                        # Normaliziraj NaN/None
+                        try:
+                            is_na = pd.isna(v)
+                        except Exception:
+                            is_na = False
+                        values.append("" if (v is None or is_na) else str(v))
+
+                summary_tree.insert("", "end", iid=str(i), values=values)
+        except Exception as e:
+            # Ne rušimo UI-ja zaradi renderja; samo zapišemo sled
+            logging.getLogger(__name__).warning(
+                "Render summary failed: %s (cols=%s)",
+                e,
+                list(df_summary.columns),
             )
-        log.debug(f"Povzetek posodobljen: {len(df_summary)} WSM šifer")
 
     def _fallback_count_from_grid(df):
         import pandas as pd
