@@ -9,9 +9,9 @@ SUMMARY_COLUMN_DEFS = [
     ("wsm_sifra", "WSM šifra"),
     ("wsm_naziv", "WSM Naziv"),
     ("kolicina_norm", "Količina"),
-    ("neto_brez_popusta", "Znesek"),
+    ("vrednost", "Znesek"),
     ("rabata_pct", "Rabat (%)"),
-    ("vrednost", "Neto po rabatu"),
+    ("neto_po_rabatu", "Neto po rabatu"),
 ]
 
 # Column headers used by :func:`summary_df_from_records` and displayed in the GUI.
