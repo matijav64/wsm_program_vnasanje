@@ -2530,10 +2530,9 @@ def review_links(
         z naslovi (``SUMMARY_HEADS``).
         """
         try:
-            cols_in_df = set(df_summary.columns.astype(str))
-            # Če so v df_summary podvojene glave (npr. dva 'WSM Naziv'),
-            # bo row['WSM Naziv'] vrnil Series. Uporabi _first_scalar, da
-            # ne izpišemo repr-ja Series kot večvrstičnega besedila.
+            # Če so v df_summary podvojene glave (npr. dva "WSM Naziv"),
+            # izdamo opozorilo in obdržimo le prvo. _first_scalar poskrbi,
+            # da ne izpišemo repr-ja Series kot večvrstičnega besedila.
             dup_cols = df_summary.columns[
                 df_summary.columns.duplicated()
             ].tolist()
@@ -2541,6 +2540,10 @@ def review_links(
                 logging.getLogger(__name__).warning(
                     "SUMMARY duplicated columns: %s", dup_cols
                 )
+                df_summary = df_summary.loc[
+                    :, ~df_summary.columns.duplicated()
+                ].copy()
+            cols_in_df = set(df_summary.columns.astype(str))
 
             # Po potrebi prerazporedi/ustvari stolpce v istem vrstnem redu
             # kot ``summary_cols`` (vrednosti za manjkajoče stolpce ostanejo
