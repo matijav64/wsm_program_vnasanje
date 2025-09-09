@@ -2490,6 +2490,34 @@ def review_links(
     summary_cols = SUMMARY_KEYS
     summary_heads = SUMMARY_HEADS
     assert SUMMARY_COLS == summary_heads
+
+    # --- DEDUP: odstranimo podvojene ključe in/ali naslove stolpcev ---
+    # (če se isti ključ ali isti naslov pojavi večkrat, Treeview nariše
+    #  več enakih kolon; to je izvor dvojnega "WSM Naziv")
+    pairs = list(zip(summary_cols, summary_heads))
+    seen_keys = set()
+    seen_heads_norm = (
+        set()
+    )  # primerjamo po lower() zaradi "WSM Naziv" vs "WSM naziv"
+    dedup_pairs = []
+    for k, h in pairs:
+        head_norm = (h or "").strip().lower()
+        if k in seen_keys or head_norm in seen_heads_norm:
+            logging.getLogger(__name__).warning(
+                "SUMMARY: podvojen stolpec – KEY=%r, HEAD=%r (preskočeno)",
+                k,
+                h,
+            )
+            continue
+        seen_keys.add(k)
+        seen_heads_norm.add(head_norm)
+        dedup_pairs.append((k, h))
+    summary_cols = [k for k, _ in dedup_pairs]
+    summary_heads = [h for _, h in dedup_pairs]
+
+    # Mapiranje med internimi ključi in naslovi po deduplikaciji
+    key2head = dict(zip(summary_cols, summary_heads))
+
     summary_tree = ttk.Treeview(
         summary_right, columns=summary_cols, show="headings", height=5
     )
@@ -2499,9 +2527,6 @@ def review_links(
     summary_tree.configure(yscrollcommand=vsb_summary.set)
     vsb_summary.pack(side="right", fill="y")
     summary_tree.pack(side="left", fill="both", expand=True)
-
-    # Mapiranje med internimi ključi in naslovi (za robusten render)
-    key2head = dict(zip(SUMMARY_KEYS, SUMMARY_HEADS))
 
     numeric_cols = {
         # internal keys
@@ -2515,6 +2540,7 @@ def review_links(
         "Rabat (%)",
         "Neto po rabatu",
     }
+    # glave in širine po deduplikaciji
     for c, h in zip(summary_cols, summary_heads):
         summary_tree.heading(c, text=h)
         summary_tree.column(
@@ -2530,6 +2556,7 @@ def review_links(
         z naslovi (``SUMMARY_HEADS``).
         """
         try:
+            # 1) Odstrani podvojene stolpce v df (if any)
             # Če so v df_summary podvojene glave (npr. dva "WSM Naziv"),
             # izdamo opozorilo in obdržimo le prvo. _first_scalar poskrbi,
             # da ne izpišemo repr-ja Series kot večvrstičnega besedila.
@@ -2571,9 +2598,13 @@ def review_links(
                             values.append("")
                         else:
                             try:
-                                values.append("" if pd.isna(v) else str(v))
+                                txt = "" if pd.isna(v) else str(v)
                             except Exception:
-                                values.append(str(v) if v is not None else "")
+                                txt = str(v) if v is not None else ""
+                            # Treeview ne mara večvrstičnih vrednosti
+                            if "\n" in txt or "\r" in txt:
+                                txt = txt.replace("\r", " ").replace("\n", " ")
+                            values.append(txt)
 
                 summary_tree.insert("", "end", iid=str(i), values=values)
         except Exception as e:
