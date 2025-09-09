@@ -2531,6 +2531,16 @@ def review_links(
         """
         try:
             cols_in_df = set(df_summary.columns.astype(str))
+            # Če so v df_summary podvojene glave (npr. dva 'WSM Naziv'),
+            # bo row['WSM Naziv'] vrnil Series. Uporabi _first_scalar, da
+            # ne izpišemo repr-ja Series kot večvrstičnega besedila.
+            dup_cols = df_summary.columns[
+                df_summary.columns.duplicated()
+            ].tolist()
+            if dup_cols:
+                logging.getLogger(__name__).warning(
+                    "SUMMARY duplicated columns: %s", dup_cols
+                )
 
             # Po potrebi prerazporedi/ustvari stolpce v istem vrstnem redu
             # kot ``summary_cols`` (vrednosti za manjkajoče stolpce ostanejo
@@ -2544,23 +2554,23 @@ def review_links(
                     # Izberi pravi izvorni stolpec: najprej ključ, nato naslov
                     src_col = key if key in cols_in_df else key2head.get(key)
                     if src_col in cols_in_df:
-                        v = row[src_col]
+                        v = _first_scalar(row[src_col])
                     else:
-                        v = ""
+                        v = None
 
-                    # Številske vrednosti formatiraj,
-                    # ostale prikaži kot besedilo
-                    if key in numeric_cols or (
+                    is_numeric = (key in numeric_cols) or (
                         src_col and src_col in numeric_cols
-                    ):
+                    )
+                    if is_numeric:
                         values.append(_fmt(v))
                     else:
-                        # Normaliziraj NaN/None
-                        try:
-                            is_na = pd.isna(v)
-                        except Exception:
-                            is_na = False
-                        values.append("" if (v is None or is_na) else str(v))
+                        if v is None:
+                            values.append("")
+                        else:
+                            try:
+                                values.append("" if pd.isna(v) else str(v))
+                            except Exception:
+                                values.append(str(v) if v is not None else "")
 
                 summary_tree.insert("", "end", iid=str(i), values=values)
         except Exception as e:
