@@ -2491,31 +2491,7 @@ def review_links(
     summary_heads = SUMMARY_HEADS
     assert SUMMARY_COLS == summary_heads
 
-    # --- DEDUP: odstranimo podvojene ključe in/ali naslove stolpcev ---
-    # (če se isti ključ ali isti naslov pojavi večkrat, Treeview nariše
-    #  več enakih kolon; to je izvor dvojnega "WSM Naziv")
-    pairs = list(zip(summary_cols, summary_heads))
-    seen_keys = set()
-    seen_heads_norm = (
-        set()
-    )  # primerjamo po lower() zaradi "WSM Naziv" vs "WSM naziv"
-    dedup_pairs = []
-    for k, h in pairs:
-        head_norm = (h or "").strip().lower()
-        if k in seen_keys or head_norm in seen_heads_norm:
-            logging.getLogger(__name__).warning(
-                "SUMMARY: podvojen stolpec – KEY=%r, HEAD=%r (preskočeno)",
-                k,
-                h,
-            )
-            continue
-        seen_keys.add(k)
-        seen_heads_norm.add(head_norm)
-        dedup_pairs.append((k, h))
-    summary_cols = [k for k, _ in dedup_pairs]
-    summary_heads = [h for _, h in dedup_pairs]
-
-    # Mapiranje med internimi ključi in naslovi po deduplikaciji
+    # Fiksno mapiranje med internimi ključi in prikazanimi naslovi
     key2head = dict(zip(summary_cols, summary_heads))
 
     summary_tree = ttk.Treeview(
@@ -2528,19 +2504,15 @@ def review_links(
     vsb_summary.pack(side="right", fill="y")
     summary_tree.pack(side="left", fill="both", expand=True)
 
-    numeric_cols = {
-        # internal keys
-        "kolicina_norm",
-        "vrednost",
-        "rabata_pct",
-        "neto_po_rabatu",
-        # display heads (if summary_cols contains headers)
-        "Količina",
-        "Znesek",
-        "Rabat (%)",
-        "Neto po rabatu",
-    }
-    # glave in širine po deduplikaciji
+    numeric_pairs = [
+        ("kolicina_norm", "Količina"),
+        ("vrednost", "Znesek"),
+        ("rabata_pct", "Rabat (%)"),
+        ("neto_po_rabatu", "Neto po rabatu"),
+    ]
+    numeric_cols = {k for k, _ in numeric_pairs} | {h for _, h in numeric_pairs}
+
+    # glave in širine
     for c, h in zip(summary_cols, summary_heads):
         summary_tree.heading(c, text=h)
         summary_tree.column(
@@ -2582,7 +2554,7 @@ def review_links(
                 values = []
                 for key in summary_cols:
                     # Izberi pravi izvorni stolpec: najprej ključ, nato naslov
-                    src_col = key if key in cols_in_df else key2head.get(key)
+                    src_col = key if key in cols_in_df else key2head.get(key, key)
                     if src_col in cols_in_df:
                         v = _first_scalar(row[src_col])
                     else:
