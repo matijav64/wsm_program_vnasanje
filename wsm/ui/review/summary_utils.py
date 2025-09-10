@@ -6,7 +6,7 @@ from typing import Sequence
 import numpy as np
 import pandas as pd
 
-from .helpers import _safe_set_block
+from .helpers import _safe_set_block, _norm_wsm_code
 from .summary_columns import SUMMARY_HEADS, SUMMARY_COLS  # noqa: F401
 
 
@@ -36,6 +36,88 @@ def summary_df_from_records(records: Sequence[dict] | None) -> pd.DataFrame:
     df = _safe_set_block(df, text_cols, df[text_cols].fillna(""))
     return df
 
+
+def _sum_decimal(series: pd.Series) -> Decimal:
+    total = Decimal("0")
+    for x in series:
+        if isinstance(x, Decimal):
+            total += x
+        elif x is None:
+            continue
+        else:
+            try:
+                if pd.isna(x) or x == "":
+                    continue
+            except Exception:
+                pass
+            total += Decimal(str(x))
+    return total
+
+
+def _pick_name(series: pd.Series) -> str:
+    vals = series.astype("string").fillna("").str.strip()
+    vals = vals[vals != ""]
+    if vals.empty:
+        return ""
+    modes = vals.mode(dropna=True)
+    return modes.iloc[0] if len(modes) else vals.iloc[0]
+
+
+def aggregate_summary_per_code(df_summary: pd.DataFrame) -> pd.DataFrame:
+    """
+    Združi povzetek na ENO vrstico na WSM šifro.
+    Vrstice brez kode se združijo v enotno 'Ostalo'.
+    """
+    if df_summary.empty:
+        return df_summary
+
+    heads = ["WSM šifra", "WSM Naziv", "Količina", "Znesek", "Rabat (%)", "Neto po rabatu"]
+    for h in heads:
+        if h not in df_summary.columns:
+            df_summary[h] = None
+
+    df = df_summary[heads].copy()
+    df["WSM šifra"] = df["WSM šifra"].map(_norm_wsm_code)
+
+    # Tretiraj kot nekodirano tudi, če je naziv že "Ostalo"
+    name_is_ostalo = (
+        df["WSM Naziv"].astype("string").fillna("").str.strip().str.lower() == "ostalo"
+    )
+    coded_mask = df["WSM šifra"].astype(str).str.strip().ne("") & ~name_is_ostalo
+    coded = df.loc[coded_mask].copy()
+    uncoded = df.loc[~coded_mask].copy()
+
+    parts = []
+    if not coded.empty:
+        agg = coded.groupby("WSM šifra", sort=True).agg({
+            "WSM Naziv": _pick_name,
+            "Količina": _sum_decimal,
+            "Znesek": _sum_decimal,
+            "Neto po rabatu": _sum_decimal,
+        })
+        agg["Rabat (%)"] = Decimal("0.00")
+        agg = agg.reset_index()
+        parts.append(agg)
+
+    if not uncoded.empty:
+        row = {
+            "WSM šifra": "",
+            "WSM Naziv": "Ostalo",
+            "Količina": _sum_decimal(uncoded["Količina"]),
+            "Znesek": _sum_decimal(uncoded["Znesek"]),
+            "Rabat (%)": Decimal("0.00"),
+            "Neto po rabatu": _sum_decimal(uncoded["Neto po rabatu"]),
+        }
+        parts.append(pd.DataFrame([row], columns=heads))
+
+    out = pd.concat(parts, ignore_index=True) if parts else df.head(0)
+    order = (out["WSM Naziv"].astype(str).str.lower() == "ostalo").astype(int)
+    return (
+        out.assign(_o=order)
+           .sort_values(["_o", "WSM šifra"])
+           .drop(columns="_o")
+           .reset_index(drop=True)
+    )
 
 def vectorized_discount_pct(base, after) -> pd.Series:
     """Return discount percentage for ``base`` and ``after`` values.

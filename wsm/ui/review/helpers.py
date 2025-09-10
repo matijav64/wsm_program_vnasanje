@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import logging
+import re
 import math
 import os
-import re
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from typing import Sequence, Tuple
 
@@ -142,6 +142,28 @@ def _fmt(v) -> str:
     d = d.quantize(Decimal("0.0001"))
     s = format(d, "f")
     return s.rstrip("0").rstrip(".") if "." in s else s
+
+
+def _norm_wsm_code(code) -> str:
+    """
+    Normalizira WSM šifro za grupiranje/prikaz:
+      • None/NaN -> "" (prazno)
+      • odreži presledke
+      • '100100.0' -> '100100' (če je videti kot celo število z .0)
+    """
+    if code is None:
+        return ""
+    try:
+        if pd.isna(code):
+            return ""
+    except Exception:
+        pass
+    s = str(code).strip()
+    if not s:
+        return ""
+    if re.fullmatch(r"\d+(?:\.0+)?", s):
+        s = s.split(".")[0]
+    return s
 
 
 def _first_scalar(v):
