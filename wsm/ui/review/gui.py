@@ -27,10 +27,15 @@ from .helpers import (
     _apply_price_warning,
     first_existing_series,  # ← potrebujemo v _backfill_* in drugje
     _first_scalar,
+    _norm_wsm_code,
 )
 from .io import _save_and_close, _load_supplier_map
 from .summary_columns import SUMMARY_COLS, SUMMARY_KEYS, SUMMARY_HEADS
-from .summary_utils import vectorized_discount_pct, summary_df_from_records
+from .summary_utils import (
+    vectorized_discount_pct,
+    summary_df_from_records,
+    aggregate_summary_per_code,
+)
 
 builtins.tk = tk
 builtins.simpledialog = simpledialog
@@ -98,23 +103,6 @@ HDR_PREFIX_RE = re.compile(
         ),
     )
 )
-
-
-# Enotna normalizacija WSM šifre:
-# - None, "", "<NA>", "nan" ali 0-ovne vrednosti → "OSTALO"
-# - vejico zamenjaj s piko, rezultat vrni v velikih črkah
-def _norm_wsm_code(x) -> str:
-    if pd.isna(x):
-        return "OSTALO"
-    s = str(x).strip().replace(",", ".")
-    if s in ("", "nan", "NaN", "<NA>"):
-        return "OSTALO"
-    try:
-        if Decimal(s) == 0:
-            return "OSTALO"
-    except InvalidOperation:
-        pass
-    return s.upper()
 
 
 def _mask_header_like_rows(
@@ -2631,9 +2619,7 @@ def review_links(
     def _update_summary():
         import pandas as pd
         from decimal import Decimal, ROUND_HALF_UP
-
-        # uporabi globalno funkcijo neposredno (brez samo-uvoza)
-        _norm_code = _norm_wsm_code
+        from wsm.ui.review.helpers import _norm_wsm_code as _norm_code
 
         # _ensure_eff_discount_pct je na voljo v istem modulu
 
@@ -2957,78 +2943,11 @@ def review_links(
                     df_summary.loc[booked_mask_new & still_empty, "WSM šifra"]
                 )
 
-        # --- Vse neknjižene normaliziraj v ENO vrstico "ostalo" ---
-        if ("WSM šifra" in df_summary.columns) and (
-            "WSM Naziv" in df_summary.columns
-        ):
-            # Izloči knjižene, da jih ne potegnemo v "ostalo"
-            try:
-                bm2 = _booked_mask_from(df_summary)
-            except Exception:
-                _ws2 = (
-                    df_summary["WSM šifra"].fillna("").astype(str).str.strip()
-                )
-                bm2 = _ws2.ne("") & ~_ws2.str.upper().isin(
-                    _excluded_codes_upper()
-                )
-            sifra = df_summary["WSM šifra"].fillna("").astype(str).str.strip()
-            naziv = df_summary["WSM Naziv"].fillna("").astype(str)
-            mask_ostalo = (~bm2) & (
-                sifra.eq("")
-                | sifra.str.upper().isin(_excluded_codes_upper())
-                | naziv.str.lower().eq("ostalo")
-            )
-
-            if mask_ostalo.any():
-                # nastavi oznake za ostalo
-                df_summary.loc[mask_ostalo, "WSM šifra"] = ""
-                df_summary.loc[mask_ostalo, "WSM Naziv"] = "Ostalo"
-
-                # poskrbi, da "Rabat (%)" vedno obstaja
-                if "Rabat (%)" not in df_summary.columns:
-                    df_summary["Rabat (%)"] = Decimal("0.00")
-                # za "ostalo" naj bo 0.00 in naj se ne deli po rabatu
-                df_summary.loc[mask_ostalo, "Rabat (%)"] = Decimal("0.00")
-
-                num_cols = [
-                    c
-                    for c in ["Količina", "Znesek", "Neto po rabatu"]
-                    if c in df_summary.columns
-                ]
-                key_cols = [
-                    c
-                    for c in ["WSM šifra", "WSM Naziv"]
-                    if c in df_summary.columns
-                ]
-
-                if num_cols and key_cols:
-                    # agregiraj SAMO "ostalo"
-                    agg = (
-                        df_summary.loc[mask_ostalo, key_cols + num_cols]
-                        .groupby(key_cols, dropna=False, as_index=False)
-                        .sum()
-                    )
-                    # po agregaciji vrni "Rabat (%)" = 0.00
-                    agg["Rabat (%)"] = Decimal("0.00")
-
-                    # poravnaj stolpce in zamenjaj "ostalo" del
-                    cols = list(df_summary.columns)
-                    agg = agg.reindex(columns=cols, fill_value=None)
-                    df_summary = pd.concat(
-                        [df_summary.loc[~mask_ostalo, cols], agg],
-                        ignore_index=True,
-                    )
-
-        # "ostalo" potisni na konec
-        if "WSM Naziv" in df_summary.columns:
-            order = (
-                df_summary["WSM Naziv"].astype(str).str.lower() == "ostalo"
-            ).astype(int)
-            df_summary = (
-                df_summary.assign(_o=order)
-                .sort_values(["_o", "WSM Naziv"])
-                .drop(columns="_o")
-            )
+        # Združi na eno vrstico na WSM kodo (brez-kodne -> 'Ostalo')
+        try:
+            df_summary = aggregate_summary_per_code(df_summary)
+        except Exception as e:
+            log.warning("aggregate_summary_per_code failed: %s", e)
         b, u = globals().get(
             "_fallback_count_from_grid", lambda df: (0, len(df))
         )(df)
