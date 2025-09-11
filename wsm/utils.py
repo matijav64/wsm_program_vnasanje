@@ -124,9 +124,15 @@ def _build_header_totals(
     """
 
     gross_fallback = (
-        invoice_gross if invoice_gross not in (None, Decimal("0")) else invoice_total
+        invoice_gross
+        if invoice_gross not in (None, Decimal("0"))
+        else invoice_total
     )
-    totals = {"net": invoice_total, "vat": Decimal("0"), "gross": gross_fallback}
+    totals = {
+        "net": invoice_total,
+        "vat": Decimal("0"),
+        "gross": gross_fallback,
+    }
 
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
@@ -155,7 +161,6 @@ def _build_header_totals(
             totals = {"net": net, "vat": vat, "gross": gross}
         except Exception as exc:  # pragma: no cover - robust against IO
             log.warning(f"Napaka pri branju zneskov glave: {exc}")
-
 
     log.debug(
         "HEADER  %s  ⇒  net=%s  vat=%s  gross=%s",
@@ -304,10 +309,7 @@ def load_wsm_data(
     kw_map = load_keywords_map(keywords_path, supplier_code)
     kw_df = (
         pd.DataFrame(
-            [
-                {"wsm_sifra": v, "keyword": k}
-                for k, v in kw_map.items()
-            ]
+            [{"wsm_sifra": v, "keyword": k} for k, v in kw_map.items()]
         )
         if kw_map
         else pd.DataFrame(columns=["wsm_sifra", "keyword"])
@@ -342,7 +344,9 @@ def load_wsm_data(
 
 def ensure_supplier_column(df: pd.DataFrame, meta: dict) -> pd.DataFrame:
     """Ensure that ``df`` contains a "Dobavitelj" column with supplier name."""
-    supplier_name = meta.get("supplier_name") or meta.get("dobavitelj_ime") or ""
+    supplier_name = (
+        meta.get("supplier_name") or meta.get("dobavitelj_ime") or ""
+    )
     supplier_id = meta.get("supplier_vat") or meta.get("dobavitelj") or ""
     display_supplier = supplier_name or supplier_id
     if "Dobavitelj" in df.columns:
@@ -489,6 +493,16 @@ def log_price_history(
         When ``True`` all rows with the same ``invoice_id`` are removed
         before appending new data.
     """
+    # Ignore returns and zero-quantity lines – price tracking only considers
+    # real delivered quantities.  ``kolicina_norm`` is expected to be numeric
+    # (``Decimal`` or similar).
+    try:
+        df = df[df["kolicina_norm"] > 0].copy()
+    except Exception:
+        df = df.copy()
+    if df.empty:
+        return
+
     suppliers_path = (
         Path(suppliers_dir)
         if suppliers_dir is not None

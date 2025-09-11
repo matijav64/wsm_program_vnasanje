@@ -150,6 +150,7 @@ def _norm_wsm_code(code) -> str:
       • None/NaN -> "" (prazno)
       • odreži presledke
       • '100100.0' -> '100100' (če je videti kot celo število z .0)
+      • '0', '0,0', '000' … -> "" (vse ničelne variante štejejo kot nekodirano)
     """
     if code is None:
         return ""
@@ -158,8 +159,11 @@ def _norm_wsm_code(code) -> str:
             return ""
     except Exception:
         pass
-    s = str(code).strip()
+    s = str(code).strip().replace(",", ".")
     if not s:
+        return ""
+    # Treat any "0" variant ("0", "0.0", "0,0", "000") as uncoded
+    if re.fullmatch(r"0+(?:\.0+)?", s):
         return ""
     if re.fullmatch(r"\d+(?:\.0+)?", s):
         s = s.split(".")[0]
