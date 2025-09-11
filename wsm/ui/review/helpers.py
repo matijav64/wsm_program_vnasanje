@@ -920,7 +920,10 @@ def first_existing(
 
     for col in columns:
         if col in df:
-            return df[col].fillna(fill_value)
+            series = df[col]
+            if isinstance(series, pd.DataFrame):
+                series = series.iloc[:, 0]
+            return series.fillna(fill_value)
 
     # No column found – return a default series
     return pd.Series(fill_value, index=df.index)
