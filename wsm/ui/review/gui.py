@@ -2863,6 +2863,23 @@ def review_links(
             len(groups),
         )
 
+        # --- PRIPRAVA: mapa WSM koda -> naziv iz kataloga (za fallback) ---
+        try:
+            _sdf = globals().get("sifre_df") or globals().get("wsm_df")
+            _CODE2NAME = (
+                _sdf.assign(
+                    wsm_sifra=_sdf["wsm_sifra"].astype(str).str.strip(),
+                    wsm_naziv=_sdf["wsm_naziv"].astype(str),
+                )
+                .dropna(subset=["wsm_naziv"])
+                .drop_duplicates("wsm_sifra")
+                .set_index("wsm_sifra")["wsm_naziv"]
+                .to_dict()
+            ) if _sdf is not None and {"wsm_sifra","wsm_naziv"}.issubset(_sdf.columns) else {}
+        except Exception as _e:
+            logging.getLogger(__name__).warning("SUMMARY name map build failed: %s", _e)
+            _CODE2NAME = {}
+
         records = []
         for key, g in groups:
             # ključ je (code_or_ostalo, unit, rab)
@@ -2870,15 +2887,29 @@ def review_links(
             is_booked = code != "OSTALO"
             show_code = code if is_booked else "OSTALO"
 
-            # ime je samo prikaz: vzemi prvo ne-prazno/ne-‘ostalo’ iz grupe,
-            # sicer ga kasneje dopolnimo iz kataloga (spodaj je že koda za to)
+            # ime je samo prikaz:
+            # 1) najprej poskusi iz grupe (WSM Naziv / wsm_naziv iz mreže),
+            # 2) če je prazno in imamo kodo, poglej v katalog (CODE2NAME)
             disp_name = ""
+            name_src = "none"
             nm_s = first_existing_series(g, ["WSM Naziv", "wsm_naziv"])
             if nm_s is not None:
                 _nm = nm_s.astype(str).str.strip()
                 _nm = _nm[(_nm != "") & (_nm.str.lower() != "ostalo")]
                 if len(_nm):
                     disp_name = _nm.iloc[0]
+                    name_src = "grid"
+
+            if disp_name == "" and is_booked:
+                code_str = str(code).strip()
+                disp_name = _CODE2NAME.get(code_str, "")
+                if disp_name:
+                    name_src = "catalog"
+
+            logging.getLogger(__name__).warning(
+                "[SUMMARY NAME] code=%r show_code=%r picked=%r src=%s",
+                code, show_code, disp_name, name_src
+            )
 
             qty_series = first_existing_series(
                 g, ["kolicina_norm", "Količina", "kolicina"]
@@ -2902,6 +2933,10 @@ def review_links(
             )
 
         df_summary = summary_df_from_records(records)
+        logging.getLogger(__name__).warning(
+            "[SUMMARY BEFORE AGG] %s",
+            df_summary[["WSM šifra", "WSM Naziv"]].head(10).to_dict("records"),
+        )
 
         df_summary["WSM šifra"] = (
             first_existing_series(df_summary, ["WSM šifra", "wsm_sifra"])
@@ -3043,6 +3078,10 @@ def review_links(
         except Exception:
             pass
         df_summary = df_summary.loc[:, ~df_summary.columns.duplicated()].copy()
+        logging.getLogger(__name__).warning(
+            "[SUMMARY AFTER AGG] %s",
+            df_summary[["WSM šifra", "WSM Naziv", "Količina"]].to_dict("records"),
+        )
         _render_summary(df_summary)
 
     # Skupni zneski pod povzetkom
