@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable
-from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Tuple, Optional
 
@@ -2494,11 +2494,14 @@ def review_links(
 
     numeric_pairs = [
         ("kolicina_norm", "Količina"),
+        ("vrnjeno", "Vrnjeno"),
         ("vrednost", "Znesek"),
         ("rabata_pct", "Rabat (%)"),
         ("neto_po_rabatu", "Neto po rabatu"),
     ]
-    numeric_cols = {k for k, _ in numeric_pairs} | {h for _, h in numeric_pairs}
+    numeric_cols = {k for k, _ in numeric_pairs} | {
+        h for _, h in numeric_pairs
+    }
 
     # glave in širine
     for c, h in zip(summary_cols, summary_heads):
@@ -2542,7 +2545,9 @@ def review_links(
                 values = []
                 for key in summary_cols:
                     # Izberi pravi izvorni stolpec: najprej ključ, nato naslov
-                    src_col = key if key in cols_in_df else key2head.get(key, key)
+                    src_col = (
+                        key if key in cols_in_df else key2head.get(key, key)
+                    )
                     if src_col in cols_in_df:
                         v = _first_scalar(row[src_col])
                     else:
@@ -2839,6 +2844,17 @@ def review_links(
                     pass
             return tot
 
+        def dsum_neg(s):
+            tot = Decimal("0")
+            for v in s:
+                try:
+                    dv = v if isinstance(v, Decimal) else Decimal(str(v))
+                    if dv < 0:
+                        tot += abs(dv)
+                except Exception:
+                    pass
+            return tot
+
         df_b = work.copy()
         groups = list(df_b.groupby("_summary_gkey", dropna=False))
         log.info(
@@ -2864,11 +2880,17 @@ def review_links(
                 if len(_nm):
                     disp_name = _nm.iloc[0]
 
+            qty_series = first_existing_series(
+                g, ["kolicina_norm", "Količina", "kolicina"]
+            )
+            qty_total = dsum(qty_series)
+            qty_ret = dsum_neg(qty_series)
             records.append(
                 {
                     "WSM šifra": show_code,
                     "WSM Naziv": disp_name if is_booked else "Ostalo",
-                    "Količina": dsum(g["kolicina"]),
+                    "Količina": qty_total,
+                    "Vrnjeno": qty_ret,
                     "Znesek": (
                         dsum(g["bruto"])
                         if bruto_s is not None
@@ -2958,6 +2980,7 @@ def review_links(
             sum_unbooked_var.set(f"Ostane: {u}")
         except Exception:
             pass
+        df_summary = df_summary.loc[:, ~df_summary.columns.duplicated()].copy()
         _render_summary(df_summary)
 
     # Skupni zneski pod povzetkom

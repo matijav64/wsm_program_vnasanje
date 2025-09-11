@@ -15,12 +15,19 @@ def test_summary_missing_fields_filled():
         {"WSM Naziv": "B"},  # missing "WSM šifra" and "Količina"
     ]
     df = summary_df_from_records(records)
-    assert df.shape == (2, 6)
+    assert df.shape == (2, 7)
     assert df["WSM šifra"].tolist() == ["1", ""]
     assert df["WSM Naziv"].tolist() == ["", "B"]
     assert df["Količina"].tolist() == [2, 0]
+    assert df["Vrnjeno"].tolist() == [0, 0]
     assert df["Znesek"].tolist() == [0, 0]
     assert df["Rabat (%)"].tolist() == [0, 0]
     assert df["Neto po rabatu"].tolist() == [0, 0]
-    for col in ["Količina", "Znesek", "Rabat (%)", "Neto po rabatu"]:
+    for col in [
+        "Količina",
+        "Vrnjeno",
+        "Znesek",
+        "Rabat (%)",
+        "Neto po rabatu",
+    ]:
         assert all(isinstance(x, Decimal) for x in df[col])
