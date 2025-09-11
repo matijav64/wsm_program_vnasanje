@@ -2933,6 +2933,10 @@ def review_links(
             )
 
         df_summary = summary_df_from_records(records)
+        logging.getLogger(__name__).warning(
+            "[SUMMARY BEFORE AGG] %s",
+            df_summary[["WSM šifra", "WSM Naziv"]].head(10).to_dict("records"),
+        )
 
         df_summary["WSM šifra"] = (
             first_existing_series(df_summary, ["WSM šifra", "wsm_sifra"])
@@ -3074,6 +3078,10 @@ def review_links(
         except Exception:
             pass
         df_summary = df_summary.loc[:, ~df_summary.columns.duplicated()].copy()
+        logging.getLogger(__name__).warning(
+            "[SUMMARY AFTER AGG] %s",
+            df_summary[["WSM šifra", "WSM Naziv", "Količina"]].to_dict("records"),
+        )
         _render_summary(df_summary)
 
     # Skupni zneski pod povzetkom
