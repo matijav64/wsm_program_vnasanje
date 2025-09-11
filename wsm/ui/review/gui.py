@@ -800,6 +800,7 @@ def review_links(
     )
 
     df = df.copy()
+    df = df.loc[:, ~df.columns.duplicated()].copy()
     log.debug("Initial invoice DataFrame:\n%s", df.to_string())
     if {"cena_bruto", "cena_netto"}.issubset(df.columns):
         for idx, row in df.iterrows():
@@ -2867,17 +2868,24 @@ def review_links(
         try:
             _sdf = globals().get("sifre_df") or globals().get("wsm_df")
             _CODE2NAME = (
-                _sdf.assign(
-                    wsm_sifra=_sdf["wsm_sifra"].astype(str).str.strip(),
-                    wsm_naziv=_sdf["wsm_naziv"].astype(str),
+                (
+                    _sdf.assign(
+                        wsm_sifra=_sdf["wsm_sifra"].astype(str).str.strip(),
+                        wsm_naziv=_sdf["wsm_naziv"].astype(str),
+                    )
+                    .dropna(subset=["wsm_naziv"])
+                    .drop_duplicates("wsm_sifra")
+                    .set_index("wsm_sifra")["wsm_naziv"]
+                    .to_dict()
                 )
-                .dropna(subset=["wsm_naziv"])
-                .drop_duplicates("wsm_sifra")
-                .set_index("wsm_sifra")["wsm_naziv"]
-                .to_dict()
-            ) if _sdf is not None and {"wsm_sifra","wsm_naziv"}.issubset(_sdf.columns) else {}
+                if _sdf is not None
+                and {"wsm_sifra", "wsm_naziv"}.issubset(_sdf.columns)
+                else {}
+            )
         except Exception as _e:
-            logging.getLogger(__name__).warning("SUMMARY name map build failed: %s", _e)
+            logging.getLogger(__name__).warning(
+                "SUMMARY name map build failed: %s", _e
+            )
             _CODE2NAME = {}
 
         records = []
@@ -2908,7 +2916,10 @@ def review_links(
 
             logging.getLogger(__name__).warning(
                 "[SUMMARY NAME] code=%r show_code=%r picked=%r src=%s",
-                code, show_code, disp_name, name_src
+                code,
+                show_code,
+                disp_name,
+                name_src,
             )
 
             qty_series = first_existing_series(
@@ -3080,7 +3091,9 @@ def review_links(
         df_summary = df_summary.loc[:, ~df_summary.columns.duplicated()].copy()
         logging.getLogger(__name__).warning(
             "[SUMMARY AFTER AGG] %s",
-            df_summary[["WSM šifra", "WSM Naziv", "Količina"]].to_dict("records"),
+            df_summary[["WSM šifra", "WSM Naziv", "Količina"]].to_dict(
+                "records"
+            ),
         )
         _render_summary(df_summary)
 
