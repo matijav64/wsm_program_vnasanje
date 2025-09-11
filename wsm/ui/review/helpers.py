@@ -921,7 +921,7 @@ def first_existing(
     for col in columns:
         if col in df:
             series = df[col]
-            if isinstance(series, pd.DataFrame):
+            if hasattr(series, "ndim") and series.ndim == 2:
                 series = series.iloc[:, 0]
             return series.fillna(fill_value)
 
