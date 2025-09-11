@@ -2955,21 +2955,83 @@ def review_links(
                     df_summary.loc[
                         booked_mask_new & empty_name, "WSM Naziv"
                     ] = fill[empty_name].fillna("")
-                _names2 = df_summary.loc[booked_mask_new, "WSM Naziv"].astype(
-                    str
-                )
-                still_empty = _names2.str.strip().eq(
-                    ""
-                ) | _names2.str.lower().eq("ostalo")
-                df_summary.loc[booked_mask_new & still_empty, "WSM Naziv"] = (
-                    df_summary.loc[booked_mask_new & still_empty, "WSM šifra"]
-                )
+                # Backfill WSM Naziv iz kataloga, če je prazen ali 'Ostalo'
+                try:
+                    sdf = globals().get("sifre_df") or globals().get("wsm_df")
+                    if sdf is not None and {"wsm_sifra", "wsm_naziv"}.issubset(
+                        sdf.columns
+                    ):
+                        code2name = (
+                            sdf.assign(
+                                wsm_sifra=sdf["wsm_sifra"]
+                                .astype(str)
+                                .str.strip(),
+                                wsm_naziv=sdf["wsm_naziv"].astype(str),
+                            )
+                            .dropna(subset=["wsm_naziv"])
+                            .drop_duplicates("wsm_sifra")
+                            .set_index("wsm_sifra")["wsm_naziv"]
+                        )
+                        names = df_summary["WSM Naziv"].astype(str)
+                        booked_mask_new = (
+                            df_summary["WSM šifra"]
+                            .astype(str)
+                            .str.strip()
+                            .ne("")
+                        )
+                        still_empty = names.str.strip().eq(
+                            ""
+                        ) | names.str.lower().eq("ostalo")
+                        mask = booked_mask_new & still_empty
+                        df_summary.loc[mask, "WSM Naziv"] = (
+                            df_summary.loc[mask, "WSM šifra"]
+                            .astype(str)
+                            .str.strip()
+                            .map(code2name)
+                            .fillna(df_summary.loc[mask, "WSM Naziv"])
+                        )
+                except Exception as e:
+                    log.warning(
+                        "WSM Naziv backfill from catalog failed: %s", e
+                    )
 
         # Združi na eno vrstico na WSM kodo (brez-kodne -> 'Ostalo')
         try:
             df_summary = aggregate_summary_per_code(df_summary)
         except Exception as e:
             log.warning("aggregate_summary_per_code failed: %s", e)
+        # Opcijski backfill tudi po združevanju
+        try:
+            sdf = globals().get("sifre_df") or globals().get("wsm_df")
+            if sdf is not None and {"wsm_sifra", "wsm_naziv"}.issubset(
+                sdf.columns
+            ):
+                code2name = (
+                    sdf.assign(
+                        wsm_sifra=sdf["wsm_sifra"].astype(str).str.strip(),
+                        wsm_naziv=sdf["wsm_naziv"].astype(str),
+                    )
+                    .dropna(subset=["wsm_naziv"])
+                    .drop_duplicates("wsm_sifra")
+                    .set_index("wsm_sifra")["wsm_naziv"]
+                )
+                names = df_summary["WSM Naziv"].astype(str)
+                booked_mask_new = (
+                    df_summary["WSM šifra"].astype(str).str.strip().ne("")
+                )
+                still_empty = names.str.strip().eq("") | names.str.lower().eq(
+                    "ostalo"
+                )
+                mask = booked_mask_new & still_empty
+                df_summary.loc[mask, "WSM Naziv"] = (
+                    df_summary.loc[mask, "WSM šifra"]
+                    .astype(str)
+                    .str.strip()
+                    .map(code2name)
+                    .fillna(df_summary.loc[mask, "WSM Naziv"])
+                )
+        except Exception as e:
+            log.warning("WSM Naziv backfill from catalog failed: %s", e)
         b, u = globals().get(
             "_fallback_count_from_grid", lambda df: (0, len(df))
         )(df)
