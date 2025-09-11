@@ -2632,15 +2632,27 @@ def review_links(
         df = globals().get("_CURRENT_GRID_DF")
         if df is None:
             df = globals().get("df")
+        df = df.loc[:, ~df.columns.duplicated()].copy() if df is not None else None
+        if df is not None:
+            dups = df.columns[df.columns.duplicated()].tolist()
+            if dups:
+                log.warning("SUMMARY: duplicated columns still present: %s", dups)
         if df is None or df.empty:
             _render_summary(summary_df_from_records([]))
             globals()["_SUMMARY_COUNTS"] = (0, 0)
             return
 
         # pred povzetkom vedno znova izpelji _summary_key iz _booked_sifra
+        def _col(frame, column):
+            if column not in frame.columns:
+                import pandas as pd
+                return pd.Series([None] * len(frame), index=frame.index)
+            s = frame[column]
+            return s.iloc[:, 0] if hasattr(s, "ndim") and s.ndim == 2 else s
+
         if "_booked_sifra" in df.columns:
             df["_summary_key"] = (
-                df["_booked_sifra"].map(_norm_code).astype("string")
+                _col(df, "_booked_sifra").map(_norm_code).astype("string")
             )
         else:
             # fallback – če česa manjka, vse pod OSTALO
@@ -2676,9 +2688,9 @@ def review_links(
                 return Decimal("0")
 
         if "rabata_pct" in df.columns:
-            rab_s = df["rabata_pct"].apply(_to_dec)
+            rab_s = _col(df, "rabata_pct").apply(_to_dec)
         else:
-            rab_s = df["eff_discount_pct"].apply(_to_dec)
+            rab_s = _col(df, "eff_discount_pct").apply(_to_dec)
 
         def _q2p(d: Decimal) -> Decimal:
             q = d.quantize(Decimal("0.01"), ROUND_HALF_UP)
@@ -2717,11 +2729,11 @@ def review_links(
         # Naziv: vedno vzemi *Series* iz stolpca
         # (nikoli dobesednega niza "WSM Naziv")
         if "WSM Naziv" in df.columns:
-            name_s = df["WSM Naziv"].astype("string")
+            name_s = _col(df, "WSM Naziv").astype("string")
         elif "WSM naziv" in df.columns:
-            name_s = df["WSM naziv"].astype("string")
+            name_s = _col(df, "WSM naziv").astype("string")
         elif "wsm_naziv" in df.columns:
-            name_s = df["wsm_naziv"].astype("string")
+            name_s = _col(df, "wsm_naziv").astype("string")
         else:
             name_s = pd.Series([""] * len(df), index=df.index, dtype="string")
 
@@ -2742,7 +2754,7 @@ def review_links(
             return
 
         eff_s = (
-            df["eff_discount_pct"]
+            _col(df, "eff_discount_pct")
             if "eff_discount_pct" in df.columns
             else pd.Series([Decimal("0")] * len(df), index=df.index)
         )
@@ -2770,10 +2782,10 @@ def review_links(
                 else pd.Series([Decimal("0")] * len(df), index=df.index)
             ),
             "eff_discount_pct": eff_s,
-            "_summary_gkey": df["_summary_gkey"],
+            "_summary_gkey": _col(df, "_summary_gkey"),
         }
         if "status" in df.columns:
-            data["status"] = df["status"]
+            data["status"] = _col(df, "status")
 
         # --- VARNOST: poskrbi, da so vsi stolpci 1-D seznami ENAKE dolžine ---
         n = len(df)
@@ -2809,7 +2821,7 @@ def review_links(
         try:
             if "status" in work.columns:
                 work["_is_booked"] = (
-                    work["status"]
+                    _col(work, "status")
                     .fillna("")
                     .astype(str)
                     .str.upper()
@@ -2818,7 +2830,7 @@ def review_links(
             else:
                 work["_is_booked"] = _booked_mask_from(work).astype(int)
         except Exception:
-            _ws = work["wsm_sifra"].fillna("").astype(str).str.strip()
+            _ws = _col(work, "wsm_sifra").fillna("").astype(str).str.strip()
             work["_is_booked"] = _ws.ne("") & ~_ws.str.upper().isin(
                 _excluded_codes_upper()
             )
@@ -2870,8 +2882,8 @@ def review_links(
             _CODE2NAME = (
                 (
                     _sdf.assign(
-                        wsm_sifra=_sdf["wsm_sifra"].astype(str).str.strip(),
-                        wsm_naziv=_sdf["wsm_naziv"].astype(str),
+                        wsm_sifra=_col(_sdf, "wsm_sifra").astype(str).str.strip(),
+                        wsm_naziv=_col(_sdf, "wsm_naziv").astype(str),
                     )
                     .dropna(subset=["wsm_naziv"])
                     .drop_duplicates("wsm_sifra")
@@ -2934,12 +2946,12 @@ def review_links(
                     "Količina": qty_total,
                     "Vrnjeno": qty_ret,
                     "Znesek": (
-                        dsum(g["bruto"])
+                        dsum(_col(g, "bruto"))
                         if bruto_s is not None
-                        else dsum(g["znesek"])
+                        else dsum(_col(g, "znesek"))
                     ),
                     "Rabat (%)": rab,
-                    "Neto po rabatu": dsum(g["znesek"]),
+                    "Neto po rabatu": dsum(_col(g, "znesek")),
                 }
             )
 
@@ -2964,7 +2976,7 @@ def review_links(
         try:
             bm = _booked_mask_from(df_summary)
         except Exception:
-            _ws = df_summary["WSM šifra"].fillna("").astype(str).str.strip()
+            _ws = _col(df_summary, "WSM šifra").fillna("").astype(str).str.strip()
             bm = _ws.ne("") & ~_ws.str.upper().isin(_excluded_codes_upper())
         log.info(
             "SUMMARY booked=%d, unbooked=%d", int(bm.sum()), int((~bm).sum())
@@ -2983,7 +2995,7 @@ def review_links(
                     wdf.columns
                 ):
                     m = (
-                        wdf.assign(wsm_sifra=wdf["wsm_sifra"].astype(str))
+                        wdf.assign(wsm_sifra=_col(wdf, "wsm_sifra").astype(str))
                         .dropna(subset=["wsm_naziv"])
                         .drop_duplicates("wsm_sifra")
                         .set_index("wsm_sifra")["wsm_naziv"]
@@ -3009,10 +3021,10 @@ def review_links(
                     ):
                         code2name = (
                             sdf.assign(
-                                wsm_sifra=sdf["wsm_sifra"]
+                                wsm_sifra=_col(sdf, "wsm_sifra")
                                 .astype(str)
                                 .str.strip(),
-                                wsm_naziv=sdf["wsm_naziv"].astype(str),
+                                wsm_naziv=_col(sdf, "wsm_naziv").astype(str),
                             )
                             .dropna(subset=["wsm_naziv"])
                             .drop_duplicates("wsm_sifra")
@@ -3054,8 +3066,8 @@ def review_links(
             ):
                 code2name = (
                     sdf.assign(
-                        wsm_sifra=sdf["wsm_sifra"].astype(str).str.strip(),
-                        wsm_naziv=sdf["wsm_naziv"].astype(str),
+                        wsm_sifra=_col(sdf, "wsm_sifra").astype(str).str.strip(),
+                        wsm_naziv=_col(sdf, "wsm_naziv").astype(str),
                     )
                     .dropna(subset=["wsm_naziv"])
                     .drop_duplicates("wsm_sifra")
