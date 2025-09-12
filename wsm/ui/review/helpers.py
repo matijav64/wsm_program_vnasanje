@@ -497,35 +497,6 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     existing_numeric = [c for c in num_candidates if c in df.columns]
     _t("start rows=%d numeric=%s", len(df), existing_numeric)
 
-    # Če SMO v načinu “group by discount”, naredimo price-only ključ
-    # (3 dec) – brez %
-    if GROUP_BY_DISCOUNT and "_discount_bucket" in df.columns:
-
-        def _price_from_bucket(val):
-            try:
-                if isinstance(val, (tuple, list)) and len(val) == 2:
-                    return _as_dec(val[1], "0").quantize(
-                        Decimal("0.001"), rounding=ROUND_HALF_UP
-                    )
-            except Exception:
-                pass
-            return None
-
-        df = df.copy()
-        df["_price_key"] = df["_discount_bucket"].map(_price_from_bucket)
-        _t("MERGE price_key sample=%s", df["_price_key"].head(5).tolist())
-    elif (
-        GROUP_BY_DISCOUNT
-        and "cena_po_rabatu" in df.columns
-        and "_price_key" not in df.columns
-    ):
-        df = df.copy()
-        df["_price_key"] = df["cena_po_rabatu"].map(
-            lambda v: _as_dec(v, "0").quantize(
-                Decimal("0.001"), rounding=ROUND_HALF_UP
-            )
-        )
-
     # ➊ Minimalni identitetni ključ
     base_keys = [
         k
@@ -547,21 +518,8 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
             for k in base_keys
             if k not in ("sifra_dobavitelja", "naziv_ckey")
         ]
-    # ➋ Ključ cene/rabata za varno združevanje
-    #    vedno dodaj price_key, če obstaja
-    #    + rabat (eff_discount_pct ali fallbacki)
-    if GROUP_BY_DISCOUNT:
-        bucket_keys = []
-        if "_price_key" in df.columns:
-            bucket_keys.append("_price_key")
-        if "eff_discount_pct" in df.columns:
-            bucket_keys.append("eff_discount_pct")
-        elif "_discount_bucket" in df.columns:
-            bucket_keys.append("_discount_bucket")
-        elif "line_bucket" in df.columns:
-            bucket_keys.append("line_bucket")
-    else:
-        bucket_keys = []
+    # ➋ Ključ rabata za varno združevanje (brez vključevanja cene)
+    bucket_keys = []
     # ➌ Končni ključ = identitetni + bucket/rabat (brez “šuma”)
     noise = {
         "naziv",
@@ -584,14 +542,14 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         for c in list(dict.fromkeys(base_keys + bucket_keys))
         if c not in noise
     ]
-    # ohrani dimenzijo rabata že pred povzetkom, če je to zahtevano
+    # ohrani dimenzijo rabata v merge ključu, če je to zahtevano
     if globals().get("GROUP_BY_DISCOUNT", True):
         for _dc in ("rabata_pct", "eff_discount_pct"):
             if _dc in df.columns and _dc not in group_cols:
                 group_cols.append(_dc)
 
     log.warning("[TRACE MERGE] MERGE group_cols(final)=%r", group_cols)
-    used_group_price = GROUP_BY_DISCOUNT and any(
+    used_group_price = globals().get("GROUP_BY_DISCOUNT", True) and any(
         k in group_cols
         for k in ("_price_key", "_discount_bucket", "line_bucket")
     )
@@ -625,6 +583,8 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
             agg_dict[keep] = "first"
     if "cena_po_rabatu" in df.columns and "cena_po_rabatu" not in agg_dict:
         agg_dict["cena_po_rabatu"] = "first"
+    if "_booked_sifra" in df.columns and "_booked_sifra" not in group_cols:
+        agg_dict["_booked_sifra"] = "first"
     agg_dict["_first_idx"] = "min"
 
     merged = df.groupby(group_cols, dropna=False).agg(agg_dict).reset_index()

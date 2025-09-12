@@ -9,7 +9,7 @@ functions as the original implementation.
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 import logging
 import sys
@@ -30,7 +30,6 @@ from wsm.ui.review.helpers import (
 )
 from wsm.ui.review.io import _save_and_close, _load_supplier_map
 from wsm.utils import short_supplier_name
-from wsm.ui.review.summary_utils import vectorized_discount_pct
 
 log = logging.getLogger(__name__)
 
@@ -102,8 +101,6 @@ def review_links_qt(
         else Decimal(str(doc_discount_raw))
     )
     df = df[df["sifra_dobavitelja"] != "_DOC_"].reset_index(drop=True)
-    doc_discount_total = doc_discount  # backward compatibility
-
 
     df["cena_pred_rabatom"] = df.apply(
         lambda r: (
@@ -119,8 +116,19 @@ def review_links_qt(
         ),
         axis=1,
     )
-    df["rabata_pct"] = vectorized_discount_pct(
-        df["vrednost"] + df["rabata"], df["vrednost"]
+    for _c in ("vrednost", "rabata"):
+        df[_c] = df[_c].apply(
+            lambda x: x if isinstance(x, Decimal) else Decimal(str(x))
+        )
+    df["rabata_pct"] = df.apply(
+        lambda r: (
+            (
+                r["rabata"] / (r["vrednost"] + r["rabata"]) * Decimal("100")
+            ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+            if r["vrednost"] != 0 and (r["vrednost"] + r["rabata"]) != 0
+            else Decimal("0")
+        ),
+        axis=1,
     )
     df["total_net"] = df["vrednost"]
     df["is_gratis"] = df["rabata_pct"] >= Decimal("99.9")
@@ -277,10 +285,14 @@ def review_links_qt(
         net_raw = df["total_net"].sum()
         vat_raw = df["ddv"].sum()
         net_val = (
-            Decimal(str(net_raw)) if not isinstance(net_raw, Decimal) else net_raw
+            Decimal(str(net_raw))
+            if not isinstance(net_raw, Decimal)
+            else net_raw
         )
         vat_val = (
-            Decimal(str(vat_raw)) if not isinstance(vat_raw, Decimal) else vat_raw
+            Decimal(str(vat_raw))
+            if not isinstance(vat_raw, Decimal)
+            else vat_raw
         )
         vat_rate = vat_val / net_val if net_val else Decimal("0")
         net, vat, gross = _split_totals(df, doc_discount, vat_rate)

@@ -8,8 +8,10 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
     df = pd.DataFrame(
         [
             {
-                "code": "A",
+                "wsm_sifra": "A",
                 "naziv": "ItemA",
+                "naziv_ckey": "itema",
+                "enota_norm": "kos",
                 "kolicina": Decimal("1"),
                 "kolicina_norm": Decimal("1"),
                 "vrednost": Decimal("10"),
@@ -19,8 +21,10 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
                 "is_gratis": False,
             },
             {
-                "code": "A",
+                "wsm_sifra": "A",
                 "naziv": "ItemA",
+                "naziv_ckey": "itema",
+                "enota_norm": "kos",
                 "kolicina": Decimal("1"),
                 "kolicina_norm": Decimal("1"),
                 "vrednost": Decimal("10"),
@@ -30,8 +34,10 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
                 "is_gratis": False,
             },
             {
-                "code": "B",
+                "wsm_sifra": "B",
                 "naziv": "ItemB",
+                "naziv_ckey": "itemb",
+                "enota_norm": "kos",
                 "kolicina": Decimal("2"),
                 "kolicina_norm": Decimal("2"),
                 "vrednost": Decimal("20"),
@@ -41,8 +47,10 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
                 "is_gratis": False,
             },
             {
-                "code": "B",
+                "wsm_sifra": "B",
                 "naziv": "ItemB",
+                "naziv_ckey": "itemb",
+                "enota_norm": "kos",
                 "kolicina": Decimal("2"),
                 "kolicina_norm": Decimal("2"),
                 "vrednost": Decimal("20"),
@@ -52,8 +60,10 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
                 "is_gratis": False,
             },
             {
-                "code": "C",
+                "wsm_sifra": "C",
                 "naziv": "Free",
+                "naziv_ckey": "free",
+                "enota_norm": "kos",
                 "kolicina": Decimal("1"),
                 "kolicina_norm": Decimal("1"),
                 "vrednost": Decimal("0"),
@@ -63,8 +73,10 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
                 "is_gratis": True,
             },
             {
-                "code": "C",
+                "wsm_sifra": "C",
                 "naziv": "Free",
+                "naziv_ckey": "free",
+                "enota_norm": "kos",
                 "kolicina": Decimal("1"),
                 "kolicina_norm": Decimal("1"),
                 "vrednost": Decimal("0"),
@@ -79,23 +91,28 @@ def test_merge_same_items_merges_duplicates_keeps_gratis():
     result = _merge_same_items(df)
 
     # Two non-gratis groups should be merged into single rows
-    merged_a = result[(result["code"] == "A") & (~result["is_gratis"])].iloc[0]
+    merged_a = result[
+        (result["wsm_sifra"] == "A") & (~result["is_gratis"])
+    ].iloc[0]
     assert merged_a["kolicina"] == Decimal("2")
     assert merged_a["total_net"] == Decimal("20")
     assert merged_a["ddv"] == Decimal("4.4")
 
-    merged_b = result[(result["code"] == "B") & (~result["is_gratis"])].iloc[0]
+    merged_b = result[
+        (result["wsm_sifra"] == "B") & (~result["is_gratis"])
+    ].iloc[0]
     assert merged_b["kolicina"] == Decimal("4")
     assert merged_b["total_net"] == Decimal("40")
     assert merged_b["ddv"] == Decimal("8.8")
 
-    # Gratis lines should remain unmodified and separate
-    gratis_expected = df[df["is_gratis"]].reset_index(drop=True)
-    gratis_result = result[result["is_gratis"]].reset_index(drop=True)
-    pd.testing.assert_frame_equal(
-        gratis_result.sort_index(axis=1), gratis_expected.sort_index(axis=1)
-    )
-    assert len(result) == 4
+    # Gratis lines should merge with each other but stay separate from paid
+    merged_c = result[
+        (result["wsm_sifra"] == "C") & (result["is_gratis"])
+    ].iloc[0]
+    assert merged_c["kolicina"] == Decimal("2")
+    assert merged_c["total_net"] == Decimal("0")
+    assert merged_c["ddv"] == Decimal("0")
+    assert len(result) == 3
 
     # VAT should sum across merged rows as expected
     assert result["ddv"].sum() == Decimal("13.2")
@@ -105,8 +122,10 @@ def test_merge_same_items_handles_none_in_numeric_columns():
     df = pd.DataFrame(
         [
             {
-                "code": "A",
+                "wsm_sifra": "A",
                 "naziv": "ItemA",
+                "naziv_ckey": "itema",
+                "enota_norm": "kos",
                 "kolicina": None,
                 "kolicina_norm": None,
                 "vrednost": Decimal("10"),
@@ -116,8 +135,10 @@ def test_merge_same_items_handles_none_in_numeric_columns():
                 "is_gratis": False,
             },
             {
-                "code": "A",
+                "wsm_sifra": "A",
                 "naziv": "ItemA",
+                "naziv_ckey": "itema",
+                "enota_norm": "kos",
                 "kolicina": Decimal("1"),
                 "kolicina_norm": Decimal("1"),
                 "vrednost": Decimal("10"),
@@ -177,3 +198,25 @@ def test_merge_same_items_groups_by_discount_not_price():
     assert merged["kolicina_norm"] == Decimal("2")
     assert merged["total_net"] == Decimal("4.201")
     assert merged["cena_po_rabatu"] == Decimal("2.101")
+
+
+def test_merge_same_items_preserves_discount_dimension():
+    import wsm.ui.review.helpers as h
+
+    h.GROUP_BY_DISCOUNT = True
+    df = pd.DataFrame(
+        {
+            "wsm_sifra": ["1", "1"],
+            "enota_norm": ["kos", "kos"],
+            "is_gratis": [False, False],
+            "kolicina": [Decimal("1"), Decimal("1")],
+            "kolicina_norm": [Decimal("1"), Decimal("1")],
+            "vrednost": [Decimal("10"), Decimal("10")],
+            "rabata": [Decimal("2"), Decimal("1")],
+            "rabata_pct": [Decimal("20"), Decimal("10")],
+            "total_net": [Decimal("8"), Decimal("9")],
+            "ddv": [Decimal("1.76"), Decimal("1.98")],
+        }
+    )
+    merged = _merge_same_items(df)
+    assert len(merged) == 2
