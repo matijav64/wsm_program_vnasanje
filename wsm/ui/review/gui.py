@@ -1049,7 +1049,8 @@ def review_links(
             (
                 r["rabata"] / (r["vrednost"] + r["rabata"]) * Decimal("100")
             ).quantize(Decimal("0.01"), ROUND_HALF_UP)
-            if (r["vrednost"] + r["rabata"]) != 0
+
+            if r["vrednost"] != 0 and (r["vrednost"] + r["rabata"]) != 0
 
             else Decimal("0")
         ),
@@ -2280,6 +2281,7 @@ def review_links(
                             fill = (
                                 cur[mask].astype(str).str.strip().map(name_map)
                             )
+
 
                             if "wsm_naziv" in df.columns:
                                 oldn = (

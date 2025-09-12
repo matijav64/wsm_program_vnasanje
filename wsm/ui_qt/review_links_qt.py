@@ -125,7 +125,8 @@ def review_links_qt(
             (
                 r["rabata"] / (r["vrednost"] + r["rabata"]) * Decimal("100")
             ).quantize(Decimal("0.01"), ROUND_HALF_UP)
-            if (r["vrednost"] + r["rabata"]) != 0
+            if r["vrednost"] != 0 and (r["vrednost"] + r["rabata"]) != 0
+
             else Decimal("0")
         ),
         axis=1,
