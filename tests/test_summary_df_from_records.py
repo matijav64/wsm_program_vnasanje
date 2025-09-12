@@ -31,3 +31,21 @@ def test_summary_missing_fields_filled():
         "Neto po rabatu",
     ]:
         assert all(isinstance(x, Decimal) for x in df[col])
+
+
+def test_summary_from_records_shapes_and_types():
+    rows = [
+        {
+            "WSM šifra": "100",
+            "WSM Naziv": "Artikel",
+            "Količina": "2",
+            "Znesek": "10.5",
+            "Rabat (%)": "5",
+            "Neto po rabatu": "9.975",
+        }
+    ]
+    df = summary_df_from_records(rows)
+    assert list(df.columns)
+    assert df.loc[0, "Količina"] == Decimal("2")
+    assert df.loc[0, "Znesek"] == Decimal("10.5")
+    assert df.loc[0, "Rabat (%)"] == Decimal("5")
