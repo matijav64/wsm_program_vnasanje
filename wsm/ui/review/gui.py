@@ -1039,6 +1039,7 @@ def review_links(
         ),
         axis=1,
     )
+
     for _c in ("vrednost", "rabata"):
         df[_c] = df[_c].apply(
             lambda x: x if isinstance(x, Decimal) else Decimal(str(x))
@@ -1049,6 +1050,7 @@ def review_links(
                 r["rabata"] / (r["vrednost"] + r["rabata"]) * Decimal("100")
             ).quantize(Decimal("0.01"), ROUND_HALF_UP)
             if (r["vrednost"] + r["rabata"]) != 0
+
             else Decimal("0")
         ),
         axis=1,
