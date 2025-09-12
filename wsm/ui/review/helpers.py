@@ -591,7 +591,7 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
                 group_cols.append(_dc)
 
     log.warning("[TRACE MERGE] MERGE group_cols(final)=%r", group_cols)
-    used_group_price = GROUP_BY_DISCOUNT and any(
+    used_group_price = globals().get("GROUP_BY_DISCOUNT", True) and any(
         k in group_cols
         for k in ("_price_key", "_discount_bucket", "line_bucket")
     )

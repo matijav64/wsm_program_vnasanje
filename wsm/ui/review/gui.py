@@ -1020,7 +1020,6 @@ def review_links(
     )
     log.debug("df before _DOC_ filter:\n%s", df.to_string())
     df = df[df["sifra_dobavitelja"] != "_DOC_"]
-    doc_discount_total = doc_discount  # backward compatibility
     df["ddv"] = df["ddv"].apply(
         lambda x: Decimal(str(x)) if not isinstance(x, Decimal) else x
     )  # ensure VAT values are Decimal for accurate totals
@@ -1040,12 +1039,18 @@ def review_links(
         ),
         axis=1,
     )
+
+    for _c in ("vrednost", "rabata"):
+        df[_c] = df[_c].apply(
+            lambda x: x if isinstance(x, Decimal) else Decimal(str(x))
+        )
     df["rabata_pct"] = df.apply(
         lambda r: (
-            (r["rabata"] / (r["vrednost"] + r["rabata"]) * 100).quantize(
-                Decimal("0.01"), ROUND_HALF_UP
-            )
-            if (r["vrednost"] + r["rabata"])
+            (
+                r["rabata"] / (r["vrednost"] + r["rabata"]) * Decimal("100")
+            ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+            if (r["vrednost"] + r["rabata"]) != 0
+
             else Decimal("0")
         ),
         axis=1,
@@ -3229,10 +3234,7 @@ def review_links(
         tolerance = Decimal("0.01")
         diff = inv_total - calc_total
         difference = abs(diff)
-        try:
-            discount = doc_discount
-        except NameError:  # backward compatibility
-            discount = doc_discount_total
+        discount = doc_discount
         if difference > tolerance:
             if discount:
                 diff2 = inv_total - (calc_total + abs(discount))
