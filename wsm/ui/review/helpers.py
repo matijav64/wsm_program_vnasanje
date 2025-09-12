@@ -584,7 +584,13 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         for c in list(dict.fromkeys(base_keys + bucket_keys))
         if c not in noise
     ]
-    _t("MERGE group_cols(final)=%s", group_cols)
+    # ohrani dimenzijo rabata že pred povzetkom, če je to zahtevano
+    if globals().get("GROUP_BY_DISCOUNT", True):
+        for _dc in ("rabata_pct", "eff_discount_pct"):
+            if _dc in df.columns and _dc not in group_cols:
+                group_cols.append(_dc)
+
+    log.warning("[TRACE MERGE] MERGE group_cols(final)=%r", group_cols)
     used_group_price = GROUP_BY_DISCOUNT and any(
         k in group_cols
         for k in ("_price_key", "_discount_bucket", "line_bucket")
@@ -619,6 +625,8 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
             agg_dict[keep] = "first"
     if "cena_po_rabatu" in df.columns and "cena_po_rabatu" not in agg_dict:
         agg_dict["cena_po_rabatu"] = "first"
+    if "_booked_sifra" in df.columns and "_booked_sifra" not in group_cols:
+        agg_dict["_booked_sifra"] = "first"
     agg_dict["_first_idx"] = "min"
 
     merged = df.groupby(group_cols, dropna=False).agg(agg_dict).reset_index()
