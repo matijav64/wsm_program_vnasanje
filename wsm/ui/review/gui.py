@@ -31,11 +31,7 @@ from .helpers import (
 )
 from .io import _save_and_close, _load_supplier_map
 from .summary_columns import SUMMARY_COLS, SUMMARY_KEYS, SUMMARY_HEADS
-from .summary_utils import (
-    vectorized_discount_pct,
-    summary_df_from_records,
-    aggregate_summary_per_code,
-)
+from .summary_utils import summary_df_from_records
 
 builtins.tk = tk
 builtins.simpledialog = simpledialog
@@ -1024,7 +1020,6 @@ def review_links(
     )
     log.debug("df before _DOC_ filter:\n%s", df.to_string())
     df = df[df["sifra_dobavitelja"] != "_DOC_"]
-    doc_discount_total = doc_discount  # backward compatibility
     df["ddv"] = df["ddv"].apply(
         lambda x: Decimal(str(x)) if not isinstance(x, Decimal) else x
     )  # ensure VAT values are Decimal for accurate totals
@@ -1044,8 +1039,19 @@ def review_links(
         ),
         axis=1,
     )
-    df["rabata_pct"] = vectorized_discount_pct(
-        df["vrednost"] + df["rabata"], df["vrednost"]
+    for _c in ("vrednost", "rabata"):
+        df[_c] = df[_c].apply(
+            lambda x: x if isinstance(x, Decimal) else Decimal(str(x))
+        )
+    df["rabata_pct"] = df.apply(
+        lambda r: (
+            (
+                r["rabata"] / (r["vrednost"] + r["rabata"]) * Decimal("100")
+            ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+            if (r["vrednost"] + r["rabata"]) != 0
+            else Decimal("0")
+        ),
+        axis=1,
     )
     df["total_net"] = df["vrednost"]
     df["is_gratis"] = df["rabata_pct"] >= Decimal("99.9")
@@ -2146,36 +2152,49 @@ def review_links(
     # Poravnava prikaznih in internih WSM stolpcev, da povzetek šteje pravilno
     def _sync_wsm_cols_local():
         try:
+            # 1) Poravnaj kodo: če se prikazna "WSM šifra" razlikuje
+            #    od interne "wsm_sifra", prepiši interno
             if "wsm_sifra" in df.columns and "WSM šifra" in df.columns:
                 src = df["WSM šifra"].astype("string")
                 cur = df["wsm_sifra"].astype("string")
                 diff = cur.ne(src)
                 if bool(diff.any()):
                     df.loc[diff, "wsm_sifra"] = src[diff]
+
+            # 2) Poravnaj naziv: če se "WSM Naziv" razlikuje od "wsm_naziv",
+            #    prepiši interno
             if "wsm_naziv" in df.columns and "WSM Naziv" in df.columns:
                 srcn = df["WSM Naziv"].astype("string")
                 curn = df["wsm_naziv"].astype("string")
                 diffn = curn.ne(srcn)
                 if bool(diffn.any()):
                     df.loc[diffn, "wsm_naziv"] = srcn[diffn]
-            # če je koda vnešena, naziv pa manjka → poišči v katalogu
+
+            # 3) Če je vnešena koda, naziv pa manjka ali je "Ostalo"
+            #    → backfill iz kataloga
             if {"wsm_sifra", "wsm_naziv"}.issubset(df.columns):
                 has_code = (
-                    df["wsm_sifra"].astype("string").fillna("").str.strip().ne("")
+                    df["wsm_sifra"]
+                    .astype("string")
+                    .fillna("")
+                    .str.strip()
+                    .ne("")
                 )
-                no_name = (
-                    df["wsm_naziv"].astype("string").fillna("").str.strip().eq("")
+                _names = (
+                    df["wsm_naziv"].astype("string").fillna("").str.strip()
                 )
+                no_name = _names.eq("") | _names.str.lower().eq("ostalo")
                 mask = has_code & no_name
                 if bool(mask.any()):
                     sdf = globals().get("sifre_df") or globals().get("wsm_df")
-                    if (
-                        sdf is not None
-                        and {"wsm_sifra", "wsm_naziv"}.issubset(sdf.columns)
+                    if sdf is not None and {"wsm_sifra", "wsm_naziv"}.issubset(
+                        sdf.columns
                     ):
                         name_map = (
                             sdf.assign(
-                                wsm_sifra=sdf["wsm_sifra"].astype(str).str.strip(),
+                                wsm_sifra=sdf["wsm_sifra"]
+                                .astype(str)
+                                .str.strip(),
                                 wsm_naziv=sdf["wsm_naziv"].astype(str),
                             )
                             .dropna(subset=["wsm_naziv"])
@@ -2183,7 +2202,10 @@ def review_links(
                             .set_index("wsm_sifra")["wsm_naziv"]
                         )
                         filled = (
-                            df.loc[mask, "wsm_sifra"].astype(str).str.strip().map(name_map)
+                            df.loc[mask, "wsm_sifra"]
+                            .astype(str)
+                            .str.strip()
+                            .map(name_map)
                         )
                         df.loc[mask, "wsm_naziv"] = filled
                         if "WSM Naziv" in df.columns:
@@ -2192,40 +2214,112 @@ def review_links(
             _t(f"_sync_wsm_cols_local skipped: {_e}")
 
     def _refresh_summary_ui():
+        import pandas as pd
+
         # poravnaj WSM stolpce (display → internal)
         _sync_wsm_cols_local()
         try:
-            # če je status prazen, a je vnešena wsm_sifra → označi kot knjiženo
-            if "status" in df.columns and "wsm_sifra" in df.columns:
-                st = df["status"].astype("string").fillna("")
-                filled = (
-                    df["wsm_sifra"]
-                    .astype("string")
-                    .fillna("")
-                    .str.strip()
-                    .ne("")
+            # Če je vnešena koda, posodobi '_booked_sifra' in status,
+            # ter po potrebi napolni naziv iz kataloga
+            if "wsm_sifra" in df.columns:
+                cur = df["wsm_sifra"].astype("string").fillna("")
+
+                booked = (
+                    df["_booked_sifra"].astype("string").fillna("")
+                    if "_booked_sifra" in df.columns
+                    else pd.Series([""] * len(df), index=df.index)
                 )
-                empty = st.str.strip().eq("")
-                mask = filled & empty
+                st = (
+                    df["status"].astype("string").fillna("")
+                    if "status" in df.columns
+                    else pd.Series([""] * len(df), index=df.index)
+                )
+
+                filled = cur.str.strip().ne("")
+                empty_status = st.str.strip().eq("")
+                changed_code = cur.ne(booked)
+                mask = filled & (empty_status | changed_code)
+
                 if bool(mask.any()):
-                    df.loc[mask, "status"] = "POVEZANO • ročno"
-                    # ob ročnem vnosu kode posodobi tudi _booked_sifra,
-                    # da povzetek vzame NOVO kodo in napolni naziv
-                    if "_booked_sifra" in df.columns and "wsm_sifra" in df.columns:
-                        df.loc[mask, "_booked_sifra"] = (
-                            df.loc[mask, "wsm_sifra"].astype("string")
+                    df.loc[mask, "_booked_sifra"] = cur[mask]
+                    if "status" in df.columns:
+                        df.loc[mask, "status"] = "POVEZANO • ročno"
+                        for idx in df.index[mask]:
+                            rid = str(idx)
+                            if tree.exists(rid) and _tree_has_col("status"):
+                                v = _first_scalar(df.at[idx, "status"])
+                                tree.set(
+                                    rid,
+                                    "status",
+                                    "" if v is None or pd.isna(v) else str(v),
+                                )
+
+                    # Backfill naziva ob zamenjani kodi
+                    # (ali če je bil prazen/"Ostalo")
+                    try:
+                        sdf = globals().get("sifre_df") or globals().get(
+                            "wsm_df"
                         )
-                    for idx in df.index[mask]:
-                        rid = str(idx)
-                        if tree.exists(rid) and _tree_has_col("status"):
-                            v = _first_scalar(df.at[idx, "status"])
-                            tree.set(
-                                rid,
-                                "status",
-                                "" if v is None or pd.isna(v) else str(v),
+                        if sdf is not None and {
+                            "wsm_sifra",
+                            "wsm_naziv",
+                        }.issubset(sdf.columns):
+                            name_map = (
+                                sdf.assign(
+                                    wsm_sifra=sdf["wsm_sifra"]
+                                    .astype(str)
+                                    .str.strip(),
+                                    wsm_naziv=sdf["wsm_naziv"].astype(str),
+                                )
+                                .dropna(subset=["wsm_naziv"])
+                                .drop_duplicates("wsm_sifra")
+                                .set_index("wsm_sifra")["wsm_naziv"]
                             )
+                            fill = (
+                                cur[mask].astype(str).str.strip().map(name_map)
+                            )
+
+                            if "wsm_naziv" in df.columns:
+                                oldn = (
+                                    df.loc[mask, "wsm_naziv"]
+                                    .astype("string")
+                                    .fillna("")
+                                    .str.strip()
+                                )
+                                need = (
+                                    oldn.eq("")
+                                    | oldn.str.lower().eq("ostalo")
+                                    | changed_code.loc[mask]
+                                )
+                                idx = need[need].index
+                                df.loc[idx, "wsm_naziv"] = fill.reindex(
+                                    idx
+                                ).fillna(df.loc[idx, "wsm_naziv"])
+
+                            if "WSM Naziv" in df.columns:
+                                oldd = (
+                                    df.loc[mask, "WSM Naziv"]
+                                    .astype("string")
+                                    .fillna("")
+                                    .str.strip()
+                                )
+                                needd = (
+                                    oldd.eq("")
+                                    | oldd.str.lower().eq("ostalo")
+                                    | changed_code.loc[mask]
+                                )
+                                idx2 = needd[needd].index
+                                df.loc[idx2, "WSM Naziv"] = fill.reindex(
+                                    idx2
+                                ).fillna(df.loc[idx2, "WSM Naziv"])
+                    except Exception as _e:
+                        _t(
+                            "catalog name backfill on code change failed: "
+                            f"{_e}"
+                        )
         except Exception as _e:
             _t(f"_refresh_summary_ui status sync skipped: {_e}")
+
         globals()["_CURRENT_GRID_DF"] = df
         try:
             _update_summary()
@@ -2653,56 +2747,65 @@ def review_links(
         from decimal import Decimal, ROUND_HALF_UP
         from wsm.ui.review.helpers import _norm_wsm_code as _norm_code
 
-        # vedno (privzeto) grupiraj po rabatu
+        # privzeto grupiraj po rabatu
         globals().setdefault("GROUP_BY_DISCOUNT", True)
-
-        # _ensure_eff_discount_pct je na voljo v istem modulu
 
         df = globals().get("_CURRENT_GRID_DF")
         if df is None:
             df = globals().get("df")
-        df = df.loc[:, ~df.columns.duplicated()].copy() if df is not None else None
+        df = (
+            df.loc[:, ~df.columns.duplicated()].copy()
+            if df is not None
+            else None
+        )
         if df is not None:
             dups = df.columns[df.columns.duplicated()].tolist()
             if dups:
-                log.warning("SUMMARY: duplicated columns still present: %s", dups)
+                log.warning(
+                    "SUMMARY: duplicated columns still present: %s", dups
+                )
         if df is None or df.empty:
             _render_summary(summary_df_from_records([]))
             globals()["_SUMMARY_COUNTS"] = (0, 0)
             return
 
-        # pred povzetkom vedno znova izpelji _summary_key iz _booked_sifra
         def _col(frame, column):
             if column not in frame.columns:
                 import pandas as pd
+
                 return pd.Series([None] * len(frame), index=frame.index)
             s = frame[column]
             return s.iloc[:, 0] if hasattr(s, "ndim") and s.ndim == 2 else s
 
-        if "_booked_sifra" in df.columns:
-            df["_summary_key"] = (
-                _col(df, "_booked_sifra").map(_norm_code).astype("string")
+        # --- KOALESCENCA KODE: _booked_sifra → wsm_sifra →
+        #     "WSM šifra" → _summary_key ---
+        b = (
+            _col(df, "_booked_sifra")
+            if "_booked_sifra" in df.columns
+            else None
+        )
+        f = first_existing_series(
+            df, ["wsm_sifra", "WSM šifra", "_summary_key"]
+        )
+        if b is None:
+            code_s = (
+                f
+                if f is not None
+                else pd.Series([""] * len(df), index=df.index)
             )
         else:
-            # fallback – če česa manjka, vse pod OSTALO
-            df["_summary_key"] = pd.Series(
-                ["OSTALO"] * len(df), index=df.index, dtype="string"
-            )
+            code_s = b.astype("string")
+            if f is not None:
+                f = f.astype("string")
+                empty_b = code_s.fillna("").str.strip().eq("")
+                code_s = code_s.where(~empty_b, f)
 
-        # ---- Grupirni ključ: WSM šifra (zanesljivo) + enota + rabat ----
-        # šifra → najprej normaliziraj
-        code_s = first_existing_series(
-            df, ["_booked_sifra", "wsm_sifra", "WSM šifra"]
-        )
-        if code_s is None:
-            code_s = pd.Series([""] * len(df), index=df.index)
-        # normaliziraj isto kot drugod (''/0/nan → 'OSTALO', vejica → pika)
         code_s = code_s.astype("string").fillna("").map(_norm_code)
+        df["_summary_key"] = code_s  # poravnava summary ključev
 
         excluded = _excluded_codes_upper()
         is_booked = ~code_s.str.upper().isin(excluded)
         df["_is_booked"] = is_booked
-        # za neknjižene uporabimo fiksni “OSTALO” (ime bo samo prikaz)
         code_or_ostalo = code_s.where(is_booked, "OSTALO")
 
         unit_s = first_existing_series(df, ["enota_norm", "enota"])
@@ -2710,8 +2813,7 @@ def review_links(
             unit_s = pd.Series([""] * len(df), index=df.index)
         unit_s = unit_s.astype(object).fillna("").map(str).str.strip()
 
-        # Rabat za grouping: raje rabata_pct
-        # (če manjka, vzemi eff_discount_pct)
+        # Rabat za grouping: najprej rabata_pct, sicer eff_discount_pct
         def _to_dec(x):
             try:
                 return x if isinstance(x, Decimal) else Decimal(str(x))
@@ -2731,18 +2833,17 @@ def review_links(
         if not globals().get("GROUP_BY_DISCOUNT", True):
             rab_s[:] = Decimal("0.00")
 
-        # ključ povzetka: (WSM šifra ali 'OSTALO', enota, rabat)
         df["_summary_gkey"] = list(
             zip(code_or_ostalo.tolist(), unit_s.tolist(), rab_s.tolist())
         )
 
-        # že zagotovljen v review_links; če ni, ga dodamo
+        # Ensure eff_discount_pct
         try:
             _ensure_eff_discount_pct(df)
         except NameError:
             pass
 
-        # Vzemi potrebne stolpce čim bolj robustno
+        # Priprava polj
         val_s = first_existing_series(
             df, ["Neto po rabatu", "Skupna neto", "vrednost", "total_net"]
         )
@@ -2751,14 +2852,10 @@ def review_links(
         )
         qty_s = first_existing_series(df, ["Količina", "kolicina_norm"])
 
-        # Najprej dejanski grid-stolpec (posodablja se ob potrditvi),
-        # nato morebitni display stolpec, nazadnje fallback.
-        wsm_s = first_existing_series(
-            df, ["_booked_sifra", "wsm_sifra", "WSM šifra", "_summary_key"]
-        )
+        # Za naziv uporabljamo isto koalescentno kodo
+        wsm_s = code_s
 
-        # Naziv: vedno vzemi *Series* iz stolpca
-        # (nikoli dobesednega niza "WSM Naziv")
+        # Naziv (serija)
         if "WSM Naziv" in df.columns:
             name_s = _col(df, "WSM Naziv").astype("string")
         elif "WSM naziv" in df.columns:
@@ -2768,18 +2865,15 @@ def review_links(
         else:
             name_s = pd.Series([""] * len(df), index=df.index, dtype="string")
 
-        # normaliziraj ključ na "OSTALO" kjer je prazno/NA ali 0
         if wsm_s is not None:
             wsm_s = wsm_s.map(_norm_code).astype("string")
 
-        # če je ključ OSTALO => naziv naj bo vedno "Ostalo"
         name_s = name_s.astype("string").fillna("")
         if wsm_s is not None:
             _m = wsm_s.astype(str).eq("OSTALO")
             if _m.any():
                 name_s = name_s.where(~_m, "Ostalo")
 
-        # Če ključni stolpci manjkajo, izpiši prazen povzetek
         if wsm_s is None or val_s is None:
             _render_summary(summary_df_from_records([]))
             return
@@ -2796,7 +2890,7 @@ def review_links(
                 if wsm_s is not None
                 else pd.Series(["OSTALO"] * len(df), index=df.index)
             ),
-            "wsm_naziv": name_s,  # Series – nikoli konstanta
+            "wsm_naziv": name_s,
             "znesek": (
                 val_s
                 if val_s is not None
@@ -2818,7 +2912,7 @@ def review_links(
         if "status" in df.columns:
             data["status"] = _col(df, "status")
 
-        # --- VARNOST: poskrbi, da so vsi stolpci 1-D seznami ENAKE dolžine ---
+        # Varna konstrukcija DataFrame-a
         n = len(df)
 
         def _to_list(x):
@@ -2827,7 +2921,7 @@ def review_links(
             if isinstance(x, pd.Index):
                 return pd.Series(x).reindex(df.index).tolist()
             try:
-                import numpy as np  # lazy
+                import numpy as np
 
                 if isinstance(x, np.ndarray):
                     x = x.reshape(-1).tolist()
@@ -2846,9 +2940,9 @@ def review_links(
             return arr[:n]
 
         data = {k: _to_list(v) for k, v in data.items()}
-        # --- konec varovalke ---
         work = pd.DataFrame(data)
-        # Izračunaj knjiženost enkrat in jo nesi naprej skozi agregacijo
+
+        # knjiženost
         try:
             if "status" in work.columns:
                 work["_is_booked"] = (
@@ -2865,34 +2959,29 @@ def review_links(
             work["_is_booked"] = _ws.ne("") & ~_ws.str.upper().isin(
                 _excluded_codes_upper()
             )
-        log.info(
-            "SUMMARY pre-group booked=%d / %d",
-            int(work["_is_booked"].sum()),
-            len(work),
-        )
 
-        # Po želji pokaži le knjižene postavke (uporabi isto masko)
         if globals().get("ONLY_BOOKED_IN_SUMMARY"):
             work = work[work["_is_booked"] > 0]
             if work.empty:
                 _render_summary(summary_df_from_records([]))
                 return
 
-        # Decimal-varno seštevanje
+        from decimal import Decimal as _D
+
         def dsum(s):
-            tot = Decimal("0")
+            tot = _D("0")
             for v in s:
                 try:
-                    tot += v if isinstance(v, Decimal) else Decimal(str(v))
+                    tot += v if isinstance(v, _D) else _D(str(v))
                 except Exception:
                     pass
             return tot
 
         def dsum_neg(s):
-            tot = Decimal("0")
+            tot = _D("0")
             for v in s:
                 try:
-                    dv = v if isinstance(v, Decimal) else Decimal(str(v))
+                    dv = v if isinstance(v, _D) else _D(str(v))
                     if dv < 0:
                         tot += abs(dv)
                 except Exception:
@@ -2901,19 +2990,16 @@ def review_links(
 
         df_b = work.copy()
         groups = list(df_b.groupby("_summary_gkey", dropna=False))
-        log.info(
-            "SUMMARY post-group booked_groups=%d / %d",
-            sum(int(gr["_is_booked"].max() > 0) for _, gr in groups),
-            len(groups),
-        )
 
-        # --- PRIPRAVA: mapa WSM koda -> naziv iz kataloga (za fallback) ---
+        # katalog za fallback imena
         try:
             _sdf = globals().get("sifre_df") or globals().get("wsm_df")
             _CODE2NAME = (
                 (
                     _sdf.assign(
-                        wsm_sifra=_col(_sdf, "wsm_sifra").astype(str).str.strip(),
+                        wsm_sifra=_col(_sdf, "wsm_sifra")
+                        .astype(str)
+                        .str.strip(),
                         wsm_naziv=_col(_sdf, "wsm_naziv").astype(str),
                     )
                     .dropna(subset=["wsm_naziv"])
@@ -2931,43 +3017,30 @@ def review_links(
 
         records = []
         for key, g in groups:
-            # ključ je (code_or_ostalo, unit, rab)
             code, _, rab = key
             is_booked = code != "OSTALO"
             show_code = code if is_booked else "OSTALO"
 
-            # ime je samo prikaz:
-            # 1) najprej poskusi iz grupe (WSM Naziv / wsm_naziv iz mreže),
-            # 2) če je prazno in imamo kodo, poglej v katalog (CODE2NAME)
             disp_name = ""
-            name_src = "none"
-            nm_s = first_existing_series(g, ["WSM Naziv", "wsm_naziv"])
+            nm_s = first_existing_series(
+                g, ["WSM Naziv", "WSM naziv", "wsm_naziv"]
+            )
             if nm_s is not None:
                 _nm = nm_s.astype(str).str.strip()
                 _nm = _nm[(_nm != "") & (_nm.str.lower() != "ostalo")]
                 if len(_nm):
                     disp_name = _nm.iloc[0]
-                    name_src = "grid"
 
             if disp_name == "" and is_booked:
                 code_str = str(code).strip()
                 disp_name = _CODE2NAME.get(code_str, "")
-                if disp_name:
-                    name_src = "catalog"
-
-            log.warning(
-                "[SUMMARY NAME] code=%r show_code=%r picked=%r src=%s",
-                code,
-                show_code,
-                disp_name,
-                name_src,
-            )
 
             qty_series = first_existing_series(
                 g, ["kolicina_norm", "Količina", "kolicina"]
             )
             qty_total = dsum(qty_series)
             qty_ret = dsum_neg(qty_series)
+
             records.append(
                 {
                     "WSM šifra": show_code,
@@ -2985,10 +3058,6 @@ def review_links(
             )
 
         df_summary = summary_df_from_records(records)
-        log.warning(
-            "[SUMMARY BEFORE AGG] %s",
-            df_summary[["WSM šifra", "WSM Naziv"]].head(10).to_dict("records"),
-        )
 
         df_summary["WSM šifra"] = (
             first_existing_series(df_summary, ["WSM šifra", "wsm_sifra"])
@@ -3002,92 +3071,20 @@ def review_links(
             .fillna("")
             .astype(str)
         )
+
         try:
             bm = _booked_mask_from(df_summary)
         except Exception:
-            _ws = _col(df_summary, "WSM šifra").fillna("").astype(str).str.strip()
+            _ws = (
+                _col(df_summary, "WSM šifra")
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
             bm = _ws.ne("") & ~_ws.str.upper().isin(_excluded_codes_upper())
-        log.info(
-            "SUMMARY booked=%d, unbooked=%d", int(bm.sum()), int((~bm).sum())
-        )
         booked_mask_new = bm
 
-        # Konsolidiraj knjižene po šifri: zapolni manjkajoče nazive iz kataloga
-        if {"WSM šifra", "WSM Naziv"}.issubset(df_summary.columns):
-            booked_mask_new = bm
-            if booked_mask_new.any():
-                try:
-                    wdf = wsm_df
-                except NameError:
-                    wdf = None
-                if wdf is not None and {"wsm_sifra", "wsm_naziv"}.issubset(
-                    wdf.columns
-                ):
-                    m = (
-                        wdf.assign(wsm_sifra=_col(wdf, "wsm_sifra").astype(str))
-                        .dropna(subset=["wsm_naziv"])
-                        .drop_duplicates("wsm_sifra")
-                        .set_index("wsm_sifra")["wsm_naziv"]
-                    )
-                    s_codes = df_summary.loc[
-                        booked_mask_new, "WSM šifra"
-                    ].astype(str)
-                    fill = s_codes.map(m)
-                    _names = df_summary.loc[
-                        booked_mask_new, "WSM Naziv"
-                    ].astype(str)
-                    empty_name = _names.str.strip().eq(
-                        ""
-                    ) | _names.str.lower().eq("ostalo")
-                    df_summary.loc[
-                        booked_mask_new & empty_name, "WSM Naziv"
-                    ] = fill[empty_name].fillna("")
-                # Backfill WSM Naziv iz kataloga, če je prazen ali 'Ostalo'
-                try:
-                    sdf = globals().get("sifre_df") or globals().get("wsm_df")
-                    if sdf is not None and {"wsm_sifra", "wsm_naziv"}.issubset(
-                        sdf.columns
-                    ):
-                        code2name = (
-                            sdf.assign(
-                                wsm_sifra=_col(sdf, "wsm_sifra")
-                                .astype(str)
-                                .str.strip(),
-                                wsm_naziv=_col(sdf, "wsm_naziv").astype(str),
-                            )
-                            .dropna(subset=["wsm_naziv"])
-                            .drop_duplicates("wsm_sifra")
-                            .set_index("wsm_sifra")["wsm_naziv"]
-                        )
-                        names = df_summary["WSM Naziv"].astype(str)
-                        booked_mask_new = (
-                            df_summary["WSM šifra"]
-                            .astype(str)
-                            .str.strip()
-                            .ne("")
-                        )
-                        still_empty = names.str.strip().eq(
-                            ""
-                        ) | names.str.lower().eq("ostalo")
-                        mask = booked_mask_new & still_empty
-                        df_summary.loc[mask, "WSM Naziv"] = (
-                            df_summary.loc[mask, "WSM šifra"]
-                            .astype(str)
-                            .str.strip()
-                            .map(code2name)
-                            .fillna(df_summary.loc[mask, "WSM Naziv"])
-                        )
-                except Exception as e:
-                    log.warning(
-                        "WSM Naziv backfill from catalog failed: %s", e
-                    )
-
-        # Združi na eno vrstico na WSM kodo (brez-kodne -> 'Ostalo')
-        try:
-            df_summary = aggregate_summary_per_code(df_summary)
-        except Exception as e:
-            log.warning("aggregate_summary_per_code failed: %s", e)
-        # Opcijski backfill tudi po združevanju
+        # Backfill imen po konsolidaciji, če je še prazno/"Ostalo"
         try:
             sdf = globals().get("sifre_df") or globals().get("wsm_df")
             if sdf is not None and {"wsm_sifra", "wsm_naziv"}.issubset(
@@ -3095,7 +3092,9 @@ def review_links(
             ):
                 code2name = (
                     sdf.assign(
-                        wsm_sifra=_col(sdf, "wsm_sifra").astype(str).str.strip(),
+                        wsm_sifra=_col(sdf, "wsm_sifra")
+                        .astype(str)
+                        .str.strip(),
                         wsm_naziv=_col(sdf, "wsm_naziv").astype(str),
                     )
                     .dropna(subset=["wsm_naziv"])
@@ -3119,23 +3118,18 @@ def review_links(
                 )
         except Exception as e:
             log.warning("WSM Naziv backfill from catalog failed: %s", e)
+
         b, u = globals().get(
             "_fallback_count_from_grid", lambda df: (0, len(df))
         )(df)
         globals()["_SUMMARY_COUNTS"] = (b, u)
-        # Posodobi levi info-panel brez ponovnega ustvarjanja Label-ov
         try:
             sum_booked_var.set(f"Knjiženo: {b}")
             sum_unbooked_var.set(f"Ostane: {u}")
         except Exception:
             pass
+
         df_summary = df_summary.loc[:, ~df_summary.columns.duplicated()].copy()
-        log.warning(
-            "[SUMMARY AFTER AGG] %s",
-            df_summary[["WSM šifra", "WSM Naziv", "Količina"]].to_dict(
-                "records"
-            ),
-        )
         _render_summary(df_summary)
 
     # Skupni zneski pod povzetkom
@@ -3238,10 +3232,7 @@ def review_links(
         tolerance = Decimal("0.01")
         diff = inv_total - calc_total
         difference = abs(diff)
-        try:
-            discount = doc_discount
-        except NameError:  # backward compatibility
-            discount = doc_discount_total
+        discount = doc_discount
         if difference > tolerance:
             if discount:
                 diff2 = inv_total - (calc_total + abs(discount))

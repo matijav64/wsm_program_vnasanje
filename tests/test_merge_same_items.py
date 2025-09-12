@@ -177,3 +177,25 @@ def test_merge_same_items_groups_by_discount_not_price():
     assert merged["kolicina_norm"] == Decimal("2")
     assert merged["total_net"] == Decimal("4.201")
     assert merged["cena_po_rabatu"] == Decimal("2.101")
+
+
+def test_merge_same_items_preserves_discount_dimension():
+    import wsm.ui.review.helpers as h
+
+    h.GROUP_BY_DISCOUNT = True
+    df = pd.DataFrame(
+        {
+            "wsm_sifra": ["1", "1"],
+            "enota_norm": ["kos", "kos"],
+            "is_gratis": [False, False],
+            "kolicina": [Decimal("1"), Decimal("1")],
+            "kolicina_norm": [Decimal("1"), Decimal("1")],
+            "vrednost": [Decimal("10"), Decimal("10")],
+            "rabata": [Decimal("2"), Decimal("1")],
+            "rabata_pct": [Decimal("20"), Decimal("10")],
+            "total_net": [Decimal("8"), Decimal("9")],
+            "ddv": [Decimal("1.76"), Decimal("1.98")],
+        }
+    )
+    merged = _merge_same_items(df)
+    assert len(merged) == 2
