@@ -200,6 +200,40 @@ def test_merge_same_items_groups_by_discount_not_price():
     assert merged["cena_po_rabatu"] == Decimal("2.101")
 
 
+def test_merge_same_items_tracks_returns():
+    df = pd.DataFrame(
+        [
+            {
+                "wsm_sifra": "X",
+                "naziv_ckey": "pivo",
+                "enota_norm": "L",
+                "kolicina_norm": Decimal("20"),
+                "vrednost": Decimal("30"),
+                "rabata": Decimal("0"),
+                "total_net": Decimal("30"),
+                "ddv": Decimal("6"),
+                "is_gratis": False,
+            },
+            {
+                "wsm_sifra": "X",
+                "naziv_ckey": "pivo",
+                "enota_norm": "L",
+                "kolicina_norm": Decimal("-20"),
+                "vrednost": Decimal("-30"),
+                "rabata": Decimal("0"),
+                "total_net": Decimal("-30"),
+                "ddv": Decimal("-6"),
+                "is_gratis": False,
+            },
+        ]
+    )
+
+    merged = _merge_same_items(df)
+    assert merged.loc[0, "kolicina_norm"] == Decimal("0")
+    assert merged.loc[0, "vrnjeno"] == Decimal("20")
+
+
+
 def test_merge_same_items_preserves_discount_dimension():
     import wsm.ui.review.helpers as h
 

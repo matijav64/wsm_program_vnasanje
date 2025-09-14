@@ -13,7 +13,6 @@ def test_rabata_pct_decimal_safe():
             (
                 r["rabata"] / (r["vrednost"] + r["rabata"]) * Decimal("100")
             ).quantize(Decimal("0.01"))
-
             if r["vrednost"] != 0 and (r["vrednost"] + r["rabata"]) != 0
 
             else Decimal("0")

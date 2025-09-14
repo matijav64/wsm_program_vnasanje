@@ -1049,7 +1049,6 @@ def review_links(
             (
                 r["rabata"] / (r["vrednost"] + r["rabata"]) * Decimal("100")
             ).quantize(Decimal("0.01"), ROUND_HALF_UP)
-
             if r["vrednost"] != 0 and (r["vrednost"] + r["rabata"]) != 0
 
             else Decimal("0")
@@ -2834,6 +2833,9 @@ def review_links(
             return Decimal("0.00") if q == 0 else q
 
         rab_s = rab_s.map(_q2p)
+        # Unbooked lines (code "OSTALO") ignore rabat dimension so they don't
+        # split into multiple summary rows based on discount.
+        rab_s = rab_s.where(is_booked, Decimal("0.00"))
         if not globals().get("GROUP_BY_DISCOUNT", True):
             rab_s[:] = Decimal("0.00")
 
@@ -2855,6 +2857,7 @@ def review_links(
             df, ["Bruto", "vrednost_bruto", "Skupna bruto", "vrednost"]
         )
         qty_s = first_existing_series(df, ["Količina", "kolicina_norm"])
+        ret_s = first_existing_series(df, ["vrnjeno", "Vrnjeno"])
 
         # Za naziv uporabljamo isto koalescentno kodo
         wsm_s = code_s
@@ -2903,6 +2906,11 @@ def review_links(
             "kolicina": (
                 qty_s
                 if qty_s is not None
+                else pd.Series([Decimal("0")] * len(df), index=df.index)
+            ),
+            "vrnjeno": (
+                ret_s
+                if ret_s is not None
                 else pd.Series([Decimal("0")] * len(df), index=df.index)
             ),
             "bruto": (
@@ -3043,7 +3051,13 @@ def review_links(
                 g, ["kolicina_norm", "Količina", "kolicina"]
             )
             qty_total = dsum(qty_series)
-            qty_ret = dsum_neg(qty_series)
+            ret_series = first_existing_series(g, ["vrnjeno", "Vrnjeno"])
+            qty_ret = (
+                dsum(ret_series)
+                if ret_series is not None
+                else dsum_neg(qty_series)
+            )
+
 
             records.append(
                 {

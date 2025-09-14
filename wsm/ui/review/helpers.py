@@ -497,6 +497,17 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
     existing_numeric = [c for c in num_candidates if c in df.columns]
     _t("start rows=%d numeric=%s", len(df), existing_numeric)
 
+    # Track returns separately so that quantity going back to supplier is not
+    # lost when positive and negative rows cancel each other out during
+    # aggregation. ``vrnjeno`` stores the absolute value of negative quantities
+    # and is summed like other numeric columns.
+    if "kolicina_norm" in df.columns and "vrnjeno" not in df.columns:
+        df["vrnjeno"] = df["kolicina_norm"].map(
+            lambda x: -to_dec(x) if to_dec(x) < 0 else Decimal("0")
+        )
+        existing_numeric.append("vrnjeno")
+
+
     # ➊ Minimalni identitetni ključ
     base_keys = [
         k
