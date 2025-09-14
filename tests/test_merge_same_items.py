@@ -233,6 +233,7 @@ def test_merge_same_items_tracks_returns():
     assert merged.loc[0, "vrnjeno"] == Decimal("20")
 
 
+
 def test_merge_same_items_preserves_discount_dimension():
     import wsm.ui.review.helpers as h
 

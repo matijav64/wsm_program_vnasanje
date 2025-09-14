@@ -507,6 +507,7 @@ def _merge_same_items(df: pd.DataFrame) -> pd.DataFrame:
         )
         existing_numeric.append("vrnjeno")
 
+
     # ➊ Minimalni identitetni ključ
     base_keys = [
         k
