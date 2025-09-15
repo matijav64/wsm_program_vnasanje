@@ -173,139 +173,10 @@ def _apply_links_to_df(
 ) -> tuple[pd.DataFrame, int]:
     """Auto-apply stored links to ``df``.
 
-    Najprej poskusi strogo ujemanje po ``sifra_dobavitelja`` + ``naziv_ckey`` +
-    ``enota_norm``.  Za vrstice, kjer WSM koda še vedno manjka, se izvede
-    fallback brez enote.  Funkcija vrne posodobljen ``df`` in število
-    posodobljenih vrstic.
+    Samodejno predlaganje je odstranjeno, ker pogosto knjiži napačno.
+    Funkcija vrne ``df`` nespremenjen in poroča 0 posodobljenih vrstic.
     """
-    if df is None or df.empty or links_df is None or links_df.empty:
-        return df, 0
-
-    req = {"sifra_dobavitelja", "naziv_ckey"}
-    if not req.issubset(df.columns) or not req.issubset(links_df.columns):
-        return df, 0
-
-    def _norm_unit(u):
-        s = str(u or "").strip().lower()
-        if s in {"kom", "kosov", "kos/kos"}:
-            return "kos"
-        return s
-
-    excluded = _excluded_codes_upper()
-
-    def _needs_fill(s: pd.Series) -> pd.Series:
-        s = s.astype("string")
-        s_str = s.str.strip()
-        return (
-            s.isna()
-            | s_str.eq("")
-            | s_str.eq("<NA>")
-            | s_str.str.upper().isin(excluded)
-        )
-
-    # normalizacija enot
-    links_df = links_df.copy()
-    links_df["enota_norm"] = (
-        links_df["enota_norm"].map(_norm_unit)
-        if "enota_norm" in links_df.columns
-        else pd.Series([""] * len(links_df), index=links_df.index)
-    )
-    df["enota_norm"] = (
-        df["enota_norm"].map(_norm_unit)
-        if "enota_norm" in df.columns
-        else pd.Series([""] * len(df), index=df.index)
-    )
-
-    for c in ["sifra_dobavitelja", "naziv_ckey"]:
-        df[c] = df[c].astype(str)
-        links_df[c] = links_df[c].astype(str)
-
-    if "wsm_sifra" not in links_df.columns:
-        return df, 0
-
-    name_col = (
-        "wsm_naziv"
-        if "wsm_naziv" in links_df.columns
-        else ("WSM Naziv" if "WSM Naziv" in links_df.columns else None)
-    )
-
-    links_df["wsm_sifra"] = links_df["wsm_sifra"].astype(str).str.strip()
-    links_df = links_df[links_df["wsm_sifra"] != ""]
-
-    if "wsm_sifra" not in df.columns:
-        df["wsm_sifra"] = pd.Series(pd.NA, index=df.index, dtype="string")
-    if "wsm_naziv" not in df.columns:
-        df["wsm_naziv"] = pd.Series(pd.NA, index=df.index, dtype="string")
-
-    mask_initial = _needs_fill(df.get("wsm_sifra"))
-    before = int((~mask_initial).sum())
-
-    # 1) strogo ujemanje: dobavitelj + naziv_ckey + enota_norm
-    key_strict = ["sifra_dobavitelja", "naziv_ckey", "enota_norm"]
-    if mask_initial.any() and all(k in links_df.columns for k in key_strict):
-        lk1_cols = (
-            key_strict + ["wsm_sifra"] + ([name_col] if name_col else [])
-        )
-        lk1 = (
-            links_df[lk1_cols]
-            .dropna(subset=["wsm_sifra"])
-            .drop_duplicates(key_strict)
-        )
-        m1 = df.loc[mask_initial, key_strict].merge(
-            lk1, on=key_strict, how="left"
-        )
-        idx1 = df.index[mask_initial]
-        codes1 = pd.Series(m1["wsm_sifra"].values, index=idx1)
-        df.loc[idx1, "wsm_sifra"] = df.loc[idx1, "wsm_sifra"].where(
-            ~_needs_fill(df.loc[idx1, "wsm_sifra"]), codes1
-        )
-        if name_col:
-            names1 = pd.Series(m1[name_col].values, index=idx1)
-            df.loc[idx1, "wsm_naziv"] = df.loc[idx1, "wsm_naziv"].where(
-                df.loc[idx1, "wsm_naziv"].notna(), names1
-            )
-
-    # 2) fallback: dobavitelj + naziv_ckey (brez enote)
-    mask_after_first = _needs_fill(df.get("wsm_sifra"))
-    key_fallback = ["sifra_dobavitelja", "naziv_ckey"]
-    if mask_after_first.any() and all(
-        k in links_df.columns for k in key_fallback
-    ):
-        lk2_cols = (
-            key_fallback + ["wsm_sifra"] + ([name_col] if name_col else [])
-        )
-        lk2 = (
-            links_df[lk2_cols]
-            .dropna(subset=["wsm_sifra"])
-            .drop_duplicates(key_fallback)
-        )
-        m2 = df.loc[mask_after_first, key_fallback].merge(
-            lk2, on=key_fallback, how="left"
-        )
-        idx2 = df.index[mask_after_first]
-        codes2 = pd.Series(m2["wsm_sifra"].values, index=idx2)
-        df.loc[idx2, "wsm_sifra"] = df.loc[idx2, "wsm_sifra"].where(
-            ~_needs_fill(df.loc[idx2, "wsm_sifra"]), codes2
-        )
-        if name_col:
-            names2 = pd.Series(m2[name_col].values, index=idx2)
-            df.loc[idx2, "wsm_naziv"] = df.loc[idx2, "wsm_naziv"].where(
-                df.loc[idx2, "wsm_naziv"].notna(), names2
-            )
-
-    mask_final = _needs_fill(df.get("wsm_sifra"))
-    after = int((~mask_final).sum())
-    updated = max(0, after - before)
-
-    st = df.get("status")
-    if st is None:
-        df["status"] = None
-        st = df["status"]
-    empty_status = st.fillna("").astype(str).str.strip().eq("")
-    filled_mask = mask_initial & ~mask_final
-    df.loc[filled_mask & empty_status, "status"] = "AUTO • povezava"
-
-    return df, updated
+    return df, 0
 
 
 def _fill_names_from_catalog(
@@ -1050,7 +921,6 @@ def review_links(
                 r["rabata"] / (r["vrednost"] + r["rabata"]) * Decimal("100")
             ).quantize(Decimal("0.01"), ROUND_HALF_UP)
             if r["vrednost"] != 0 and (r["vrednost"] + r["rabata"]) != 0
-
             else Decimal("0")
         ),
         axis=1,
@@ -2281,7 +2151,6 @@ def review_links(
                                 cur[mask].astype(str).str.strip().map(name_map)
                             )
 
-
                             if "wsm_naziv" in df.columns:
                                 oldn = (
                                     df.loc[mask, "wsm_naziv"]
@@ -2790,6 +2659,8 @@ def review_links(
         f = first_existing_series(
             df, ["wsm_sifra", "WSM šifra", "_summary_key"]
         )
+        excl_fn = globals().get("_excluded_codes_upper")
+        excluded = excl_fn() if callable(excl_fn) else frozenset()
         if b is None:
             code_s = (
                 f
@@ -2801,12 +2672,12 @@ def review_links(
             if f is not None:
                 f = f.astype("string")
                 empty_b = code_s.fillna("").str.strip().eq("")
+                empty_b |= code_s.str.upper().isin(excluded)
                 code_s = code_s.where(~empty_b, f)
 
         code_s = code_s.astype("string").fillna("").map(_norm_code)
         df["_summary_key"] = code_s  # poravnava summary ključev
 
-        excluded = _excluded_codes_upper()
         is_booked = ~code_s.str.upper().isin(excluded)
         df["_is_booked"] = is_booked
         code_or_ostalo = code_s.where(is_booked, "OSTALO")
@@ -3048,7 +2919,6 @@ def review_links(
                 if ret_series is not None
                 else dsum_neg(qty_series)
             )
-
 
             records.append(
                 {
