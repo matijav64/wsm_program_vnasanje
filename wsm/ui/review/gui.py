@@ -1039,6 +1039,7 @@ def review_links(
         ),
         axis=1,
     )
+
     for _c in ("vrednost", "rabata"):
         df[_c] = df[_c].apply(
             lambda x: x if isinstance(x, Decimal) else Decimal(str(x))
@@ -1049,6 +1050,7 @@ def review_links(
                 r["rabata"] / (r["vrednost"] + r["rabata"]) * Decimal("100")
             ).quantize(Decimal("0.01"), ROUND_HALF_UP)
             if r["vrednost"] != 0 and (r["vrednost"] + r["rabata"]) != 0
+
             else Decimal("0")
         ),
         axis=1,
@@ -2279,6 +2281,7 @@ def review_links(
                                 cur[mask].astype(str).str.strip().map(name_map)
                             )
 
+
                             if "wsm_naziv" in df.columns:
                                 oldn = (
                                     df.loc[mask, "wsm_naziv"]
@@ -3045,6 +3048,7 @@ def review_links(
                 if ret_series is not None
                 else dsum_neg(qty_series)
             )
+
 
             records.append(
                 {
