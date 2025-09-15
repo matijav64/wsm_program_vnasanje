@@ -1050,7 +1050,6 @@ def review_links(
                 r["rabata"] / (r["vrednost"] + r["rabata"]) * Decimal("100")
             ).quantize(Decimal("0.01"), ROUND_HALF_UP)
             if r["vrednost"] != 0 and (r["vrednost"] + r["rabata"]) != 0
-
             else Decimal("0")
         ),
         axis=1,
@@ -2281,7 +2280,6 @@ def review_links(
                                 cur[mask].astype(str).str.strip().map(name_map)
                             )
 
-
                             if "wsm_naziv" in df.columns:
                                 oldn = (
                                     df.loc[mask, "wsm_naziv"]
@@ -2790,6 +2788,8 @@ def review_links(
         f = first_existing_series(
             df, ["wsm_sifra", "WSM šifra", "_summary_key"]
         )
+        excl_fn = globals().get("_excluded_codes_upper")
+        excluded = excl_fn() if callable(excl_fn) else frozenset()
         if b is None:
             code_s = (
                 f
@@ -2801,12 +2801,12 @@ def review_links(
             if f is not None:
                 f = f.astype("string")
                 empty_b = code_s.fillna("").str.strip().eq("")
+                empty_b |= code_s.str.upper().isin(excluded)
                 code_s = code_s.where(~empty_b, f)
 
         code_s = code_s.astype("string").fillna("").map(_norm_code)
         df["_summary_key"] = code_s  # poravnava summary ključev
 
-        excluded = _excluded_codes_upper()
         is_booked = ~code_s.str.upper().isin(excluded)
         df["_is_booked"] = is_booked
         code_or_ostalo = code_s.where(is_booked, "OSTALO")
@@ -3048,7 +3048,6 @@ def review_links(
                 if ret_series is not None
                 else dsum_neg(qty_series)
             )
-
 
             records.append(
                 {
