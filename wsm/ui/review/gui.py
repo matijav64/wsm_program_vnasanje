@@ -2956,16 +2956,7 @@ def review_links(
 
         # knjiženost
         try:
-            if "status" in work.columns:
-                work["_is_booked"] = (
-                    _col(work, "status")
-                    .fillna("")
-                    .astype(str)
-                    .str.upper()
-                    .eq("POVEZANO")
-                ).astype(int)
-            else:
-                work["_is_booked"] = _booked_mask_from(work).astype(int)
+            work["_is_booked"] = _booked_mask_from(work).astype(int)
         except Exception:
             _ws = _col(work, "wsm_sifra").fillna("").astype(str).str.strip()
             work["_is_booked"] = _ws.ne("") & ~_ws.str.upper().isin(
