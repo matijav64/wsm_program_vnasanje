@@ -88,6 +88,17 @@ def _excluded_codes_upper() -> frozenset[str]:
     return frozenset(x.upper() for x in EXCLUDED_CODES)
 
 
+# Normalizira knjiženo kodo: prazna/None ali izključena šifra -> "OSTALO".
+def _coerce_booked_code(code: object) -> str:
+    norm = _norm_wsm_code(code)
+    if not norm:
+        return "OSTALO"
+    upper = norm.upper()
+    if upper in _excluded_codes_upper():
+        return "OSTALO"
+    return norm
+
+
 # Regex za prepoznavo "glavin" vrstic (Dobavnica/Račun/...).
 # Možno razširiti z okoljsko spremenljivko ``WSM_HEADER_PREFIX``.
 HDR_PREFIX_RE = re.compile(
@@ -2119,7 +2130,10 @@ def review_links(
                 mask = filled & (empty_status | changed_code)
 
                 if bool(mask.any()):
-                    df.loc[mask, "_booked_sifra"] = cur[mask]
+                    normalized = cur[mask].map(_coerce_booked_code)
+                    df.loc[mask, "_booked_sifra"] = normalized
+                    if "_summary_key" in df.columns:
+                        df.loc[mask, "_summary_key"] = normalized
                     if "status" in df.columns:
                         df.loc[mask, "status"] = "POVEZANO • ročno"
                         for idx in df.index[mask]:
@@ -3782,6 +3796,14 @@ def review_links(
 
         df.at[idx, "warning"] = tooltip
 
+        booked_value = _coerce_booked_code(
+            None if pd.isna(code) else str(code)
+        )
+        if "_booked_sifra" in df.columns:
+            df.at[idx, "_booked_sifra"] = booked_value
+        if "_summary_key" in df.columns:
+            df.at[idx, "_summary_key"] = booked_value
+
         _show_tooltip(sel_i, tooltip)
         if "is_gratis" in df.columns and df.at[idx, "is_gratis"]:
             tset = set(tree.item(sel_i).get("tags", ()))
@@ -3859,6 +3881,11 @@ def review_links(
             df.at[idx, "WSM šifra"] = ""
         if "WSM Naziv" in df.columns:
             df.at[idx, "WSM Naziv"] = ""
+        cleared_value = _coerce_booked_code(None)
+        if "_booked_sifra" in df.columns:
+            df.at[idx, "_booked_sifra"] = cleared_value
+        if "_summary_key" in df.columns:
+            df.at[idx, "_summary_key"] = cleared_value
         try:
             tree.set(sel_i, "WSM šifra", "")
             tree.set(sel_i, "WSM Naziv", "")
