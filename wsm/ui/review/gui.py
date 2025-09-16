@@ -75,6 +75,7 @@ OVERWRITE_OSTALO_IN_GRID = os.getenv(
 DEC2 = Decimal("0.01")
 DEC_PCT_MIN = Decimal("-100")
 DEC_PCT_MAX = Decimal("100")
+DEC_SMALL_DISCOUNT = Decimal("0.1")
 
 EXCLUDED_CODES = {"UNKNOWN", "OSTALO", "OTHER", "NAN"}
 
@@ -245,6 +246,13 @@ def _dec_or_none(x):
         return None
 
 
+def _zero_small_discount(val: object) -> Decimal:
+    """Treat rounding-level discounts (|pct| < 0.1) as zero."""
+
+    pct = _dec_or_zero(val)
+    return Decimal("0") if pct.copy_abs() < DEC_SMALL_DISCOUNT else pct
+
+
 def _ensure_eff_discount_pct(df: pd.DataFrame) -> pd.DataFrame:
     """
     UI uporablja eff_discount_pct za prikaz (kolona 'Rabat (%)' in za
@@ -257,7 +265,9 @@ def _ensure_eff_discount_pct(df: pd.DataFrame) -> pd.DataFrame:
         rp = df["rabata_pct"].apply(_dec_or_zero)
         mask = df["eff_discount_pct"].isna() | (df["eff_discount_pct"] == 0)
         df.loc[mask, "eff_discount_pct"] = rp[mask]
+        df["rabata_pct"] = rp.map(_zero_small_discount)
     df["eff_discount_pct"] = df["eff_discount_pct"].fillna(Decimal("0"))
+    df["eff_discount_pct"] = df["eff_discount_pct"].apply(_zero_small_discount)
     return df
 
 
@@ -295,9 +305,10 @@ def _backfill_discount_pct_from_prices(df: pd.DataFrame) -> pd.DataFrame:
 
         def _calc(p_before, p_after):
             try:
-                return (
+                pct = (
                     (p_before - p_after) / p_before * Decimal("100")
                 ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+                return _zero_small_discount(pct)
             except Exception:
                 return Decimal("0")
 
@@ -454,6 +465,8 @@ def _discount_bucket(row: dict) -> Tuple[Decimal, Decimal]:
         pct = Decimal("0")
 
     pct = pct.quantize(DEC2, rounding=ROUND_HALF_UP)
+    pct = _zero_small_discount(pct)
+    pct = pct.quantize(DEC2, rounding=ROUND_HALF_UP)
     # manj občutljivo na drobne razlike: 3 decimalke
     ua3 = (unit_after if unit_after is not None else Decimal("0")).quantize(
         Decimal("0.001"), rounding=ROUND_HALF_UP
@@ -509,6 +522,7 @@ def _format_opozorilo(row: pd.Series) -> str:
         unit = _as_dec(unit, default="0").quantize(
             Decimal("0.0000"), rounding=ROUND_HALF_UP
         )
+        pct = _zero_small_discount(pct)
         pct = _clean_neg_zero(pct).quantize(DEC2, rounding=ROUND_HALF_UP)
         return f"rabat {pct}% @ {unit}"
     except Exception:
@@ -1137,6 +1151,8 @@ def review_links(
             d = _safe_pct(v)
             if d is None:
                 d = Decimal("0")
+            d = d.quantize(DEC2, rounding=ROUND_HALF_UP)
+            d = _zero_small_discount(d)
             return d.quantize(DEC2, rounding=ROUND_HALF_UP)
 
         df["rabata_pct"] = df["rabata_pct"].map(_clip)
@@ -2713,8 +2729,12 @@ def review_links(
         else:
             rab_s = _col(df, "eff_discount_pct").apply(_to_dec)
 
+        small_thr = globals().get("DEC_SMALL_DISCOUNT", Decimal("0.1"))
+
         def _q2p(d: Decimal) -> Decimal:
             q = d.quantize(Decimal("0.01"), ROUND_HALF_UP)
+            if q.copy_abs() < small_thr:
+                return Decimal("0.00")
             return Decimal("0.00") if q == 0 else q
 
         rab_s = rab_s.map(_q2p)
