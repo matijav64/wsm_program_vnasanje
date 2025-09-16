@@ -2676,11 +2676,12 @@ def review_links(
                 code_s = code_s.where(~empty_b, f)
 
         code_s = code_s.astype("string").fillna("").map(_norm_code)
-        df["_summary_key"] = code_s  # poravnava summary ključev
-
-        is_booked = ~code_s.str.upper().isin(excluded)
+        code_s = code_s.astype("string").fillna("").str.strip()
+        code_upper = code_s.str.upper()
+        is_booked = code_s.ne("") & ~code_upper.isin(excluded)
+        df["_summary_key"] = code_s.where(is_booked, "OSTALO")
         df["_is_booked"] = is_booked
-        code_or_ostalo = code_s.where(is_booked, "OSTALO")
+        code_or_ostalo = df["_summary_key"]
 
         unit_s = first_existing_series(df, ["enota_norm", "enota"])
         if unit_s is None:
@@ -2731,7 +2732,7 @@ def review_links(
         ret_s = first_existing_series(df, ["vrnjeno", "Vrnjeno"])
 
         # Za naziv uporabljamo isto koalescentno kodo
-        wsm_s = code_s
+        wsm_s = df["_summary_key"]
 
         # Naziv (serija)
         if "WSM Naziv" in df.columns:

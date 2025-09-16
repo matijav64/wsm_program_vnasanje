@@ -63,6 +63,7 @@ def test_update_summary_preserves_discount_for_unbooked():
     assert "Rabat (%)" in df_summary.columns
     assert df_summary.loc[0, "Rabat (%)"] == Decimal("0.00")
     assert df_summary.loc[0, "WSM Naziv"] == "Ostalo"
+    assert df_summary.loc[0, "WSM šifra"] == "OSTALO"
 
 
 def test_update_summary_mixed_booked_unbooked():
