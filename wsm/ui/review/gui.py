@@ -88,6 +88,17 @@ def _excluded_codes_upper() -> frozenset[str]:
     return frozenset(x.upper() for x in EXCLUDED_CODES)
 
 
+# Normalizira knjiženo kodo: prazna/None ali izključena šifra -> "OSTALO".
+def _coerce_booked_code(code: object) -> str:
+    norm = _norm_wsm_code(code)
+    if not norm:
+        return "OSTALO"
+    upper = norm.upper()
+    if upper in _excluded_codes_upper():
+        return "OSTALO"
+    return norm
+
+
 # Regex za prepoznavo "glavin" vrstic (Dobavnica/Račun/...).
 # Možno razširiti z okoljsko spremenljivko ``WSM_HEADER_PREFIX``.
 HDR_PREFIX_RE = re.compile(
@@ -302,32 +313,38 @@ def _backfill_discount_pct_from_prices(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _booked_mask_from(df_or_sr: pd.DataFrame | pd.Series) -> pd.Series:
-    """True, če je vrstica KNJIŽENA (status POVEZANO ali AUTO)."""
-    if isinstance(df_or_sr, pd.DataFrame) and "status" in df_or_sr.columns:
-        st = df_or_sr["status"].fillna("").astype(str).str.upper().str.strip()
-        mask = st.str.startswith(("POVEZANO", "AUTO"))
-        # Če je status prazen, a je WSM šifra vnešena, štej kot knjiženo
-        try:
-            col = first_existing_series(df_or_sr, ["wsm_sifra", "WSM šifra"])
-        except Exception:
-            col = None
-        if col is not None:
-            s = col.astype("string").map(_norm_wsm_code)
-            excluded = _excluded_codes_upper()
-            mask = mask | (st.str.strip().eq("") & ~s.isin(excluded))
-        return mask
-    if isinstance(df_or_sr, pd.Series):
-        sr = df_or_sr
-    else:
-        # Primarno uporabljaj grid-stolpec; display kopija je lahko
-        # nesinhronizirana
-        col = first_existing_series(df_or_sr, ["wsm_sifra", "WSM šifra"])
-        if col is None:
-            return pd.Series(False, index=df_or_sr.index)
-        sr = col
-    s = sr.astype("string").map(_norm_wsm_code)
+    """True, če vrstica vsebuje dejansko knjiženo kodo."""
+
     excluded = _excluded_codes_upper()
-    return ~s.isin(excluded)
+
+    if isinstance(df_or_sr, pd.Series):
+        sr = df_or_sr.astype("string").map(_norm_wsm_code)
+        sr = sr.fillna("").str.upper()
+        return sr.ne("") & ~sr.isin(excluded)
+
+    if not isinstance(df_or_sr, pd.DataFrame):
+        return pd.Series(dtype="bool")
+
+    df = df_or_sr
+
+    # Najprej poskusi z dejanskim knjiženjem (_summary_key/_booked_sifra).
+    cols = ["_summary_key", "_booked_sifra", "WSM šifra", "wsm_sifra"]
+    try:
+        code_series = first_existing_series(df, cols)
+    except Exception:
+        code_series = None
+
+    if code_series is not None:
+        codes = code_series.astype("string").map(_norm_wsm_code)
+        codes = codes.fillna("").str.upper()
+        mask = codes.ne("") & ~codes.isin(excluded)
+        return mask
+
+    if "status" in df.columns:
+        st = df["status"].fillna("").astype(str).str.upper().str.strip()
+        return st.str.startswith(("POVEZANO", "AUTO"))
+
+    return pd.Series(False, index=df.index)
 
 
 def _safe_pct(v) -> Optional[Decimal]:
@@ -2113,7 +2130,10 @@ def review_links(
                 mask = filled & (empty_status | changed_code)
 
                 if bool(mask.any()):
-                    df.loc[mask, "_booked_sifra"] = cur[mask]
+                    normalized = cur[mask].map(_coerce_booked_code)
+                    df.loc[mask, "_booked_sifra"] = normalized
+                    if "_summary_key" in df.columns:
+                        df.loc[mask, "_summary_key"] = normalized
                     if "status" in df.columns:
                         df.loc[mask, "status"] = "POVEZANO • ročno"
                         for idx in df.index[mask]:
@@ -2577,36 +2597,29 @@ def review_links(
         import pandas as pd
 
         try:
-            s = (
-                df["wsm_sifra"].fillna("").astype(str).str.strip().str.upper()
-                if "wsm_sifra" in df.columns
-                else pd.Series("", index=df.index)
+            codes = first_existing_series(
+                df,
+                ["_summary_key", "_booked_sifra", "WSM šifra", "wsm_sifra"],
             )
+            if codes is None:
+                codes = pd.Series([""] * len(df), index=df.index)
+            codes = codes.astype("string").map(_norm_wsm_code)
+            codes = codes.fillna("").str.upper()
             excluded = _excluded_codes_upper()
-            by_code = s.ne("") & ~s.isin(excluded)
+            booked_mask = codes.ne("") & ~codes.isin(excluded)
 
-            by_status = (
-                df["status"]
-                .fillna("")
-                .astype(str)
-                .str.upper()
-                .str.startswith(("POVEZANO", "AUTO"))
-                if "status" in df.columns
-                else pd.Series(False, index=df.index)
-            )
-
-            booked_mask = by_code | by_status
-
-            # nikoli ne štej kot knjiženo, če je še vedno “OSTALO”
-            if "wsm_naziv" in df.columns:
-                nm = (
-                    df["wsm_naziv"]
+            if "status" in df.columns:
+                st = (
+                    df["status"]
                     .fillna("")
                     .astype(str)
-                    .str.strip()
                     .str.upper()
+                    .str.strip()
                 )
-                booked_mask &= nm != "OSTALO"
+                status_mask = st.str.startswith(("POVEZANO", "AUTO"))
+                booked_mask = booked_mask | (
+                    status_mask & codes.ne("OSTALO") & codes.ne("")
+                )
 
             booked = int(booked_mask.sum())
             remaining = int(len(df) - booked)
@@ -2659,8 +2672,6 @@ def review_links(
         f = first_existing_series(
             df, ["wsm_sifra", "WSM šifra", "_summary_key"]
         )
-        excl_fn = globals().get("_excluded_codes_upper")
-        excluded = excl_fn() if callable(excl_fn) else frozenset()
         if b is None:
             code_s = (
                 f
@@ -2671,16 +2682,19 @@ def review_links(
             code_s = b.astype("string")
             if f is not None:
                 f = f.astype("string")
-                empty_b = code_s.fillna("").str.strip().eq("")
-                empty_b |= code_s.str.upper().isin(excluded)
+                norm_b = code_s.fillna("").map(_norm_code)
+                empty_b = norm_b.fillna("").str.strip().eq("")
                 code_s = code_s.where(~empty_b, f)
 
+        excl_fn = globals().get("_excluded_codes_upper")
+        excluded = excl_fn() if callable(excl_fn) else frozenset()
         code_s = code_s.astype("string").fillna("").map(_norm_code)
-        df["_summary_key"] = code_s  # poravnava summary ključev
-
-        is_booked = ~code_s.str.upper().isin(excluded)
+        code_s = code_s.astype("string").fillna("").str.strip()
+        code_upper = code_s.str.upper()
+        is_booked = code_s.ne("") & ~code_upper.isin(excluded)
+        df["_summary_key"] = code_s.where(is_booked, "OSTALO")
         df["_is_booked"] = is_booked
-        code_or_ostalo = code_s.where(is_booked, "OSTALO")
+        code_or_ostalo = df["_summary_key"]
 
         unit_s = first_existing_series(df, ["enota_norm", "enota"])
         if unit_s is None:
@@ -2731,7 +2745,7 @@ def review_links(
         ret_s = first_existing_series(df, ["vrnjeno", "Vrnjeno"])
 
         # Za naziv uporabljamo isto koalescentno kodo
-        wsm_s = code_s
+        wsm_s = df["_summary_key"]
 
         # Naziv (serija)
         if "WSM Naziv" in df.columns:
@@ -3782,6 +3796,14 @@ def review_links(
 
         df.at[idx, "warning"] = tooltip
 
+        booked_value = _coerce_booked_code(
+            None if pd.isna(code) else str(code)
+        )
+        if "_booked_sifra" in df.columns:
+            df.at[idx, "_booked_sifra"] = booked_value
+        if "_summary_key" in df.columns:
+            df.at[idx, "_summary_key"] = booked_value
+
         _show_tooltip(sel_i, tooltip)
         if "is_gratis" in df.columns and df.at[idx, "is_gratis"]:
             tset = set(tree.item(sel_i).get("tags", ()))
@@ -3859,6 +3881,11 @@ def review_links(
             df.at[idx, "WSM šifra"] = ""
         if "WSM Naziv" in df.columns:
             df.at[idx, "WSM Naziv"] = ""
+        cleared_value = _coerce_booked_code(None)
+        if "_booked_sifra" in df.columns:
+            df.at[idx, "_booked_sifra"] = cleared_value
+        if "_summary_key" in df.columns:
+            df.at[idx, "_summary_key"] = cleared_value
         try:
             tree.set(sel_i, "WSM šifra", "")
             tree.set(sel_i, "WSM Naziv", "")
