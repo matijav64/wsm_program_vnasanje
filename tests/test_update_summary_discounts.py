@@ -31,6 +31,7 @@ def _extract_update_summary():
         "_booked_mask_from": rl._booked_mask_from,
         "_norm_wsm_code": rl._norm_wsm_code,
         "DEC_SMALL_DISCOUNT": rl.DEC_SMALL_DISCOUNT,
+
     }
     exec(snippet, ns)
     return ns["_update_summary"], ns

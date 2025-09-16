@@ -159,3 +159,4 @@ def test_coerce_booked_code_handles_excluded_and_empty():
     assert rl._coerce_booked_code(None) == "OSTALO"
     assert rl._coerce_booked_code("0") == "OSTALO"
     assert rl._coerce_booked_code("ostalo") == "OSTALO"
+
