@@ -163,6 +163,9 @@ def _norm_wsm_code(code) -> str:
     if not s:
         return ""
     # Treat any "0" variant ("0", "0.0", "0,0", "000") as uncoded
+    lower = s.lower()
+    if lower in {"nan", "none", "null"}:
+        return ""
     if re.fullmatch(r"0+(?:\.0+)?", s):
         return ""
     if re.fullmatch(r"\d+(?:\.0+)?", s):
