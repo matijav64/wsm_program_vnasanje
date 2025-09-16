@@ -94,3 +94,31 @@ def test_update_summary_mixed_booked_unbooked():
     assert any(
         (out["WSM Naziv"] == "Ostalo") & (out["Rabat (%)"] == Decimal("0.00"))
     )
+
+
+def test_update_summary_keeps_ostalo_when_not_booked():
+    _update_summary, ns = _extract_update_summary()
+
+    captured: dict[str, pd.DataFrame] = {}
+
+    def fake_render_summary(df_summary: pd.DataFrame) -> None:
+        captured["df_summary"] = df_summary
+
+    df = pd.DataFrame(
+        {
+            "_booked_sifra": ["OSTALO"],
+            "wsm_sifra": ["123456"],
+            "wsm_naziv": ["Predlog"],
+            "Neto po rabatu": [Decimal("10")],
+            "kolicina_norm": [Decimal("1")],
+            "eff_discount_pct": [Decimal("0")],
+        }
+    )
+
+    ns.update({"df": df, "_render_summary": fake_render_summary})
+    _update_summary()
+
+    df_summary = captured["df_summary"]
+    assert list(df_summary["WSM šifra"]) == ["OSTALO"]
+    assert list(df_summary["WSM Naziv"]) == ["Ostalo"]
+    assert ns.get("_SUMMARY_COUNTS") == (0, 1)
