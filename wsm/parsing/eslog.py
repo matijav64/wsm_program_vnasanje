@@ -574,13 +574,17 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
         _force_ns_for_doc(root)
 
         header_base = Decimal("0")
+        header_candidates: list[tuple[str, Decimal]] = []
         for code in ("203", "389", "79"):
+            value = Decimal("0")
             for moa in root.findall(".//e:G_SG50/e:S_MOA", NS):
                 if _text(moa.find("./e:C_C516/e:D_5025", NS)) == code:
-                    header_base = _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                    value = _decimal(moa.find("./e:C_C516/e:D_5004", NS))
                     break
-            if header_base != 0:
-                break
+            if value != 0:
+                header_candidates.append((code, value))
+                if header_base == 0:
+                    header_base = value
 
         line_base = Decimal("0")
         line_doc_discount = Decimal("0")
@@ -642,7 +646,20 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
         if line_base != 0:
             base = line_base
             line_adjusted = line_base + doc_discount + doc_charge
-            if header_base != 0 and abs(header_base - line_adjusted) > DEC2:
+            if header_candidates:
+                line_adjusted_q = line_adjusted.quantize(DEC2, ROUND_HALF_UP)
+                best_value, best_diff = min(
+                    (
+                        (value, abs(value - line_adjusted_q))
+                        for _, value in header_candidates
+                    ),
+                    key=lambda item: item[1],
+                )
+                if best_diff <= DEC2:
+                    base = best_value
+                elif header_base != 0 and abs(header_base - line_adjusted_q) > DEC2:
+                    base = header_base
+            elif header_base != 0 and abs(header_base - line_adjusted) > DEC2:
                 base = header_base
         else:
             base = header_base
