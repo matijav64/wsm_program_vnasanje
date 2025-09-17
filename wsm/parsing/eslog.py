@@ -2210,6 +2210,7 @@ def parse_eslog_invoice(
     header_gross = _first_moa(root, {"9", "388"}, ignore_sg26=True)
     diff_gross = Decimal("0")
     ok = True
+    warn_gross = False
     if header_gross != 0:
         header_gross = header_gross.quantize(DEC2, ROUND_HALF_UP)
         diff_gross = abs(gross_calc - header_gross)
@@ -2224,12 +2225,7 @@ def parse_eslog_invoice(
             if diff_alt < diff_gross:
                 return df_alt, ok_alt
         ok = diff_gross <= DEC2
-        if not ok:
-            log.warning(
-                "Invoice total mismatch: MOA 9/38/388 %s vs calculated %s",
-                header_gross,
-                gross_calc,
-            )
+        warn_gross = diff_gross > DEC2
 
     if hdr125 is not None:
         net_total = _dec2(hdr125)
@@ -2238,11 +2234,26 @@ def parse_eslog_invoice(
     if header_gross != 0:
         gross_calc = header_gross
 
+    final_diff = diff_gross
+    if header_gross != 0:
+        gross_check = (net_total + vat_total).quantize(DEC2, ROUND_HALF_UP)
+        final_diff = abs(gross_check - header_gross)
+        if final_diff <= DEC2:
+            ok = True
+        elif warn_gross:
+            log.warning(
+                "Invoice total mismatch: MOA 9/38/388 %s vs calculated %s",
+                header_gross,
+                gross_check,
+            )
+    else:
+        final_diff = Decimal("0")
+
     df = pd.DataFrame(items)
     df.attrs["vat_mismatch"] = vat_mismatch
     df.attrs["info_discounts"] = _INFO_DISCOUNTS
     df.attrs["gross_calc"] = gross_calc
-    df.attrs["gross_mismatch"] = header_gross != 0 and diff_gross > DEC2
+    df.attrs["gross_mismatch"] = header_gross != 0 and final_diff > DEC2
     if "sifra_dobavitelja" in df.columns and not df["sifra_dobavitelja"].any():
         df["sifra_dobavitelja"] = supplier_code
     if not df.empty:
