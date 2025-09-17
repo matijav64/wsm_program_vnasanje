@@ -586,6 +586,18 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
                 if header_base == 0:
                     header_base = value
 
+        header_gross = Decimal("0")
+        for gross_code in ("9", "388"):
+            gross_val = Decimal("0")
+            for moa in root.findall(".//e:G_SG50/e:S_MOA", NS):
+                if _text(moa.find("./e:C_C516/e:D_5025", NS)) == gross_code:
+                    gross_val = _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                    break
+            if gross_val != 0:
+                header_gross = gross_val
+                break
+
+
         line_base = Decimal("0")
         line_doc_discount = Decimal("0")
         for seg in root.findall(".//e:G_SG26", NS) + root.findall(".//G_SG26"):
@@ -648,14 +660,46 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
             line_adjusted = line_base + doc_discount + doc_charge
             if header_candidates:
                 line_adjusted_q = line_adjusted.quantize(DEC2, ROUND_HALF_UP)
-                best_value, best_diff = min(
-                    (
-                        (value, abs(value - line_adjusted_q))
-                        for _, value in header_candidates
-                    ),
-                    key=lambda item: item[1],
-                )
-                if best_diff <= DEC2:
+
+                best_value = None
+                best_diff = None
+
+                if header_gross != 0:
+                    scores: list[tuple[Decimal, Decimal, Decimal, Decimal]] = []
+                    for _, value in header_candidates:
+                        adjusted_net = value + doc_discount + doc_charge
+                        gross_estimate = (adjusted_net + tax_total).quantize(
+                            DEC2, ROUND_HALF_UP
+                        )
+                        gross_diff = abs(gross_estimate - header_gross)
+                        line_diff = abs(value - line_adjusted_q)
+                        header_diff = (
+                            abs(value - header_base)
+                            if header_base != 0
+                            else line_diff
+                        )
+                        scores.append((gross_diff, line_diff, header_diff, value))
+
+                    within_tol = [s for s in scores if s[0] <= DEC2]
+                    if within_tol:
+                        gross_diff, line_diff, _, cand_val = min(
+                            within_tol, key=lambda s: (s[0], s[1], s[2])
+                        )
+                        best_value = cand_val
+                        best_diff = line_diff
+
+                if best_value is None:
+                    value, diff = min(
+                        (
+                            (value, abs(value - line_adjusted_q))
+                            for _, value in header_candidates
+                        ),
+                        key=lambda item: item[1],
+                    )
+                    best_value, best_diff = value, diff
+
+                if best_diff is not None and best_diff <= DEC2:
+
                     base = best_value
                 elif header_base != 0 and abs(header_base - line_adjusted_q) > DEC2:
                     base = header_base
