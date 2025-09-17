@@ -574,12 +574,27 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
         _force_ns_for_doc(root)
 
         header_base = Decimal("0")
+        header_candidates: list[tuple[str, Decimal]] = []
         for code in ("203", "389", "79"):
+            value = Decimal("0")
             for moa in root.findall(".//e:G_SG50/e:S_MOA", NS):
                 if _text(moa.find("./e:C_C516/e:D_5025", NS)) == code:
-                    header_base = _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                    value = _decimal(moa.find("./e:C_C516/e:D_5004", NS))
                     break
-            if header_base != 0:
+            if value != 0:
+                header_candidates.append((code, value))
+                if header_base == 0:
+                    header_base = value
+
+        header_gross = Decimal("0")
+        for gross_code in ("9", "388"):
+            gross_val = Decimal("0")
+            for moa in root.findall(".//e:G_SG50/e:S_MOA", NS):
+                if _text(moa.find("./e:C_C516/e:D_5025", NS)) == gross_code:
+                    gross_val = _decimal(moa.find("./e:C_C516/e:D_5004", NS))
+                    break
+            if gross_val != 0:
+                header_gross = gross_val
                 break
 
         line_base = Decimal("0")
@@ -642,7 +657,51 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
         if line_base != 0:
             base = line_base
             line_adjusted = line_base + doc_discount + doc_charge
-            if header_base != 0 and abs(header_base - line_adjusted) > DEC2:
+            if header_candidates:
+                line_adjusted_q = line_adjusted.quantize(DEC2, ROUND_HALF_UP)
+
+                best_value = None
+                best_diff = None
+
+                if header_gross != 0:
+                    scores: list[tuple[Decimal, Decimal, Decimal, Decimal]] = []
+                    for _, value in header_candidates:
+                        adjusted_net = value + doc_discount + doc_charge
+                        gross_estimate = (adjusted_net + tax_total).quantize(
+                            DEC2, ROUND_HALF_UP
+                        )
+                        gross_diff = abs(gross_estimate - header_gross)
+                        line_diff = abs(value - line_adjusted_q)
+                        header_diff = (
+                            abs(value - header_base)
+                            if header_base != 0
+                            else line_diff
+                        )
+                        scores.append((gross_diff, line_diff, header_diff, value))
+
+                    within_tol = [s for s in scores if s[0] <= DEC2]
+                    if within_tol:
+                        gross_diff, line_diff, _, cand_val = min(
+                            within_tol, key=lambda s: (s[0], s[1], s[2])
+                        )
+                        best_value = cand_val
+                        best_diff = line_diff
+
+                if best_value is None:
+                    value, diff = min(
+                        (
+                            (value, abs(value - line_adjusted_q))
+                            for _, value in header_candidates
+                        ),
+                        key=lambda item: item[1],
+                    )
+                    best_value, best_diff = value, diff
+
+                if best_diff is not None and best_diff <= DEC2:
+                    base = best_value
+                elif header_base != 0 and abs(header_base - line_adjusted_q) > DEC2:
+                    base = header_base
+            elif header_base != 0 and abs(header_base - line_adjusted) > DEC2:
                 base = header_base
         else:
             base = header_base
@@ -2149,6 +2208,7 @@ def parse_eslog_invoice(
     header_gross = _first_moa(root, {"9", "388"}, ignore_sg26=True)
     diff_gross = Decimal("0")
     ok = True
+    warn_gross = False
     if header_gross != 0:
         header_gross = header_gross.quantize(DEC2, ROUND_HALF_UP)
         diff_gross = abs(gross_calc - header_gross)
@@ -2163,12 +2223,7 @@ def parse_eslog_invoice(
             if diff_alt < diff_gross:
                 return df_alt, ok_alt
         ok = diff_gross <= DEC2
-        if not ok:
-            log.warning(
-                "Invoice total mismatch: MOA 9/38/388 %s vs calculated %s",
-                header_gross,
-                gross_calc,
-            )
+        warn_gross = diff_gross > DEC2
 
     if hdr125 is not None:
         net_total = _dec2(hdr125)
@@ -2177,11 +2232,26 @@ def parse_eslog_invoice(
     if header_gross != 0:
         gross_calc = header_gross
 
+    final_diff = diff_gross
+    if header_gross != 0:
+        gross_check = (net_total + vat_total).quantize(DEC2, ROUND_HALF_UP)
+        final_diff = abs(gross_check - header_gross)
+        if final_diff <= DEC2:
+            ok = True
+        elif warn_gross:
+            log.warning(
+                "Invoice total mismatch: MOA 9/38/388 %s vs calculated %s",
+                header_gross,
+                gross_check,
+            )
+    else:
+        final_diff = Decimal("0")
+
     df = pd.DataFrame(items)
     df.attrs["vat_mismatch"] = vat_mismatch
     df.attrs["info_discounts"] = _INFO_DISCOUNTS
     df.attrs["gross_calc"] = gross_calc
-    df.attrs["gross_mismatch"] = header_gross != 0 and diff_gross > DEC2
+    df.attrs["gross_mismatch"] = header_gross != 0 and final_diff > DEC2
     if "sifra_dobavitelja" in df.columns and not df["sifra_dobavitelja"].any():
         df["sifra_dobavitelja"] = supplier_code
     if not df.empty:
