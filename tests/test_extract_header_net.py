@@ -82,7 +82,6 @@ def test_extract_header_net_prefers_best_header_match(tmp_path):
     path.write_text(xml)
     assert extract_header_net(path) == Decimal("100.02")
 
-
 def test_extract_header_net_prefers_gross_match_when_available(tmp_path):
     xml = (
         "<Invoice xmlns='urn:eslog:2.00'>"
@@ -117,3 +116,4 @@ def test_extract_header_net_prefers_gross_match_when_available(tmp_path):
     path = tmp_path / "moa_with_gross.xml"
     path.write_text(xml)
     assert extract_header_net(path) == Decimal("100.00")
+
