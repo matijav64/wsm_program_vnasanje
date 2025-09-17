@@ -171,3 +171,4 @@ def test_parse_eslog_invoice_trusts_consistent_header_totals(tmp_path):
     assert ok
     assert not df.attrs.get("gross_mismatch", False)
     assert df.attrs["gross_calc"] == Decimal("109.00")
+
