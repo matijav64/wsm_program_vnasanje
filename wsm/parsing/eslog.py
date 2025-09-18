@@ -2236,6 +2236,8 @@ def parse_eslog_invoice(
         net_total = _dec2(hdr125)
     if header_vat != 0:
         vat_total = header_vat
+    elif header_gross != 0:
+        vat_total = _dec2(header_gross - net_total)
     if header_gross != 0:
         gross_calc = header_gross
 
@@ -2333,6 +2335,8 @@ def parse_invoice_totals(
 
     if vat_total == 0 and header_vat != 0:
         vat_total = header_vat
+    elif header_gross != 0 and header_vat == 0:
+        vat_total = _dec2(header_gross - net_total)
 
     gross_total = _dec2(net_total + vat_total)
 
