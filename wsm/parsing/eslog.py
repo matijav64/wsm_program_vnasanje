@@ -2333,16 +2333,23 @@ def parse_invoice_totals(
     header_vat = extract_total_tax(xml_root)
     header_gross = extract_grand_total(xml_root)
 
-    if header_vat != 0:
-        vat_total = header_vat
-    elif header_gross != 0 and header_vat == 0:
-        vat_total = _dec2(header_gross - net_total)
+    header_net_q = _dec2(header_net) if header_net != 0 else Decimal("0")
+    header_vat_q = _dec2(header_vat) if header_vat != 0 else Decimal("0")
+    header_gross_q = _dec2(header_gross) if header_gross != 0 else Decimal("0")
 
-    gross_total = _dec2(net_total + vat_total)
+    if header_net_q != 0:
+        net_total = header_net_q
 
-    calc_gross = gross_total
+    if header_vat_q != 0:
+        vat_total = header_vat_q
+    elif header_gross_q != 0:
+        vat_total = _dec2(header_gross_q - net_total)
+
+    calc_gross = _dec2(net_total + vat_total)
+    gross_total = header_gross_q if header_gross_q != 0 else calc_gross
+
     header_total = _dec2(
-        header_gross if header_gross != 0 else header_net + header_vat
+        header_gross_q if header_gross_q != 0 else header_net_q + header_vat_q
     )
 
     mismatch = bool(df.attrs.get("vat_mismatch", False))
