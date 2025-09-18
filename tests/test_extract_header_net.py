@@ -318,12 +318,14 @@ def test_parse_invoice_totals_trusts_header_net_without_moa124():
         "    <G_SG52>"
         "      <S_MOA><C_C516><D_5025>125</D_5025><D_5004>100.00</D_5004></C_C516></S_MOA>"
         "    </G_SG52>"
+
         "  </M_INVOIC>"
         "</Invoice>"
     )
 
     root = LET.fromstring(xml.encode())
     assert extract_header_net(root) == Decimal("100.00")
+
 
     totals = parse_invoice_totals(root)
 
