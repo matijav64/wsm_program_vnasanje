@@ -586,6 +586,26 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
                 if header_base == 0:
                     header_base = value
 
+        summary_taxable = Decimal("0")
+        for sg52 in root.findall(".//e:G_SG52", NS) + root.findall(".//G_SG52"):
+            for moa in sg52.findall("./e:S_MOA", NS) + sg52.findall("./S_MOA"):
+                code_el = moa.find("./e:C_C516/e:D_5025", NS)
+                if code_el is None:
+                    code_el = moa.find("./C_C516/D_5025")
+                if _text(code_el) != "125":
+                    continue
+                val_el = moa.find("./e:C_C516/e:D_5004", NS)
+                if val_el is None:
+                    val_el = moa.find("./C_C516/D_5004")
+                summary_taxable += _decimal(val_el)
+
+        summary_taxable = _dec2(summary_taxable) if summary_taxable != 0 else Decimal("0")
+        if summary_taxable != 0:
+            if not any(code == "125" for code, _ in header_candidates):
+                header_candidates.append(("125", summary_taxable))
+            if header_base == 0:
+                header_base = summary_taxable
+
         header_gross = Decimal("0")
         for gross_code in ("9", "388"):
             gross_val = Decimal("0")
@@ -2333,16 +2353,23 @@ def parse_invoice_totals(
     header_vat = extract_total_tax(xml_root)
     header_gross = extract_grand_total(xml_root)
 
-    if header_vat != 0:
-        vat_total = header_vat
-    elif header_gross != 0 and header_vat == 0:
-        vat_total = _dec2(header_gross - net_total)
+    header_net_q = _dec2(header_net) if header_net != 0 else Decimal("0")
+    header_vat_q = _dec2(header_vat) if header_vat != 0 else Decimal("0")
+    header_gross_q = _dec2(header_gross) if header_gross != 0 else Decimal("0")
 
-    gross_total = _dec2(net_total + vat_total)
+    if header_net_q != 0:
+        net_total = header_net_q
 
-    calc_gross = gross_total
+    if header_vat_q != 0:
+        vat_total = header_vat_q
+    elif header_gross_q != 0:
+        vat_total = _dec2(header_gross_q - net_total)
+
+    calc_gross = _dec2(net_total + vat_total)
+    gross_total = header_gross_q if header_gross_q != 0 else calc_gross
+
     header_total = _dec2(
-        header_gross if header_gross != 0 else header_net + header_vat
+        header_gross_q if header_gross_q != 0 else header_net_q + header_vat_q
     )
 
     mismatch = bool(df.attrs.get("vat_mismatch", False))
