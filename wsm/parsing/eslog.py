@@ -2333,7 +2333,7 @@ def parse_invoice_totals(
     header_vat = extract_total_tax(xml_root)
     header_gross = extract_grand_total(xml_root)
 
-    if vat_total == 0 and header_vat != 0:
+    if header_vat != 0:
         vat_total = header_vat
     elif header_gross != 0 and header_vat == 0:
         vat_total = _dec2(header_gross - net_total)
