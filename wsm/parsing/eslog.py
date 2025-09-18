@@ -586,6 +586,26 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
                 if header_base == 0:
                     header_base = value
 
+        summary_taxable = Decimal("0")
+        for sg52 in root.findall(".//e:G_SG52", NS) + root.findall(".//G_SG52"):
+            for moa in sg52.findall("./e:S_MOA", NS) + sg52.findall("./S_MOA"):
+                code_el = moa.find("./e:C_C516/e:D_5025", NS)
+                if code_el is None:
+                    code_el = moa.find("./C_C516/D_5025")
+                if _text(code_el) != "125":
+                    continue
+                val_el = moa.find("./e:C_C516/e:D_5004", NS)
+                if val_el is None:
+                    val_el = moa.find("./C_C516/D_5004")
+                summary_taxable += _decimal(val_el)
+
+        summary_taxable = _dec2(summary_taxable) if summary_taxable != 0 else Decimal("0")
+        if summary_taxable != 0:
+            if not any(code == "125" for code, _ in header_candidates):
+                header_candidates.append(("125", summary_taxable))
+            if header_base == 0:
+                header_base = summary_taxable
+
         header_gross = Decimal("0")
         for gross_code in ("9", "388"):
             gross_val = Decimal("0")
