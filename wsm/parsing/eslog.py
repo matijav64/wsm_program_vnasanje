@@ -597,6 +597,7 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
                 header_gross = gross_val
                 break
 
+
         line_base = Decimal("0")
         line_doc_discount = Decimal("0")
         for seg in root.findall(".//e:G_SG26", NS) + root.findall(".//G_SG26"):
@@ -698,6 +699,7 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
                     best_value, best_diff = value, diff
 
                 if best_diff is not None and best_diff <= DEC2:
+
                     base = best_value
                 elif header_base != 0 and abs(header_base - line_adjusted_q) > DEC2:
                     base = header_base

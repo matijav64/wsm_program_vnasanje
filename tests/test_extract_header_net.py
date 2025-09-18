@@ -10,6 +10,7 @@ from wsm.parsing.eslog import (
 )
 
 
+
 def test_extract_header_net_falls_back_to_moa_79(tmp_path):
     xml = (
         "<Invoice xmlns='urn:eslog:2.00'>"
@@ -240,3 +241,4 @@ def test_parse_invoice_totals_uses_header_amounts_with_allowance(tmp_path):
     assert totals["vat"] == Decimal("8.00")
     assert totals["gross"] == Decimal("48.00")
     assert totals["mismatch"] is False
+
