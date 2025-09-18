@@ -235,6 +235,59 @@ def test_parse_eslog_invoice_prefers_header_gross_without_header_vat(tmp_path):
     assert totals["mismatch"] is False
 
 
+def test_parse_invoice_totals_prefers_header_vat_summary(tmp_path):
+    xml = (
+        "<Invoice xmlns='urn:eslog:2.00'>"
+        "  <M_INVOIC>"
+        "    <G_SG26>"
+        "      <S_LIN><D_1082>1</D_1082></S_LIN>"
+        "      <S_QTY><C_C186><D_6063>47</D_6063><D_6060>1.00</D_6060><D_6411>PCE</D_6411></C_C186></S_QTY>"
+        "      <G_SG27>"
+        "        <S_MOA><C_C516><D_5025>203</D_5025><D_5004>50.00</D_5004></C_C516></S_MOA>"
+        "      </G_SG27>"
+        "      <G_SG34>"
+        "        <S_TAX><C_C241><D_5153>VAT</D_5153></C_C241><C_C243><D_5278>20.00</D_5278></C_C243><D_5305>S</D_5305></S_TAX>"
+        "        <S_MOA><C_C516><D_5025>124</D_5025><D_5004>5.00</D_5004></C_C516></S_MOA>"
+        "        <S_MOA><C_C516><D_5025>125</D_5025><D_5004>50.00</D_5004></C_C516></S_MOA>"
+        "      </G_SG34>"
+        "    </G_SG26>"
+        "    <G_SG26>"
+        "      <S_LIN><D_1082>2</D_1082></S_LIN>"
+        "      <S_QTY><C_C186><D_6063>47</D_6063><D_6060>1.00</D_6060><D_6411>PCE</D_6411></C_C186></S_QTY>"
+        "      <G_SG27>"
+        "        <S_MOA><C_C516><D_5025>203</D_5025><D_5004>50.00</D_5004></C_C516></S_MOA>"
+        "      </G_SG27>"
+        "      <G_SG34>"
+        "        <S_TAX><C_C241><D_5153>VAT</D_5153></C_C241><C_C243><D_5278>20.00</D_5278></C_C243><D_5305>S</D_5305></S_TAX>"
+        "        <S_MOA><C_C516><D_5025>124</D_5025><D_5004>5.00</D_5004></C_C516></S_MOA>"
+        "        <S_MOA><C_C516><D_5025>125</D_5025><D_5004>50.00</D_5004></C_C516></S_MOA>"
+        "      </G_SG34>"
+        "    </G_SG26>"
+        "    <G_SG50>"
+        "      <S_MOA><C_C516><D_5025>125</D_5025><D_5004>100.00</D_5004></C_C516></S_MOA>"
+        "    </G_SG50>"
+        "    <G_SG50>"
+        "      <S_MOA><C_C516><D_5025>9</D_5025><D_5004>115.00</D_5004></C_C516></S_MOA>"
+        "    </G_SG50>"
+        "    <G_SG52>"
+        "      <S_MOA><C_C516><D_5025>124</D_5025><D_5004>15.00</D_5004></C_C516></S_MOA>"
+        "      <S_MOA><C_C516><D_5025>125</D_5025><D_5004>100.00</D_5004></C_C516></S_MOA>"
+        "    </G_SG52>"
+        "  </M_INVOIC>"
+        "</Invoice>"
+    )
+    path = tmp_path / "header_vat_summary.xml"
+    path.write_text(xml)
+
+    tree = LET.parse(str(path))
+    totals = parse_invoice_totals(tree)
+
+    assert totals["net"] == Decimal("100.00")
+    assert totals["vat"] == Decimal("15.00")
+    assert totals["gross"] == Decimal("115.00")
+    assert totals["mismatch"] is False
+
+
 def _write_allowance_invoice(path: Path) -> Path:
     xml = (
         "<Invoice xmlns='urn:eslog:2.00'>"
