@@ -180,6 +180,61 @@ def test_parse_eslog_invoice_trusts_consistent_header_totals(tmp_path):
     assert df.attrs["gross_calc"] == Decimal("109.00")
 
 
+def test_parse_eslog_invoice_prefers_header_gross_without_header_vat(tmp_path):
+    xml = (
+        "<Invoice xmlns='urn:eslog:2.00'>"
+        "  <M_INVOIC>"
+        "    <G_SG26>"
+        "      <S_LIN><D_1082>1</D_1082></S_LIN>"
+        "      <S_QTY><C_C186><D_6063>47</D_6063><D_6060>1.00</D_6060><D_6411>PCE</D_6411></C_C186></S_QTY>"
+        "      <G_SG27>"
+        "        <S_MOA><C_C516><D_5025>203</D_5025><D_5004>50.00</D_5004></C_C516></S_MOA>"
+        "      </G_SG27>"
+        "      <G_SG34>"
+        "        <S_TAX><C_C241><D_5153>VAT</D_5153></C_C241><C_C243><D_5278>22.00</D_5278></C_C243><D_5305>S</D_5305></S_TAX>"
+        "        <TaxAmount>11.03</TaxAmount>"
+        "        <S_MOA><C_C516><D_5025>125</D_5025><D_5004>50.00</D_5004></C_C516></S_MOA>"
+        "      </G_SG34>"
+        "    </G_SG26>"
+        "    <G_SG26>"
+        "      <S_LIN><D_1082>2</D_1082></S_LIN>"
+        "      <S_QTY><C_C186><D_6063>47</D_6063><D_6060>1.00</D_6060><D_6411>PCE</D_6411></C_C186></S_QTY>"
+        "      <G_SG27>"
+        "        <S_MOA><C_C516><D_5025>203</D_5025><D_5004>50.00</D_5004></C_C516></S_MOA>"
+        "      </G_SG27>"
+        "      <G_SG34>"
+        "        <S_TAX><C_C241><D_5153>VAT</D_5153></C_C241><C_C243><D_5278>22.00</D_5278></C_C243><D_5305>S</D_5305></S_TAX>"
+        "        <TaxAmount>11.03</TaxAmount>"
+        "        <S_MOA><C_C516><D_5025>125</D_5025><D_5004>50.00</D_5004></C_C516></S_MOA>"
+        "      </G_SG34>"
+        "    </G_SG26>"
+        "    <G_SG50>"
+        "      <S_MOA><C_C516><D_5025>9</D_5025><D_5004>122.00</D_5004></C_C516></S_MOA>"
+        "    </G_SG50>"
+        "    <G_SG52>"
+        "      <S_MOA><C_C516><D_5025>125</D_5025><D_5004>100.00</D_5004></C_C516></S_MOA>"
+        "    </G_SG52>"
+        "  </M_INVOIC>"
+        "</Invoice>"
+    )
+    path = tmp_path / "header_totals_no_vat.xml"
+    path.write_text(xml)
+
+    df, ok = parse_eslog_invoice(path)
+
+    assert df["ddv"].sum() == Decimal("22.06")
+    assert ok
+    assert not df.attrs.get("gross_mismatch", False)
+    assert df.attrs["gross_calc"] == Decimal("122.00")
+
+    totals = parse_invoice_totals(LET.parse(str(path)))
+
+    assert totals["net"] == Decimal("100.00")
+    assert totals["vat"] == Decimal("22.00")
+    assert totals["gross"] == Decimal("122.00")
+    assert totals["mismatch"] is False
+
+
 def _write_allowance_invoice(path: Path) -> Path:
     xml = (
         "<Invoice xmlns='urn:eslog:2.00'>"
