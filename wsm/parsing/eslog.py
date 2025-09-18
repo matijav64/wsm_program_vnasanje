@@ -1776,11 +1776,12 @@ def parse_eslog_invoice(
         gross_amount = _line_gross(sg26)
 
         net_amount_moa: Decimal | None = None
-        for moa in sg26.findall(".//e:S_MOA", NS):
-            if _text(moa.find("./e:C_C516/e:D_5025", NS)) == Moa.NET.value:
-                net_amount_moa = _decimal(
-                    moa.find("./e:C_C516/e:D_5004", NS)
-                ).quantize(Decimal("0.01"), ROUND_HALF_UP)
+        net_amount_code = ""
+        for candidate in ("125", Moa.NET.value):
+            val = _first_moa(sg26, {candidate})
+            if val != 0:
+                net_amount_moa = _dec2(val)
+                net_amount_code = candidate
                 break
 
         net_amount = _line_net(sg26)
@@ -1824,9 +1825,13 @@ def parse_eslog_invoice(
 
         item["ddv"] = tax_amount
 
-        if net_amount_moa is not None and net_amount != net_amount_moa:
+        if (
+            net_amount_moa is not None
+            and abs(net_amount - net_amount_moa) > DEC2
+        ):
             log.warning(
-                "Line net mismatch: MOA 203 %s vs calculated %s",
+                "Line net mismatch: MOA %s %s vs calculated %s",
+                net_amount_code or Moa.NET.value,
                 net_amount_moa,
                 net_amount,
             )
