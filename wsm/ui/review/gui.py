@@ -188,14 +188,145 @@ def _normalize_wsm_display_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _apply_links_to_df(
-    df: pd.DataFrame, links_df: pd.DataFrame
+    df: pd.DataFrame,
+    links_df: pd.DataFrame,
+    *,
+    apply_codes: bool = True,
 ) -> tuple[pd.DataFrame, int]:
-    """Auto-apply stored links to ``df``.
+    """Apply previously saved links to ``df``.
 
-    Samodejno predlaganje je odstranjeno, ker pogosto knjiži napačno.
-    Funkcija vrne ``df`` nespremenjen in poroča 0 posodobljenih vrstic.
+    Parameters
+    ----------
+    df:
+        Current invoice lines that should receive saved metadata.
+    links_df:
+        DataFrame read from the Excel file with stored mappings.
+    apply_codes:
+        When ``True`` the WSM codes and booking status are restored.  When
+        ``False`` only auxiliary information (``naziv_ckey`` normalization)
+        is refreshed which is still required for multiplier lookups.
+
+    Returns
+    -------
+    tuple[pandas.DataFrame, int]
+        The (possibly modified) ``df`` and the number of rows where a WSM
+        code was restored.
     """
-    return df, 0
+
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return df, 0
+    if not isinstance(links_df, pd.DataFrame) or links_df.empty:
+        return df, 0
+
+    if "sifra_dobavitelja" not in df.columns or "sifra_dobavitelja" not in links_df.columns:
+        return df, 0
+
+    def _strip_series(series: pd.Series) -> pd.Series:
+        ser = series.astype("string").fillna("").replace("<NA>", "")
+        return ser.str.strip()
+
+    def _clean_series(series: pd.Series) -> pd.Series:
+        ser = series.astype("string").fillna("").replace("<NA>", "")
+        return ser.map(lambda val: _clean(val) if val else "")
+
+    try:
+        df["sifra_dobavitelja"] = _strip_series(df["sifra_dobavitelja"])
+    except Exception:
+        return df, 0
+
+    if "naziv_ckey" in df.columns:
+        df["naziv_ckey"] = _clean_series(df["naziv_ckey"])
+    elif "naziv" in df.columns:
+        df["naziv_ckey"] = _clean_series(df["naziv"])
+    else:
+        return df, 0
+
+    link_df = links_df.copy()
+    link_df["sifra_dobavitelja"] = _strip_series(link_df["sifra_dobavitelja"])
+    if "naziv_ckey" in link_df.columns:
+        link_df["naziv_ckey"] = _clean_series(link_df["naziv_ckey"])
+    elif "naziv" in link_df.columns:
+        link_df["naziv_ckey"] = _clean_series(link_df["naziv"])
+    else:
+        link_df["naziv_ckey"] = ""
+
+    link_df = link_df.loc[
+        (link_df["sifra_dobavitelja"] != "") & (link_df["naziv_ckey"] != "")
+    ]
+    if link_df.empty:
+        return df, 0
+
+    link_df = link_df.drop_duplicates(
+        ["sifra_dobavitelja", "naziv_ckey"], keep="last"
+    )
+    link_idx = link_df.set_index(["sifra_dobavitelja", "naziv_ckey"])
+
+    df_keys = list(zip(df["sifra_dobavitelja"], df["naziv_ckey"]))
+    try:
+        matched = link_idx.reindex(df_keys)
+    except Exception:
+        matched = link_idx.loc[link_idx.index.intersection(df_keys)].reindex(df_keys)
+
+    matched = matched.reset_index(drop=True)
+    matched.index = df.index
+
+    updated_count = 0
+    if apply_codes and "wsm_sifra" in matched.columns:
+        codes = matched["wsm_sifra"].map(_norm_wsm_code)
+        if isinstance(codes, pd.Series):
+            codes = codes.astype("string").fillna("").str.strip()
+            mask = codes.ne("")
+            updated_count = int(mask.sum()) if mask.any() else 0
+            if updated_count:
+                if "wsm_sifra" not in df.columns:
+                    df["wsm_sifra"] = pd.Series(pd.NA, index=df.index, dtype="string")
+                df.loc[mask, "wsm_sifra"] = codes.loc[mask]
+
+                if "wsm_naziv" not in df.columns:
+                    df["wsm_naziv"] = pd.Series(pd.NA, index=df.index, dtype="string")
+                if "wsm_naziv" in matched.columns:
+                    saved_names = (
+                        matched["wsm_naziv"]
+                        .astype("string")
+                        .fillna("")
+                        .str.strip()
+                    )
+                    df.loc[mask, "wsm_naziv"] = saved_names.loc[mask].where(
+                        saved_names.loc[mask].ne(""), df.loc[mask, "wsm_naziv"]
+                    )
+
+                if "status" not in df.columns:
+                    df["status"] = ""
+                df.loc[mask, "status"] = "POVEZANO"
+
+                if "dobavitelj" in matched.columns and "dobavitelj" in df.columns:
+                    saved_suppliers = (
+                        matched["dobavitelj"]
+                        .astype("string")
+                        .fillna("")
+                        .str.strip()
+                    )
+                    df.loc[mask, "dobavitelj"] = saved_suppliers.loc[mask].where(
+                        saved_suppliers.loc[mask].ne(""),
+                        df.loc[mask, "dobavitelj"],
+                    )
+
+                if "_booked_sifra" in df.columns:
+                    df.loc[mask, "_booked_sifra"] = codes.loc[mask]
+                if "_summary_key" in df.columns:
+                    df.loc[mask, "_summary_key"] = codes.loc[mask]
+                if "WSM šifra" in df.columns:
+                    df.loc[mask, "WSM šifra"] = codes.loc[mask]
+
+                display_name_cols = [c for c in ("WSM Naziv", "WSM naziv") if c in df.columns]
+                if display_name_cols:
+                    display_names = (
+                        df.loc[mask, "wsm_naziv"].astype("string").fillna("")
+                    )
+                    for col in display_name_cols:
+                        df.loc[mask, col] = display_names
+
+    return df, updated_count
 
 
 def _fill_names_from_catalog(
@@ -779,6 +910,156 @@ def _apply_multiplier(
         update_totals()
 
 
+def _apply_saved_multipliers(
+    df: pd.DataFrame,
+    links_df: pd.DataFrame,
+    *,
+    tree: ttk.Treeview | None = None,
+    update_summary: Callable | None = None,
+    update_totals: Callable | None = None,
+) -> int:
+    """Apply stored quantity multipliers to ``df``.
+
+    Parameters
+    ----------
+    df:
+        DataFrame with the current invoice rows.
+    links_df:
+        Saved mapping DataFrame containing the ``multiplier`` column.
+    tree:
+        Optional Treeview used to refresh the visual grid when adjustments are
+        applied after the GUI is initialised.
+    update_summary / update_totals:
+        Optional callbacks that refresh aggregated information when provided.
+
+    Returns
+    -------
+    int
+        Number of rows for which a multiplier adjustment was applied.
+    """
+
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return 0
+    if not isinstance(links_df, pd.DataFrame) or links_df.empty:
+        return 0
+    if "sifra_dobavitelja" not in df.columns or "multiplier" not in links_df.columns:
+        return 0
+    required = {"kolicina_norm", "cena_po_rabatu", "cena_pred_rabatom"}
+    if not required.issubset(df.columns):
+        return 0
+
+    def _strip_series(series: pd.Series) -> pd.Series:
+        ser = series.astype("string").fillna("").replace("<NA>", "")
+        return ser.str.strip()
+
+    def _clean_series(series: pd.Series) -> pd.Series:
+        ser = series.astype("string").fillna("").replace("<NA>", "")
+        return ser.map(lambda val: _clean(val) if val else "")
+
+    invoice_codes = _strip_series(df["sifra_dobavitelja"])
+    if "naziv_ckey" in df.columns:
+        invoice_names = _clean_series(df["naziv_ckey"])
+    elif "naziv" in df.columns:
+        invoice_names = _clean_series(df["naziv"])
+    else:
+        return 0
+
+    link_df = links_df.copy()
+    link_df["sifra_dobavitelja"] = _strip_series(link_df["sifra_dobavitelja"])
+    if "naziv_ckey" in link_df.columns:
+        link_df["naziv_ckey"] = _clean_series(link_df["naziv_ckey"])
+    elif "naziv" in link_df.columns:
+        link_df["naziv_ckey"] = _clean_series(link_df["naziv"])
+    else:
+        link_df["naziv_ckey"] = ""
+
+    link_df = link_df.loc[
+        (link_df["sifra_dobavitelja"] != "") & (link_df["naziv_ckey"] != "")
+    ]
+    if link_df.empty:
+        return 0
+
+    link_df = link_df.drop_duplicates(
+        ["sifra_dobavitelja", "naziv_ckey"], keep="last"
+    )
+    link_idx = link_df.set_index(["sifra_dobavitelja", "naziv_ckey"])
+
+    df_keys = list(zip(invoice_codes, invoice_names))
+    try:
+        matched = link_idx.reindex(df_keys)
+    except Exception:
+        matched = link_idx.loc[link_idx.index.intersection(df_keys)].reindex(df_keys)
+
+    matched = matched.reset_index(drop=True)
+    matched.index = df.index
+
+    multipliers = matched.get("multiplier")
+    if multipliers is None:
+        return 0
+
+    def _maybe_decimal(value) -> Decimal | None:
+        if isinstance(value, Decimal):
+            return value if value.is_finite() else None
+        try:
+            if pd.isna(value):
+                return None
+        except Exception:
+            pass
+        if value in (None, "", " "):
+            return None
+        try:
+            candidate = Decimal(str(value))
+            return candidate if candidate.is_finite() else None
+        except Exception:
+            return None
+
+    saved = multipliers.map(_maybe_decimal)
+    if saved is None:
+        return 0
+
+    actions: list[tuple[int, Decimal]] = []
+    for idx, target in saved.items():
+        if target is None or target <= 0:
+            continue
+        current_raw = df.at[idx, "multiplier"] if "multiplier" in df.columns else Decimal("1")
+        current = _maybe_decimal(current_raw) or Decimal("1")
+        if current == 0:
+            continue
+        if target == current:
+            continue
+        try:
+            factor = target / current
+        except Exception:
+            continue
+        if factor == 1:
+            continue
+        actions.append((idx, factor))
+
+    if not actions:
+        return 0
+
+    log.info("Applying multipliers for %s rows", len(actions))
+    applied = 0
+    for idx, factor in actions:
+        try:
+            _apply_multiplier(
+                df,
+                idx,
+                factor,
+                tree=tree,
+                update_summary=update_summary,
+                update_totals=update_totals,
+            )
+            applied += 1
+        except Exception as exc:
+            log.warning(
+                "Napaka pri samodejni uporabi množitelja za vrstico %s: %s",
+                idx,
+                exc,
+            )
+    return applied
+
+
 def review_links(
     df: pd.DataFrame,
     wsm_df: pd.DataFrame,
@@ -999,23 +1280,28 @@ def review_links(
     links_df = manual_old
     df["naziv_ckey"] = df["naziv"].map(_clean)
     globals()["_PENDING_LINKS_DF"] = links_df
+    df, auto_upd_cnt = _apply_links_to_df(
+        df, links_df, apply_codes=AUTO_APPLY_LINKS
+    )
+    # Shrani trenutno stanje mreže tako, da je na voljo tudi drugim handlerjem,
+    # še preden morebitne kasnejše operacije dodatno prilagodijo DataFrame.
+    globals()["_CURRENT_GRID_DF"] = df
     log.info("AUTO_APPLY_LINKS=%s", AUTO_APPLY_LINKS)
     if AUTO_APPLY_LINKS:
         try:
-            df, upd_cnt = _apply_links_to_df(df, links_df)
             df = _fill_names_from_catalog(df, wsm_df)
             df = _normalize_wsm_display_columns(df)
             globals()["_CURRENT_GRID_DF"] = df
             log.info(
                 "Samodejno uveljavljene povezave: %d vrstic posodobljenih.",
-                upd_cnt,
+                auto_upd_cnt,
             )
         except Exception as e:
             log.exception("Napaka pri auto-uveljavitvi povezav: %s", e)
     else:
         log.info(
             "AUTO_APPLY_LINKS=0 → shranjene povezave NE bodo "
-            "uveljavljene samodejno."
+            "uveljavljene samodejno.",
         )
 
     # Poskrbi za prisotnost in tipe stolpcev za WSM povezave
@@ -1157,6 +1443,8 @@ def review_links(
         df["multiplier"] = Decimal("1")
     else:
         df["multiplier"] = df["multiplier"].map(lambda v: _as_dec(v, "1"))
+
+    _apply_saved_multipliers(df, links_df)
 
     # Naj povzetek in UI handlerji vedno uporabljajo zadnjo verzijo df
     globals()["_CURRENT_GRID_DF"] = df
@@ -1710,6 +1998,30 @@ def review_links(
         inplace=True,
     )
     _init_booking_columns(df)
+
+    try:
+        if {"status", "wsm_sifra"}.issubset(df.columns):
+            status_series = (
+                df["status"].astype("string").fillna("").str.strip().str.upper()
+            )
+            codes_series = (
+                df["wsm_sifra"].map(_norm_wsm_code).astype("string").fillna("").str.strip()
+            )
+            linked_mask = status_series.str.startswith("POVEZANO") & codes_series.ne("")
+            if linked_mask.any():
+                df.loc[linked_mask, "_booked_sifra"] = codes_series.loc[linked_mask]
+                df.loc[linked_mask, "_summary_key"] = codes_series.loc[linked_mask]
+                if "WSM šifra" in df.columns:
+                    df.loc[linked_mask, "WSM šifra"] = codes_series.loc[linked_mask]
+                if "wsm_naziv" in df.columns:
+                    display_names = (
+                        df.loc[linked_mask, "wsm_naziv"].astype("string").fillna("")
+                    )
+                    for col in ("WSM Naziv", "WSM naziv"):
+                        if col in df.columns:
+                            df.loc[linked_mask, col] = display_names
+    except Exception as exc:  # pragma: no cover - defensive sync
+        log.debug("Initial linked status sync skipped: %s", exc)
 
     # --- Povzetek po WSM šifri z varnim ključem "OSTALO" ---
     # Povzetek vedno temelji na _summary_key (tj. dejanskem knjiženju),
@@ -2557,6 +2869,14 @@ def review_links(
         row_tags: list[str] = []
         if bool(row.get("_never_booked", False)):
             row_tags.append("unbooked")
+
+        status_val = str(row.get("status", "") or "").strip().upper()
+        summary_val = str(row.get("_summary_key", "") or "").strip().upper()
+        if status_val.startswith("POVEZANO") or summary_val not in {"", "OSTALO"}:
+            if "unbooked" in row_tags:
+                row_tags.remove("unbooked")
+            if "linked" not in row_tags:
+                row_tags.append("linked")
 
         tree.insert("", "end", iid=str(i), values=vals, tags=tuple(row_tags))
         log.info(
@@ -3479,6 +3799,13 @@ def review_links(
                             )
             except Exception as e:
                 log.warning("Osvežitev grid celic ni uspela: %s", e)
+            _apply_saved_multipliers(
+                df,
+                links_df,
+                tree=tree,
+                update_summary=_update_summary,
+                update_totals=_schedule_totals,
+            )
             # posodobi referenco na aktualni df pred povzetkom
             globals()["_CURRENT_GRID_DF"] = df
             _update_summary()
