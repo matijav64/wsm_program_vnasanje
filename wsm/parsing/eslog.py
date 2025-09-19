@@ -574,6 +574,7 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
         _force_ns_for_doc(root)
 
         header_base = Decimal("0")
+        header_base_code: str | None = None
         header_candidates: list[tuple[str, Decimal]] = []
         seen_header_codes: set[str] = set()
         for code in ("203", "389", "79", "125"):
@@ -587,6 +588,7 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
                 seen_header_codes.add(code)
                 if header_base == 0:
                     header_base = value
+                    header_base_code = code
 
         summary_taxable = Decimal("0")
         for sg52 in root.findall(".//e:G_SG52", NS) + root.findall(".//G_SG52"):
@@ -678,18 +680,24 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
             else line_doc_discount
         ).quantize(DEC2, ROUND_HALF_UP)
 
+        selected_candidate_code: str | None = None
+        adjustments_included = False
+        line_adjusted: Decimal | None = None
+        line_adjusted_q: Decimal | None = None
+
         if line_base != 0:
             base = line_base
             line_adjusted = line_base + doc_discount + doc_charge
+            line_adjusted_q = line_adjusted.quantize(DEC2, ROUND_HALF_UP)
             if header_candidates:
-                line_adjusted_q = line_adjusted.quantize(DEC2, ROUND_HALF_UP)
-
-                best_value = None
-                best_diff = None
+                best_value: Decimal | None = None
+                best_diff: Decimal | None = None
 
                 if header_gross != 0:
-                    scores: list[tuple[Decimal, Decimal, Decimal, Decimal]] = []
-                    for _, value in header_candidates:
+                    scores: list[
+                        tuple[Decimal, Decimal, Decimal, str, Decimal]
+                    ] = []
+                    for cand_code, value in header_candidates:
                         adjusted_net = value + doc_discount + doc_charge
                         gross_estimate = (adjusted_net + tax_total).quantize(
                             DEC2, ROUND_HALF_UP
@@ -701,37 +709,60 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
                             if header_base != 0
                             else line_diff
                         )
-                        scores.append((gross_diff, line_diff, header_diff, value))
+                        scores.append(
+                            (gross_diff, line_diff, header_diff, cand_code, value)
+                        )
 
                     within_tol = [s for s in scores if s[0] <= DEC2]
                     if within_tol:
-                        gross_diff, line_diff, _, cand_val = min(
+                        gross_diff, line_diff, _, cand_code, cand_val = min(
                             within_tol, key=lambda s: (s[0], s[1], s[2])
                         )
                         best_value = cand_val
                         best_diff = line_diff
+                        selected_candidate_code = cand_code
 
                 if best_value is None:
-                    value, diff = min(
+                    cand_code, value, diff = min(
                         (
-                            (value, abs(value - line_adjusted_q))
-                            for _, value in header_candidates
+                            (
+                                cand_code,
+                                value,
+                                abs(value - line_adjusted_q),
+                            )
+                            for cand_code, value in header_candidates
                         ),
-                        key=lambda item: item[1],
+                        key=lambda item: item[2],
                     )
-                    best_value, best_diff = value, diff
+                    best_value = value
+                    best_diff = diff
+                    selected_candidate_code = cand_code
 
                 if best_diff is not None and best_diff <= DEC2:
-
                     base = best_value
-                elif header_base != 0 and abs(header_base - line_adjusted_q) > DEC2:
-                    base = header_base
+                else:
+                    selected_candidate_code = None
+                    if (
+                        header_base != 0
+                        and abs(header_base - line_adjusted_q) > DEC2
+                    ):
+                        base = header_base
             elif header_base != 0 and abs(header_base - line_adjusted) > DEC2:
                 base = header_base
         else:
             base = header_base
+            selected_candidate_code = header_base_code
 
-        net = base + doc_discount + doc_charge
+        if line_adjusted is not None and abs(base - line_adjusted) <= DEC4:
+            adjustments_included = True
+        elif line_adjusted is None and selected_candidate_code == "125":
+            adjustments_included = True
+
+        if adjustments_included:
+            net = base
+        else:
+            net = base + doc_discount + doc_charge
+
         return net.quantize(DEC2, ROUND_HALF_UP)
     except Exception:
         pass
