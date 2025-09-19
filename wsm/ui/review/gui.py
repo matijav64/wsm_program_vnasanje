@@ -213,13 +213,26 @@ def _apply_links_to_df(
         code was restored.
     """
 
+    def _finalize(result_df: pd.DataFrame, count: int) -> tuple[pd.DataFrame, int]:
+        log.info("Uveljavljeno %d povezav", count)
+        return result_df, count
+
     if not isinstance(df, pd.DataFrame) or df.empty:
-        return df, 0
+        return _finalize(df, 0)
     if not isinstance(links_df, pd.DataFrame) or links_df.empty:
-        return df, 0
+        return _finalize(df, 0)
+
+    log.debug(
+        "Invoice keys:\n%s",
+        df.reindex(columns=["sifra_dobavitelja", "naziv_ckey"]).head(),
+    )
+    log.debug(
+        "Links keys:\n%s",
+        links_df.reindex(columns=["sifra_dobavitelja", "naziv_ckey"]).head(),
+    )
 
     if "sifra_dobavitelja" not in df.columns or "sifra_dobavitelja" not in links_df.columns:
-        return df, 0
+        return _finalize(df, 0)
 
     def _strip_series(series: pd.Series) -> pd.Series:
         ser = series.astype("string").fillna("").replace("<NA>", "")
@@ -232,14 +245,14 @@ def _apply_links_to_df(
     try:
         df["sifra_dobavitelja"] = _strip_series(df["sifra_dobavitelja"])
     except Exception:
-        return df, 0
+        return _finalize(df, 0)
 
     if "naziv_ckey" in df.columns:
         df["naziv_ckey"] = _clean_series(df["naziv_ckey"])
     elif "naziv" in df.columns:
         df["naziv_ckey"] = _clean_series(df["naziv"])
     else:
-        return df, 0
+        return _finalize(df, 0)
 
     link_df = links_df.copy()
     link_df["sifra_dobavitelja"] = _strip_series(link_df["sifra_dobavitelja"])
@@ -254,7 +267,7 @@ def _apply_links_to_df(
         (link_df["sifra_dobavitelja"] != "") & (link_df["naziv_ckey"] != "")
     ]
     if link_df.empty:
-        return df, 0
+        return _finalize(df, 0)
 
     link_df = link_df.drop_duplicates(
         ["sifra_dobavitelja", "naziv_ckey"], keep="last"
@@ -326,7 +339,7 @@ def _apply_links_to_df(
                     for col in display_name_cols:
                         df.loc[mask, col] = display_names
 
-    return df, updated_count
+    return _finalize(df, updated_count)
 
 
 def _fill_names_from_catalog(
@@ -1215,13 +1228,8 @@ def review_links(
 
     try:
         manual_old = pd.read_excel(links_file, dtype=str)
-        log.info("Processing complete")
-        log.info(
-            "Število prebranih povezav iz %s: %d", links_file, len(manual_old)
-        )
-        log.debug(
-            "Primer povezav iz %s: %s", links_file, manual_old.head().to_dict()
-        )
+        log.info("Povezave naložene: %s vrstic", len(manual_old))
+        log.debug("Primer ročno shranjenih povezav:\n%s", manual_old.head())
         manual_old["sifra_dobavitelja"] = (
             manual_old["sifra_dobavitelja"].fillna("").astype(str)
         )
@@ -1278,8 +1286,14 @@ def review_links(
         )
 
     links_df = manual_old
+    log.info(
+        "Branje povezav iz: %s (exists=%s)",
+        links_file,
+        links_file.exists(),
+    )
     df["naziv_ckey"] = df["naziv"].map(_clean)
     globals()["_PENDING_LINKS_DF"] = links_df
+    log.info("Klic _apply_links_to_df with apply_codes=%s", AUTO_APPLY_LINKS)
     df, auto_upd_cnt = _apply_links_to_df(
         df, links_df, apply_codes=AUTO_APPLY_LINKS
     )
@@ -1287,6 +1301,7 @@ def review_links(
     # še preden morebitne kasnejše operacije dodatno prilagodijo DataFrame.
     globals()["_CURRENT_GRID_DF"] = df
     log.info("AUTO_APPLY_LINKS=%s", AUTO_APPLY_LINKS)
+    saved_status = df["status"].copy() if "status" in df.columns else None
     if AUTO_APPLY_LINKS:
         try:
             df = _fill_names_from_catalog(df, wsm_df)
@@ -1298,6 +1313,9 @@ def review_links(
             )
         except Exception as e:
             log.exception("Napaka pri auto-uveljavitvi povezav: %s", e)
+        finally:
+            if saved_status is not None:
+                df["status"] = saved_status
     else:
         log.info(
             "AUTO_APPLY_LINKS=0 → shranjene povezave NE bodo "
@@ -1312,7 +1330,12 @@ def review_links(
             df[c] = df[c].astype("string")
 
     # Enotno ime prikaznih stolpcev v gridu (tudi ko AUTO_APPLY_LINKS=0)
+    status_before_normalize = (
+        df["status"].copy() if "status" in df.columns else None
+    )
     df = _normalize_wsm_display_columns(df)
+    if status_before_normalize is not None:
+        df["status"] = status_before_normalize
 
     if not AUTO_APPLY_LINKS:
         if "status" not in df.columns:
@@ -1321,7 +1344,12 @@ def review_links(
         df.loc[mask_not_booked, ["wsm_sifra", "wsm_naziv"]] = pd.NA
 
     # Po morebitnem praznjenju ponovno poravnaj prikazne vrednosti
+    status_before_second_normalize = (
+        df["status"].copy() if "status" in df.columns else None
+    )
     df = _normalize_wsm_display_columns(df)
+    if status_before_second_normalize is not None:
+        df["status"] = status_before_second_normalize
 
     df["multiplier"] = Decimal("1")
     log.debug(f"df po inicializaciji: {df.head().to_dict()}")
