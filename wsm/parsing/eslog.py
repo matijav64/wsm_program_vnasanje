@@ -575,14 +575,16 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
 
         header_base = Decimal("0")
         header_candidates: list[tuple[str, Decimal]] = []
-        for code in ("203", "389", "79"):
+        seen_header_codes: set[str] = set()
+        for code in ("203", "389", "79", "125"):
             value = Decimal("0")
             for moa in root.findall(".//e:G_SG50/e:S_MOA", NS):
                 if _text(moa.find("./e:C_C516/e:D_5025", NS)) == code:
                     value = _decimal(moa.find("./e:C_C516/e:D_5004", NS))
                     break
-            if value != 0:
+            if value != 0 and code not in seen_header_codes:
                 header_candidates.append((code, value))
+                seen_header_codes.add(code)
                 if header_base == 0:
                     header_base = value
 
@@ -601,8 +603,9 @@ def extract_header_net(source: Path | str | Any) -> Decimal:
 
         summary_taxable = _dec2(summary_taxable) if summary_taxable != 0 else Decimal("0")
         if summary_taxable != 0:
-            if not any(code == "125" for code, _ in header_candidates):
+            if "125" not in seen_header_codes:
                 header_candidates.append(("125", summary_taxable))
+                seen_header_codes.add("125")
             if header_base == 0:
                 header_base = summary_taxable
 

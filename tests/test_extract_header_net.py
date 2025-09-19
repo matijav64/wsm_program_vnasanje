@@ -335,6 +335,39 @@ def test_parse_invoice_totals_trusts_header_net_without_moa124():
     assert totals["mismatch"] is False
 
 
+def test_parse_invoice_totals_uses_header_moa125_when_available():
+    xml = (
+        "<Invoice xmlns='urn:eslog:2.00'>"
+        "  <M_INVOIC>"
+        "    <G_SG26>"
+        "      <S_LIN><D_1082>1</D_1082></S_LIN>"
+        "      <S_QTY><C_C186><D_6063>47</D_6063><D_6060>1.00</D_6060><D_6411>PCE</D_6411></C_C186></S_QTY>"
+        "      <G_SG27>"
+        "        <S_MOA><C_C516><D_5025>203</D_5025><D_5004>100.00</D_5004></C_C516></S_MOA>"
+        "      </G_SG27>"
+        "    </G_SG26>"
+        "    <G_SG50>"
+        "      <S_MOA><C_C516><D_5025>125</D_5025><D_5004>100.00</D_5004></C_C516></S_MOA>"
+        "    </G_SG50>"
+        "    <G_SG50>"
+        "      <S_MOA><C_C516><D_5025>9</D_5025><D_5004>100.00</D_5004></C_C516></S_MOA>"
+        "    </G_SG50>"
+        "  </M_INVOIC>"
+        "</Invoice>"
+    )
+
+    root = LET.fromstring(xml.encode())
+
+    assert extract_header_net(root) == Decimal("100.00")
+
+    totals = parse_invoice_totals(root)
+
+    assert totals["net"] == Decimal("100.00")
+    assert totals["vat"] == Decimal("0.00")
+    assert totals["gross"] == Decimal("100.00")
+    assert totals["mismatch"] is False
+
+
 def _write_allowance_invoice(path: Path) -> Path:
     xml = (
         "<Invoice xmlns='urn:eslog:2.00'>"
