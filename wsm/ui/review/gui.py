@@ -14,10 +14,17 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import builtins
 from lxml import etree as LET
-import os
+from os import environ, getenv
 
 from wsm.utils import short_supplier_name, _clean, _build_header_totals
-from wsm.constants import PRICE_DIFF_THRESHOLD
+from wsm.constants import (
+    PRICE_DIFF_THRESHOLD,
+    DEFAULT_TOLERANCE,
+    SMART_TOLERANCE_ENABLED,
+    TOLERANCE_BASE,
+    MAX_TOLERANCE,
+    ROUNDING_CORRECTION_ENABLED,
+)
 from wsm.parsing.eslog import get_supplier_info, XML_PARSER
 from wsm.supplier_store import _norm_vat
 from .helpers import (
@@ -37,21 +44,21 @@ builtins.tk = tk
 builtins.simpledialog = simpledialog
 
 # Feature flag controlling whether editing starts only after pressing Enter
-EDIT_ON_ENTER = os.getenv("WSM_EDIT_ON_ENTER", "1") not in {
+EDIT_ON_ENTER = getenv("WSM_EDIT_ON_ENTER", "1") not in {
     "0",
     "false",
     "False",
 }
 
 # Feature flag controlling whether items are grouped by discount/price
-GROUP_BY_DISCOUNT = os.getenv("WSM_GROUP_BY_DISCOUNT", "1") not in {
+GROUP_BY_DISCOUNT = getenv("WSM_GROUP_BY_DISCOUNT", "1") not in {
     "0",
     "false",
     "False",
 }
 
 # Should the summary include only booked items? (default NO)
-ONLY_BOOKED_IN_SUMMARY = os.getenv("WSM_SUMMARY_ONLY_BOOKED", "0") not in {
+ONLY_BOOKED_IN_SUMMARY = getenv("WSM_SUMMARY_ONLY_BOOKED", "0") not in {
     "0",
     "false",
     "False",
@@ -59,8 +66,8 @@ ONLY_BOOKED_IN_SUMMARY = os.getenv("WSM_SUMMARY_ONLY_BOOKED", "0") not in {
 
 # Naj se shranjene povezave uporabijo samodejno ob odprtju?
 # (privzeto NE)
-AUTO_APPLY_LINKS = os.getenv(
-    "AUTO_APPLY_LINKS", os.getenv("WSM_AUTO_APPLY_LINKS", "0")
+AUTO_APPLY_LINKS = getenv(
+    "AUTO_APPLY_LINKS", getenv("WSM_AUTO_APPLY_LINKS", "0")
 ) not in {
     "0",
     "false",
@@ -68,7 +75,7 @@ AUTO_APPLY_LINKS = os.getenv(
 }
 
 # Ali naj pri knjiženih vrsticah prepišemo tudi 'Ostalo' z nazivom iz kataloga?
-OVERWRITE_OSTALO_IN_GRID = os.getenv(
+OVERWRITE_OSTALO_IN_GRID = getenv(
     "WSM_OVERWRITE_OSTALO_IN_GRID", "1"
 ) not in {"0", "false", "False"}
 
@@ -103,7 +110,7 @@ def _coerce_booked_code(code: object) -> str:
 # Regex za prepoznavo "glavin" vrstic (Dobavnica/Račun/...).
 # Možno razširiti z okoljsko spremenljivko ``WSM_HEADER_PREFIX``.
 HDR_PREFIX_RE = re.compile(
-    os.environ.get(
+    environ.get(
         "WSM_HEADER_PREFIX",
         (
             r"(?i)^\s*(Dobavnica|Ra[cč]un|Predra[cč]un|"
@@ -476,7 +483,7 @@ def _discount_bucket(row: dict) -> Tuple[Decimal, Decimal]:
 
 # Logger setup
 log = logging.getLogger(__name__)
-TRACE = os.getenv("WSM_TRACE", "0") not in {"0", "false", "False"}
+TRACE = getenv("WSM_TRACE", "0") not in {"0", "false", "False"}
 if TRACE:
     logging.getLogger().setLevel(logging.DEBUG)
 
@@ -556,6 +563,130 @@ def _as_dec(x, default: str = "0") -> Decimal:
         return d if d.is_finite() else Decimal(default)
     except Exception:
         return Decimal(default)
+
+
+def _sum_decimal(values) -> Decimal:
+    """Return the Decimal sum of ``values``."""
+
+    total = Decimal("0")
+    for value in values:
+        total += _as_dec(value, "0")
+    return total
+
+
+def _calculate_smart_tolerance(
+    net_total: Decimal, invoice_gross: Decimal
+) -> Decimal:
+    """Return an adaptive tolerance based on invoice size."""
+
+    base_amount = max(
+        _as_dec(net_total, "0").copy_abs(),
+        _as_dec(invoice_gross, "0").copy_abs(),
+    )
+    base_min = max(DEFAULT_TOLERANCE, Decimal("0.01"))
+    small = max(base_min, TOLERANCE_BASE)
+    if base_amount <= Decimal("100"):
+        return small
+    if base_amount <= Decimal("1000"):
+        return max(small, Decimal("0.05"))
+    if base_amount <= Decimal("10000"):
+        return max(small, Decimal("0.10"))
+    return max(small, Decimal("0.50"))
+
+
+def _resolve_tolerance(net_total: Decimal, invoice_gross: Decimal) -> Decimal:
+    """Determine the effective rounding tolerance for totals."""
+
+    base_min = max(DEFAULT_TOLERANCE, Decimal("0.01"))
+    tolerance = base_min
+    if SMART_TOLERANCE_ENABLED:
+        tolerance = max(
+            tolerance, _calculate_smart_tolerance(net_total, invoice_gross)
+        )
+    max_limit = max(base_min, MAX_TOLERANCE)
+    tolerance = min(tolerance, max_limit)
+    tolerance = tolerance.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    log.debug(
+        "Tolerance calculation: net=%s, gross=%s, resolved=%s",
+        net_total,
+        invoice_gross,
+        tolerance,
+    )
+    return tolerance
+
+
+def _append_rounding_row(df: pd.DataFrame, difference: Decimal) -> pd.DataFrame:
+    """Append a rounding correction row to ``df``."""
+
+    diff_q = difference.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    row = {col: pd.NA for col in df.columns}
+    row.update(
+        {
+            "sifra_dobavitelja": "_ROUND_",
+            "naziv": "Zaokrožitev",
+            "kolicina": Decimal("1"),
+            "enota": "kos",
+            "vrednost": diff_q,
+            "rabata": Decimal("0"),
+            "ddv": Decimal("0"),
+            "ddv_stopnja": Decimal("0"),
+        }
+    )
+    if "naziv_ckey" in df.columns:
+        row["naziv_ckey"] = _clean("Zaokrožitev")
+    if "status" in df.columns:
+        row["status"] = "AUTO_CORRECTION"
+    if "wsm_sifra" in df.columns:
+        row["wsm_sifra"] = "OSTALO"
+    if "WSM šifra" in df.columns:
+        row["WSM šifra"] = "OSTALO"
+    if "wsm_naziv" in df.columns:
+        row["wsm_naziv"] = "Zaokrožitev"
+    if "WSM Naziv" in df.columns:
+        row["WSM Naziv"] = "Zaokrožitev"
+    if "multiplier" in df.columns:
+        row["multiplier"] = Decimal("1")
+    return pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+
+
+def _maybe_apply_rounding_correction(
+    df: pd.DataFrame,
+    header_totals: dict[str, Decimal],
+    doc_discount: Decimal,
+) -> pd.DataFrame:
+    """Add an automatic rounding row when the difference exceeds tolerance."""
+
+    if not ROUNDING_CORRECTION_ENABLED:
+        return df
+
+    if any(
+        column in df.columns
+        and df[column].astype(str).eq(marker).any()
+        for column, marker in (
+            ("status", "AUTO_CORRECTION"),
+            ("sifra_dobavitelja", "_ROUND_"),
+        )
+    ):
+        log.debug("Rounding correction row already exists, skipping")
+        return df
+
+    doc_total = _as_dec(doc_discount, "0")
+    line_total = _sum_decimal(df.get("vrednost", []))
+    calc_net_total = line_total + doc_total
+    invoice_gross = _as_dec(header_totals.get("gross"), calc_net_total)
+    tolerance = _resolve_tolerance(calc_net_total, invoice_gross)
+    header_net = _as_dec(header_totals.get("net"), "0")
+    difference = header_net - calc_net_total
+    if abs(difference) <= tolerance:
+        return df
+
+    df = _append_rounding_row(df, difference)
+    log.info(
+        "Dodana korekcijska vrstica za zaokroževanje: %s (toleranca %s)",
+        f"{difference.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP):+.2f} €",
+        tolerance,
+    )
+    return df
 
 
 def _clean_neg_zero(val):
@@ -922,6 +1053,26 @@ def review_links(
     )
     log.debug("df before _DOC_ filter:\n%s", df.to_string())
     df = df[df["sifra_dobavitelja"] != "_DOC_"]
+    before_correction_len = len(df)
+    df = _maybe_apply_rounding_correction(df, header_totals, doc_discount)
+    correction_added = len(df) > before_correction_len
+    if correction_added:
+        doc_discount_raw = df_doc["vrednost"].sum()
+        doc_discount = (
+            doc_discount_raw
+            if isinstance(doc_discount_raw, Decimal)
+            else Decimal(str(doc_discount_raw))
+        )
+        df_doc = _normalize_wsm_display_columns(df_doc)
+        df_doc = df_doc.loc[:, ~df_doc.columns.duplicated()].copy()
+        effective_gross = (
+            invoice_gross if invoice_gross is not None else header_totals.get("gross")
+        )
+        header_totals = _build_header_totals(
+            invoice_path,
+            _sum_decimal(df.get("vrednost", [])) + _as_dec(doc_discount, "0"),
+            effective_gross,
+        )
     df["ddv"] = df["ddv"].apply(
         lambda x: Decimal(str(x)) if not isinstance(x, Decimal) else x
     )  # ensure VAT values are Decimal for accurate totals
@@ -1042,7 +1193,7 @@ def review_links(
     # ki imajo 0 količine in 0 vrednosti – te niso dejanski artikli,
     # ampak samo dokumentacijske postavke.
     # Možno izklopiti z WSM_HIDE_HEADER_LINES=0
-    if os.environ.get("WSM_HIDE_HEADER_LINES", "1") != "0":
+    if environ.get("WSM_HIDE_HEADER_LINES", "1") != "0":
         try:
             _mask_hdr = _mask_header_like_rows(df)
             if _mask_hdr.any():
@@ -1236,7 +1387,7 @@ def review_links(
         except Exception:
             pass
 
-    if os.getenv("WSM_DEBUG_BUCKET") == "1":
+    if getenv("WSM_DEBUG_BUCKET") == "1":
         for i, r in df.iterrows():
             log.warning(
                 "DBG key=(%s, %s, %s) eff=%s bucket=%s qty=%s "
@@ -3059,7 +3210,7 @@ def review_links(
         if isinstance(header_totals["gross"], Decimal)
         else Decimal(str(header_totals["gross"]))
     )
-    tolerance = Decimal("0.01")
+    tolerance = _resolve_tolerance(net_total, inv_total)
     diff = inv_total - gross
     if abs(diff) > tolerance:
         if doc_discount:
@@ -3120,11 +3271,12 @@ def review_links(
     status_count_label = ttk.Label(total_frame, textvariable=_status_var)
     status_count_label.pack(side="left", padx=5)
 
-    _last_warn_msg = {"val": None}
-
     def _safe_update_totals():
         if closing or not root.winfo_exists():
             return
+
+        warn_state = getattr(_safe_update_totals, "_warn_state", {"val": None})
+        _safe_update_totals._warn_state = warn_state
 
         net_raw = df["total_net"].sum()
         net_total = (
@@ -3142,7 +3294,7 @@ def review_links(
             if isinstance(header_totals["gross"], Decimal)
             else Decimal(str(header_totals["gross"]))
         )
-        tolerance = Decimal("0.01")
+        tolerance = _resolve_tolerance(net_total, inv_total)
         diff = inv_total - calc_total
         difference = abs(diff)
         discount = doc_discount
@@ -3154,20 +3306,20 @@ def review_links(
                         "Razlika med postavkami in računom je "
                         f"{diff2:+.2f} € in presega dovoljeno zaokroževanje."
                     )
-                    if _last_warn_msg["val"] != msg:
-                        _last_warn_msg["val"] = msg
+                    if warn_state["val"] != msg:
+                        warn_state["val"] = msg
                         messagebox.showwarning("Opozorilo", msg)
             else:
                 msg = (
                     "Razlika med postavkami in računom je "
                     f"{diff:+.2f} € in presega dovoljeno zaokroževanje."
                 )
-                if _last_warn_msg["val"] != msg:
-                    _last_warn_msg["val"] = msg
+                if warn_state["val"] != msg:
+                    warn_state["val"] = msg
                     messagebox.showwarning("Opozorilo", msg)
         else:
             # razlika je OK -> dovoli prihodnja opozorila
-            _last_warn_msg["val"] = None
+            warn_state["val"] = None
 
         net = net_total
         vat = vat_val
@@ -3203,6 +3355,8 @@ def review_links(
                     f"Skupaj: {gross:,.2f} €"
                 )
             )
+
+    _safe_update_totals._warn_state = {"val": None}
 
     def _schedule_totals():
         nonlocal _after_totals_id
