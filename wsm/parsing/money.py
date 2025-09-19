@@ -24,13 +24,23 @@ def round_to_step(
 
 
 def detect_round_step(reference: Decimal, candidate: Decimal) -> Decimal:
-    """Return the rounding step (0.01 or 0.05) that makes ``candidate`` match
-    ``reference`` if possible.  If neither matches exactly, return 0.05 as a
-    safe default."""
+    """Return a suitable rounding step when comparing totals."""
+
+    diff = abs(reference - candidate)
     for step in (Decimal("0.01"), Decimal("0.05")):
         if round_to_step(candidate, step) == reference:
             return step
-    return Decimal("0.05")
+
+    thresholds = (
+        (Decimal("0.01"), Decimal("0.01")),
+        (Decimal("0.05"), Decimal("0.05")),
+        (Decimal("0.10"), Decimal("0.10")),
+        (Decimal("0.50"), Decimal("0.50")),
+    )
+    for limit, step in thresholds:
+        if diff <= limit:
+            return step
+    return Decimal("1.00")
 
 
 def quantize_like(

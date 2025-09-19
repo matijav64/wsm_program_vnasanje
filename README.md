@@ -78,6 +78,21 @@ pre-commit run -a  # lint & format
    ```
    S tem lahko ukaze zaganjate brez dodatnih parametrov.
 
+## Dinamično zaokroževanje
+
+- `WSM_TOLERANCE_BASE` – osnovna toleranca za primerjavo postavk (privzeto `0.02`).
+- `WSM_MAX_TOLERANCE` – zgornja meja samodejne tolerance (privzeto `0.50`).
+- `WSM_SMART_TOLERANCE` – vklopi pametno prilagajanje tolerance glede na znesek računa (privzeto `true`).
+- `WSM_AUTO_ROUNDING` – vklopi dodajanje samodejne korekcijske vrstice, ko razlika preseže toleranco (privzeto `false`).
+
+  **Primeri uporabe:**
+
+  ```bash
+  export WSM_AUTO_ROUNDING=1      # vklopi samodejno korekcijo
+  export WSM_SMART_TOLERANCE=1    # prilagodi toleranco glede na velikost računa
+  export WSM_TOLERANCE_BASE=0.05  # nastavi osnovno toleranco na 5 centov
+  ```
+
 
 5. Za osnovno validacijo računov lahko zaženete:
    ```bash
