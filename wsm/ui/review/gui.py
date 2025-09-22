@@ -1289,7 +1289,6 @@ def review_links(
         full_supplier_name = full_supplier_name.strip()
     supplier_name = short_supplier_name(full_supplier_name)
 
-    log.info(f"Default name retrieved: {supplier_name}")
     log.debug(f"Supplier info: {supplier_info}")
 
     header_totals = _build_header_totals(
@@ -1361,18 +1360,68 @@ def review_links(
             e,
         )
 
-    existing_names = sorted(
-        {
-            short_supplier_name(n)
-            for n in manual_old.get("dobavitelj", [])
-            if isinstance(n, str) and n.strip()
-        }
+    raw_supplier_names = [
+        str(n).strip()
+        for n in manual_old.get("dobavitelj", [])
+        if isinstance(n, str)
+    ]
+    manual_supplier_names = [name for name in raw_supplier_names if name]
+
+    def _is_placeholder_name(value: str | None) -> bool:
+        if not value:
+            return True
+        normalized = str(value).strip()
+        if not normalized:
+            return True
+        lowered = normalized.casefold()
+        if lowered in {"unknown", "neznano"}:
+            return True
+        compact = re.sub(r"[^0-9A-Za-z]", "", normalized)
+        if compact.isdigit():
+            return True
+        if re.fullmatch(r"SI?\d{6,}", compact, re.IGNORECASE):
+            return True
+        if supplier_code and lowered == str(supplier_code).strip().casefold():
+            return True
+        vat_norm = _norm_vat(normalized)
+        if vat_norm and vat_norm.casefold() == normalized.casefold():
+            return True
+        if vat_norm and vat_norm.casefold() == compact.casefold():
+            return True
+        return False
+
+    manual_full_name = next(
+        (name for name in manual_supplier_names if not _is_placeholder_name(name)),
+        "",
     )
-    if supplier_name and supplier_name not in existing_names:
-        existing_names.insert(0, supplier_name)
-    supplier_name = existing_names[0] if existing_names else supplier_code
+    if manual_full_name and _is_placeholder_name(full_supplier_name):
+        full_supplier_name = manual_full_name
+
+    short_manual_names: list[str] = []
+    for candidate in manual_supplier_names:
+        short = short_supplier_name(candidate)
+        if short and short not in short_manual_names:
+            short_manual_names.append(short)
+
+    short_from_full = short_supplier_name(full_supplier_name)
+    if short_from_full:
+        supplier_name = short_from_full
+
+    if supplier_name and supplier_name not in short_manual_names:
+        short_manual_names.insert(0, supplier_name)
+    elif short_manual_names:
+        supplier_name = short_manual_names[0]
+
+    if not supplier_name:
+        supplier_name = supplier_code
+
+    if _is_placeholder_name(full_supplier_name):
+        full_supplier_name = supplier_name or supplier_code
+
     df["dobavitelj"] = supplier_name
     log.debug(f"Supplier name nastavljen na: {supplier_name}")
+    log.debug("Full supplier name after resolution: %s", full_supplier_name)
+    log.info("Resolved supplier display name: %s", supplier_name)
 
     # Normalize codes before lookup
     df["sifra_dobavitelja"] = df["sifra_dobavitelja"].fillna("").astype(str)
@@ -2234,7 +2283,24 @@ def review_links(
     except tk.TclError:
         pass
 
-    # Limit supplier name to 20 characters in the GUI header
+    # Supplier name is shown alongside the VAT number in the GUI header
+
+    display_name = supplier_name or ""
+    vat_display = (supplier_vat or _norm_vat(supplier_code) or "").strip()
+    header_prefix_full: list[str] = []
+    header_prefix_display: list[str] = []
+
+    if vat_display:
+        header_prefix_full.append(vat_display)
+        header_prefix_display.append(vat_display)
+
+    normalized_full_supplier = (full_supplier_name or "").strip()
+    display_short = (display_name or supplier_name or "").strip()
+    if normalized_full_supplier:
+        if not vat_display or normalized_full_supplier.casefold() != vat_display.casefold():
+            header_prefix_full.append(normalized_full_supplier)
+            header_prefix_display.append(display_short or normalized_full_supplier)
+
 
     display_name = supplier_name[:20] if supplier_name else ""
     vat_display = (supplier_vat or _norm_vat(supplier_code) or "").strip()
@@ -2251,6 +2317,7 @@ def review_links(
         if not vat_display or normalized_full_supplier.casefold() != vat_display.casefold():
             header_prefix_full.append(normalized_full_supplier)
             header_prefix_display.append(display_short or normalized_full_supplier)
+
 
     header_var = tk.StringVar()
     supplier_var = tk.StringVar()
@@ -4000,6 +4067,7 @@ def review_links(
         _update_summary()
         _safe_update_totals()
         _cleanup()
+        df["dobavitelj"] = supplier_name
         if is_toplevel:
             original_quit = root.quit
             root.quit = root.destroy
