@@ -312,6 +312,18 @@ def _write_excel_links(
             "Units written to file: %s",
             manual_new["enota_norm"].value_counts().to_dict(),
         )
+    log.info("=== FINAL EXCEL WRITE ===")
+    log.info("manual_new ima %d vrstic", len(manual_new))
+    log.info("manual_new stolpci: %s", manual_new.columns.tolist())
+    if "status" in manual_new.columns:
+        final_povezano = (
+            manual_new["status"].astype(str).str.upper() == "POVEZANO"
+        ).sum()
+        log.info("V Excel pišem %d vrstic s status=POVEZANO", final_povezano)
+        log.debug(
+            "Zadnje 3 status vrednosti: %s",
+            manual_new["status"].tail(3).tolist(),
+        )
     try:
         manual_new.to_excel(links_file, index=False)
         log.info(f"Uspešno shranjeno v {links_file}")
@@ -501,6 +513,17 @@ def _save_and_close(
     links_file, new_folder = _update_supplier_info(
         df, links_file, supplier_name, supplier_code, sup_map, sup_file, vat
     )
+
+    log.info("=== SAVING PROCESS ===")
+    log.info("df ima stolpce: %s", df.columns.tolist())
+    if "status" in df.columns:
+        povezano_saving = (
+            df["status"].astype(str).str.upper() == "POVEZANO"
+        ).sum()
+        log.info("Shranjujem %d vrstic s status=POVEZANO", povezano_saving)
+    if "wsm_sifra" in df.columns:
+        wsm_saving = df["wsm_sifra"].notna().sum()
+        log.info("Shranjujem %d vrstic z wsm_sifra", wsm_saving)
 
     _write_excel_links(df, manual_old, links_file)
 
