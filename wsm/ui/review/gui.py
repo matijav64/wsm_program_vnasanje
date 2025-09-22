@@ -2301,6 +2301,24 @@ def review_links(
             header_prefix_full.append(normalized_full_supplier)
             header_prefix_display.append(display_short or normalized_full_supplier)
 
+
+    display_name = supplier_name[:20] if supplier_name else ""
+    vat_display = (supplier_vat or _norm_vat(supplier_code) or "").strip()
+    header_prefix_full: list[str] = []
+    header_prefix_display: list[str] = []
+
+    if vat_display:
+        header_prefix_full.append(vat_display)
+        header_prefix_display.append(vat_display)
+
+    normalized_full_supplier = (full_supplier_name or "").strip()
+    display_short = (display_name or supplier_name or "").strip()
+    if normalized_full_supplier:
+        if not vat_display or normalized_full_supplier.casefold() != vat_display.casefold():
+            header_prefix_full.append(normalized_full_supplier)
+            header_prefix_display.append(display_short or normalized_full_supplier)
+
+
     header_var = tk.StringVar()
     supplier_var = tk.StringVar()
     date_var = tk.StringVar()
