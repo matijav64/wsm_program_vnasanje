@@ -67,9 +67,14 @@ ONLY_BOOKED_IN_SUMMARY = getenv("WSM_SUMMARY_ONLY_BOOKED", "0") not in {
 
 # Naj se shranjene povezave uporabijo samodejno ob odprtju?
 # (privzeto NE)
-AUTO_APPLY_LINKS = getenv(
-    "AUTO_APPLY_LINKS", getenv("WSM_AUTO_APPLY_LINKS", "0")
-) not in {
+_AUTO_APPLY_ENV = getenv("WSM_AUTO_APPLY_LINKS")
+_AUTO_APPLY_ENV_SRC = "WSM_AUTO_APPLY_LINKS"
+if _AUTO_APPLY_ENV is None:
+    _AUTO_APPLY_ENV = getenv("AUTO_APPLY_LINKS", "0")
+    _AUTO_APPLY_ENV_SRC = "AUTO_APPLY_LINKS"
+AUTO_APPLY_LINKS_RAW = _AUTO_APPLY_ENV
+AUTO_APPLY_LINKS_SOURCE = _AUTO_APPLY_ENV_SRC
+AUTO_APPLY_LINKS = _AUTO_APPLY_ENV not in {
     "0",
     "false",
     "False",
@@ -1143,6 +1148,11 @@ def review_links(
 
     log.info("=== ENVIRONMENT CHECK ===")
     log.info("AUTO_APPLY_LINKS = %s", AUTO_APPLY_LINKS)
+    log.info(
+        "AUTO_APPLY_LINKS raw (%s) = %s",
+        AUTO_APPLY_LINKS_SOURCE,
+        AUTO_APPLY_LINKS_RAW,
+    )
     log.info("WSM_AUTO_APPLY_LINKS env = %s", os.getenv("WSM_AUTO_APPLY_LINKS"))
     log.info("AUTO_APPLY_LINKS env = %s", os.getenv("AUTO_APPLY_LINKS"))
 

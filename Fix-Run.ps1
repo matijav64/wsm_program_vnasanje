@@ -56,8 +56,9 @@ $env:WSM_CODES_FILE     = '\\PisarnaNAS\wsm_program_vnasanje_povezave\sifre_wsm.
 
 
 # ─────────────────────────────── zagon programa ───────────────────────────────
-# Onemogoči samodejno uveljavljanje shranjenih povezav.
-$env:AUTO_APPLY_LINKS = "0"
+# Omogoči samodejno uveljavljanje shranjenih povezav.
+$env:WSM_AUTO_APPLY_LINKS = "1"
+$env:AUTO_APPLY_LINKS = "1"
 Write-Host "[run] python -m wsm.run" -f Cyan
 python -m wsm.run
 $exitCode = $LASTEXITCODE
