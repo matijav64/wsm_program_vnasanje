@@ -194,6 +194,10 @@ def _write_excel_links(
         )
         manual_old["naziv_ckey"] = manual_old["naziv"].map(_clean)
         manual_new = manual_old.set_index(["sifra_dobavitelja", "naziv_ckey"])
+        if "status" not in manual_new.columns:
+            manual_new["status"] = pd.Series(
+                "", index=manual_new.index, dtype="string"
+            )
         if "enota_norm" not in manual_new.columns:
             manual_new["enota_norm"] = pd.NA
         if "multiplier" not in manual_new.columns:
@@ -216,6 +220,7 @@ def _write_excel_links(
                 "dobavitelj",
                 "enota_norm",
                 "multiplier",
+                "status",
             ]
         ).set_index(["sifra_dobavitelja", "naziv_ckey"])
         log.info("Manual_old je prazen, ustvarjam nov DataFrame")
@@ -224,9 +229,31 @@ def _write_excel_links(
     if "multiplier" not in df.columns:
         df["multiplier"] = 1
     df["naziv_ckey"] = df["naziv"].map(_clean)
+    if "wsm_sifra" in df.columns:
+        linked_codes = (
+            df["wsm_sifra"].astype("string").fillna("").str.strip()
+        )
+    else:
+        linked_codes = pd.Series("", index=df.index, dtype="string")
+    if "status" in df.columns:
+        status_values = (
+            df["status"].astype("string").fillna("").str.strip()
+        )
+    else:
+        status_values = pd.Series("", index=df.index, dtype="string")
+    has_code = linked_codes.ne("")
+    has_status = status_values.ne("")
+    status_values = status_values.where(~has_code | has_status, "POVEZANO")
+
     df_links = df.set_index(["sifra_dobavitelja", "naziv_ckey"])[
         ["naziv", "wsm_sifra", "dobavitelj", "enota_norm", "multiplier"]
-    ]
+    ].copy()
+    df_links["status"] = status_values
+
+    if "status" not in manual_new.columns:
+        manual_new["status"] = pd.Series(
+            "", index=manual_new.index, dtype="string"
+        )
 
     if manual_new.empty:
         manual_new = df_links.copy()
@@ -245,6 +272,7 @@ def _write_excel_links(
                     "dobavitelj",
                     "enota_norm",
                     "multiplier",
+                    "status",
                 ],
             ] = df_links.loc[common]
             log.debug(
@@ -258,6 +286,15 @@ def _write_excel_links(
     manual_new["multiplier"] = manual_new["multiplier"].apply(
         lambda x: (Decimal(str(x)) if pd.notna(x) else 1)
     )
+    if "status" not in manual_new.columns:
+        manual_new["status"] = ""
+    manual_new["status"] = manual_new["status"].astype("string").fillna("")
+    if "wsm_sifra" in manual_new.columns:
+        has_code = manual_new["wsm_sifra"].astype("string").fillna("").str.strip().ne("")
+        manual_new.loc[
+            has_code & manual_new["status"].astype(str).str.strip().eq(""),
+            "status",
+        ] = "POVEZANO"
     non_default_mults = manual_new[manual_new["multiplier"] != 1]
     log.info("Saving multipliers for %s items", len(non_default_mults))
     if not non_default_mults.empty:
