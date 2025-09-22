@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from collections.abc import Callable
 from decimal import Decimal, ROUND_HALF_UP
@@ -222,6 +223,10 @@ def _apply_links_to_df(
     if not isinstance(links_df, pd.DataFrame) or links_df.empty:
         return _finalize(df, 0)
 
+    log.info("=== MATCHING PROCESS ===")
+    log.info("df ima %d vrstic", len(df))
+    log.info("links_df ima %d vrstic", len(links_df))
+    log.info("apply_codes=%s", apply_codes)
     log.debug(
         "Invoice keys:\n%s",
         df.reindex(columns=["sifra_dobavitelja", "naziv_ckey"]).head(),
@@ -266,6 +271,14 @@ def _apply_links_to_df(
     link_df = link_df.loc[
         (link_df["sifra_dobavitelja"] != "") & (link_df["naziv_ckey"] != "")
     ]
+    log.info("Po filtriranju links_df ima %d vrstic", len(link_df))
+    if not link_df.empty:
+        log.debug(
+            "Primer link_df ključev:\n%s",
+            link_df[["sifra_dobavitelja", "naziv_ckey"]]
+            .head(3)
+            .to_string(),
+        )
     if link_df.empty:
         return _finalize(df, 0)
 
@@ -275,6 +288,8 @@ def _apply_links_to_df(
     link_idx = link_df.set_index(["sifra_dobavitelja", "naziv_ckey"])
 
     df_keys = list(zip(df["sifra_dobavitelja"], df["naziv_ckey"]))
+    log.info("df_keys ima %d elementov", len(df_keys))
+    log.debug("Prvi 3 df_keys: %s", df_keys[:3])
     try:
         matched = link_idx.reindex(df_keys)
     except Exception:
@@ -282,6 +297,16 @@ def _apply_links_to_df(
 
     matched = matched.reset_index(drop=True)
     matched.index = df.index
+
+    log.info("=== CODES APPLICATION ===")
+    log.info("matched ima stolpce: %s", matched.columns.tolist())
+    if "wsm_sifra" in matched.columns:
+        valid_codes = matched["wsm_sifra"].notna().sum()
+        log.info("matched ima %d veljavnih wsm_sifra", valid_codes)
+        log.debug(
+            "Primer wsm_sifra iz matched: %s",
+            matched["wsm_sifra"].head().tolist(),
+        )
 
     updated_count = 0
     if apply_codes and "wsm_sifra" in matched.columns:
@@ -1116,6 +1141,11 @@ def review_links(
     import pandas as pd
     from decimal import Decimal, ROUND_HALF_UP
 
+    log.info("=== ENVIRONMENT CHECK ===")
+    log.info("AUTO_APPLY_LINKS = %s", AUTO_APPLY_LINKS)
+    log.info("WSM_AUTO_APPLY_LINKS env = %s", os.getenv("WSM_AUTO_APPLY_LINKS"))
+    log.info("AUTO_APPLY_LINKS env = %s", os.getenv("AUTO_APPLY_LINKS"))
+
     log.info(
         "AUTO_APPLY_LINKS=%s → shranjene povezave %s.",
         AUTO_APPLY_LINKS,
@@ -1228,7 +1258,29 @@ def review_links(
 
     try:
         manual_old = pd.read_excel(links_file, dtype=str)
+        log.info("=== EXCEL BRANJE ===")
         log.info("Povezave naložene: %s vrstic", len(manual_old))
+        log.info("Stolpci v Excel: %s", manual_old.columns.tolist())
+        if "status" in manual_old.columns:
+            povezano_count = (
+                manual_old["status"].astype(str).str.upper() == "POVEZANO"
+            ).sum()
+            log.info("Vrstic s status=POVEZANO: %d", povezano_count)
+            log.debug(
+                "Primer status vrednosti: %s",
+                manual_old["status"].head().tolist(),
+            )
+        else:
+            log.warning("Excel nima stolpca 'status'!")
+
+        if "wsm_sifra" in manual_old.columns:
+            wsm_count = manual_old["wsm_sifra"].notna().sum()
+            log.info("Vrstic z wsm_sifra: %d", wsm_count)
+
+        log.debug(
+            "Prvi 3 zapisi iz Excel:\n%s",
+            manual_old.head(3).to_string(),
+        )
         log.debug("Primer ročno shranjenih povezav:\n%s", manual_old.head())
         manual_old["sifra_dobavitelja"] = (
             manual_old["sifra_dobavitelja"].fillna("").astype(str)
