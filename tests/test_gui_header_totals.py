@@ -137,6 +137,93 @@ def test_header_totals_display_and_no_autofix(monkeypatch, tmp_path):
     root.destroy()
 
 
+def test_header_shows_vat_date_and_invoice(monkeypatch, tmp_path):
+    tk = pytest.importorskip("tkinter")
+    try:
+        _r = tk.Tk()
+        _r.destroy()
+    except tk.TclError:
+        pytest.skip("No display available")
+
+    tk._default_root = None
+
+    xml = (
+        "<Invoice xmlns='urn:eslog:2.00'>"
+        "  <M_INVOIC>"
+        "    <S_BGM>"
+        "      <C_C002><D_1001>380</D_1001></C_C002>"
+        "      <C_C106><D_1004>RAC-12345</D_1004></C_C106>"
+        "    </S_BGM>"
+        "    <S_DTM>"
+        "      <C_C507><D_2005>35</D_2005><D_2380>20250915</D_2380></C_C507>"
+        "    </S_DTM>"
+        "    <G_SG2>"
+        "      <S_NAD>"
+        "        <D_3035>SU</D_3035>"
+        "        <C_C082><D_3039>SUP123</D_3039></C_C082>"
+        "        <C_C080><D_3036>Supplier VAT Test</D_3036></C_C080>"
+        "      </S_NAD>"
+        "      <G_SG3>"
+        "        <S_RFF><C_C506><D_1153>VA</D_1153><D_1154>SI73001163</D_1154></C_C506></S_RFF>"
+        "      </G_SG3>"
+        "    </G_SG2>"
+        "    <G_SG26>"
+        "      <S_QTY><C_C186><D_6060>1</D_6060><D_6411>PCE</D_6411></C_C186></S_QTY>"
+        "      <S_LIN><C_C212><D_7140>1</D_7140></C_C212></S_LIN>"
+        "      <S_IMD><C_C273><D_7008>Item</D_7008></C_C273></S_IMD>"
+        "      <S_PRI><C_C509><D_5125>AAA</D_5125><D_5118>10</D_5118></C_C509></S_PRI>"
+        "      <S_MOA><C_C516><D_5025>203</D_5025><D_5004>10</D_5004></C_C516></S_MOA>"
+        "    </G_SG26>"
+      "  </M_INVOIC>"
+      "</Invoice>"
+    )
+    xml_path = tmp_path / "header.xml"
+    xml_path.write_text(xml)
+
+    df, ok = parse_eslog_invoice(xml_path)
+    assert ok
+
+    links_file = tmp_path / "suppliers" / "unknown" / "x.xlsx"
+    links_file.parent.mkdir(parents=True, exist_ok=True)
+
+    wsm_df = pd.DataFrame({"wsm_naziv": ["Item"], "wsm_sifra": ["1"]})
+
+    monkeypatch.setattr(rl, "_load_supplier_map", lambda p: {})
+    monkeypatch.setattr("tkinter.messagebox.showwarning", lambda *a, **k: None)
+
+    def immediate_after(self, delay, func=None, *args):
+        if func:
+            func(*args)
+        return "after"
+
+    monkeypatch.setattr(tk.Misc, "after", immediate_after)
+    monkeypatch.setattr(tk.Misc, "after_idle", lambda self, func, *a: func(*a))
+    monkeypatch.setattr(tk.Misc, "after_cancel", lambda self, _id: None)
+    monkeypatch.setattr(tk.Tk, "mainloop", lambda self: None)
+
+    rl.review_links(
+        df,
+        wsm_df,
+        links_file,
+        Decimal("10"),
+        invoice_path=xml_path,
+    )
+
+    root = tk._default_root
+    expected = "Ročna revizija – SI73001163 – 2025-09-15 – RAC-12345"
+    assert root.title() == expected
+
+    header_label = next(
+        widget
+        for widget in root.winfo_children()
+        if isinstance(widget, tk.Label) and widget.cget("textvariable")
+    )
+    header_var_name = header_label.cget("textvariable")
+    assert root.getvar(header_var_name) == expected.split(" – ", 1)[1]
+
+    root.destroy()
+
+
 def test_totals_indicator_match():
     snippet = _extract_update_totals()
     df = pd.DataFrame({"total_net": [Decimal("10.00")]})
