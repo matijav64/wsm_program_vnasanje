@@ -26,7 +26,12 @@ from wsm.constants import (
     MAX_TOLERANCE,
     ROUNDING_CORRECTION_ENABLED,
 )
-from wsm.parsing.eslog import get_supplier_info, XML_PARSER
+from wsm.parsing.eslog import (
+    XML_PARSER,
+    extract_invoice_number,
+    extract_service_date,
+    get_supplier_info_vat,
+)
 from wsm.supplier_store import _norm_vat
 from .helpers import (
     _fmt,
@@ -1180,18 +1185,22 @@ def review_links(
         else PRICE_DIFF_THRESHOLD
     )
     supplier_code: str = "Unknown"
+    supplier_code_xml: str = ""
+    supplier_name_xml: str = ""
+    supplier_vat_xml_norm: str = ""
     # Try to extract supplier code directly from the invoice XML
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
-            tree = LET.parse(invoice_path, parser=XML_PARSER)
-            supplier_code_raw = get_supplier_info(tree)
-            supplier_code_norm = _norm_vat(supplier_code_raw)
-            if supplier_code_norm and supplier_code_raw.upper().startswith(
-                "SI"
-            ):
-                supplier_code = supplier_code_norm
-            else:
-                supplier_code = supplier_code_raw
+            supplier_code_raw, supplier_name_raw, supplier_vat_xml = (
+                get_supplier_info_vat(invoice_path)
+            )
+            supplier_code_xml = (supplier_code_raw or "").strip()
+            supplier_name_xml = (supplier_name_raw or "").strip()
+            supplier_vat_xml_norm = _norm_vat(supplier_vat_xml or "")
+            if supplier_vat_xml_norm:
+                supplier_code = supplier_vat_xml_norm
+            elif supplier_code_xml:
+                supplier_code = supplier_code_xml
             log.info("Supplier code extracted: %s", supplier_code)
         except Exception as exc:
             log.debug("Supplier code lookup failed: %s", exc)
@@ -1201,47 +1210,45 @@ def review_links(
 
     log.info("Resolved supplier code: %s", supplier_code)
     supplier_info = sup_map.get(supplier_code, {})
+    if not supplier_info and supplier_code_xml and supplier_code_xml != supplier_code:
+        supplier_info = sup_map.get(supplier_code_xml, {})
     supplier_vat = supplier_info.get("vat")
+    if supplier_vat_xml_norm:
+        supplier_vat = supplier_vat_xml_norm
 
     service_date = None
     invoice_number = None
-    if invoice_path and invoice_path.suffix.lower() == ".xml":
-        try:
-            from wsm.parsing.eslog import (
-                extract_service_date,
-                extract_invoice_number,
-            )
+    if invoice_path:
+        suffix = invoice_path.suffix.lower()
+        if suffix == ".xml":
+            try:
+                service_date = extract_service_date(invoice_path)
+                invoice_number = extract_invoice_number(invoice_path)
+            except Exception as exc:
+                log.warning(f"Napaka pri branju glave računa: {exc}")
+        elif suffix == ".pdf":
+            try:
+                from wsm.parsing.pdf import (
+                    extract_invoice_number as extract_invoice_number_pdf,
+                    extract_service_date as extract_service_date_pdf,
+                )
 
-            service_date = extract_service_date(invoice_path)
-            invoice_number = extract_invoice_number(invoice_path)
-        except Exception as exc:
-            log.warning(f"Napaka pri branju glave računa: {exc}")
-    elif invoice_path and invoice_path.suffix.lower() == ".pdf":
-        try:
-            from wsm.parsing.pdf import (
-                extract_service_date,
-                extract_invoice_number,
-            )
-
-            service_date = extract_service_date(invoice_path)
-            invoice_number = extract_invoice_number(invoice_path)
-        except Exception as exc:
-            log.warning(f"Napaka pri branju glave računa: {exc}")
+                service_date = extract_service_date_pdf(invoice_path)
+                invoice_number = extract_invoice_number_pdf(invoice_path)
+            except Exception as exc:
+                log.warning(f"Napaka pri branju glave računa: {exc}")
 
     inv_name = None
     if invoice_path and invoice_path.suffix.lower() == ".xml":
-        try:
-            from wsm.parsing.eslog import (
-                get_supplier_name,
-                get_supplier_info_vat,
-            )
+        if supplier_name_xml:
+            inv_name = supplier_name_xml
+        else:
+            try:
+                from wsm.parsing.eslog import get_supplier_name
 
-            inv_name = get_supplier_name(invoice_path)
-            if not supplier_vat:
-                _, _, vat = get_supplier_info_vat(invoice_path)
-                supplier_vat = vat
-        except Exception:
-            inv_name = None
+                inv_name = get_supplier_name(invoice_path)
+            except Exception:
+                inv_name = None
     elif invoice_path and invoice_path.suffix.lower() == ".pdf":
         try:
             from wsm.parsing.pdf import get_supplier_name_from_pdf
@@ -2289,9 +2296,9 @@ def review_links(
         root = tk.Tk()
         is_toplevel = False
 
-    # Window title shows the full supplier name while the on-screen
-    # header can be a bit shorter for readability.
-    root.title(f"Ročna revizija – {full_supplier_name}")
+    # Initialize window title; it will be updated once the header widgets
+    # are created.
+    root.title("Ročna revizija")
     root.supplier_name = full_supplier_name
     root.supplier_code = supplier_code
     root.service_date = service_date
@@ -2314,9 +2321,8 @@ def review_links(
     except tk.TclError:
         pass
 
-    # Supplier name is shown alongside the VAT number in the GUI header
+    # Supplier metadata for the GUI header and info labels
 
-    vat_display = (supplier_vat or _norm_vat(supplier_code) or "").strip()
     normalized_full_supplier = (full_supplier_name or "").strip()
     display_full_name = (
         normalized_full_supplier
@@ -2324,56 +2330,35 @@ def review_links(
         or (supplier_code or "")
     )
 
+    service_date_txt = str(service_date).strip() if service_date else ""
+    invoice_txt = str(invoice_number).strip() if invoice_number else ""
+
     header_prefix_full: list[str] = []
     header_prefix_display: list[str] = []
 
-    if vat_display:
-        header_prefix_full.append(vat_display)
-        header_prefix_display.append(vat_display)
-
-    if display_full_name:
-        if not vat_display or display_full_name.casefold() != vat_display.casefold():
-            header_prefix_full.append(display_full_name)
-            header_prefix_display.append(display_full_name)
-
+    supplier_header_id = (supplier_vat or supplier_code or "").strip()
+    if supplier_header_id:
+        header_prefix_full.append(supplier_header_id)
+        header_prefix_display.append(supplier_header_id)
+    if service_date_txt:
+        header_prefix_full.append(service_date_txt)
+        header_prefix_display.append(service_date_txt)
+    if invoice_txt:
+        header_prefix_full.append(invoice_txt)
+        header_prefix_display.append(invoice_txt)
 
     header_var = tk.StringVar()
     supplier_var = tk.StringVar()
-    date_var = tk.StringVar()
-    date_var.set(service_date or "")
-    invoice_var = tk.StringVar()
+    date_var = tk.StringVar(value=service_date_txt)
+    invoice_var = tk.StringVar(value=invoice_txt)
 
     def _refresh_header():
-        parts_full = list(header_prefix_full)
-        parts_display = list(header_prefix_display)
-        if service_date:
-            date_txt = str(service_date)
-            if re.match(r"^\d{4}-\d{2}-\d{2}$", date_txt):
-                y, m, d = date_txt.split("-")
-                date_txt = f"{d}.{m}.{y}"
-            elif re.match(r"^\d{8}$", date_txt):
-                y, m, d = date_txt[:4], date_txt[4:6], date_txt[6:8]
-                date_txt = f"{d}.{m}.{y}"
-            parts_full.append(date_txt)
-            parts_display.append(date_txt)
-            date_var.set(date_txt)
-        else:
-            # Do not clear the value if ``service_date`` is missing so
-            # previously set text in ``date_var`` remains visible.
-            pass
-        if invoice_number:
-            invoice_txt = str(invoice_number).strip()
-            invoice_var.set(invoice_txt)
-        else:
-            # Preserve any existing invoice number displayed in the entry.
-            pass
         supplier_var.set(display_full_name)
 
-        header_text = " – ".join(p for p in parts_display if p)
+        header_text = " – ".join(p for p in header_prefix_display if p)
         header_var.set(header_text)
-        title_parts = [p for p in parts_full if p]
-        if title_parts:
-            root.title(f"Ročna revizija – {' – '.join(title_parts)}")
+        if header_text:
+            root.title(f"Ročna revizija – {header_text}")
         else:
             root.title("Ročna revizija")
         log.debug(
