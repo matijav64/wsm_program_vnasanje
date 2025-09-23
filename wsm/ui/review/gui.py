@@ -1151,6 +1151,73 @@ def review_links(
     import pandas as pd
     from decimal import Decimal, ROUND_HALF_UP
 
+    def _is_placeholder_supplier_name(
+        value: str | None,
+        vat_value: str | None,
+        code_value: str | None = None,
+    ) -> bool:
+        normalized = (value or "").strip()
+        if not normalized:
+            return True
+        lowered = normalized.casefold()
+        if lowered in {"unknown", "neznano"}:
+            return True
+        vat_norm = _norm_vat(vat_value or "")
+        if vat_norm:
+            name_norm = _norm_vat(normalized)
+            if name_norm and name_norm.casefold() == vat_norm.casefold():
+                return True
+        if code_value:
+            code_norm = _norm_vat(code_value)
+            name_norm = _norm_vat(normalized)
+            if code_norm and name_norm and name_norm.casefold() == code_norm.casefold():
+                return True
+            if normalized.casefold() == str(code_value).strip().casefold():
+                return True
+        return False
+
+    def _extract_supplier_name_from_nad(xml_path: Path) -> str | None:
+        try:
+            tree = LET.parse(xml_path, parser=XML_PARSER)
+            root_el = tree.getroot()
+        except Exception:
+            return None
+
+        try:
+            groups = root_el.xpath(".//*[local-name()='G_SG2']")
+        except Exception:
+            groups = []
+
+        for grp in groups:
+            try:
+                nad_nodes = grp.xpath("./*[local-name()='S_NAD']")
+            except Exception:
+                nad_nodes = []
+            for nad in nad_nodes:
+                try:
+                    types = [
+                        t.strip()
+                        for t in nad.xpath("./*[local-name()='D_3035']/text()")
+                        if t and t.strip()
+                    ]
+                except Exception:
+                    types = []
+                if types and types[0] not in {"SU", "SE"}:
+                    continue
+                try:
+                    parts = [
+                        p.strip()
+                        for p in nad.xpath(
+                            "./*[local-name()='C_C080']/*[local-name()='D_3036']/text()"
+                        )
+                        if p and p.strip()
+                    ]
+                except Exception:
+                    parts = []
+                if parts:
+                    return " ".join(parts)
+        return None
+
     log.info("=== ENVIRONMENT CHECK ===")
     log.info("AUTO_APPLY_LINKS = %s", AUTO_APPLY_LINKS)
     log.info(
@@ -1187,7 +1254,7 @@ def review_links(
     supplier_code: str = "Unknown"
     supplier_code_xml: str = ""
     supplier_name_xml: str = ""
-    supplier_vat_xml_norm: str = ""
+    supplier_vat_xml_norm: str | None = None
     # Try to extract supplier code directly from the invoice XML
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
@@ -1195,12 +1262,25 @@ def review_links(
                 get_supplier_info_vat(invoice_path)
             )
             supplier_code_xml = (supplier_code_raw or "").strip()
-            supplier_name_xml = (supplier_name_raw or "").strip()
+            supplier_code_norm = _norm_vat(supplier_code_xml)
             supplier_vat_xml_norm = _norm_vat(supplier_vat_xml or "")
             if supplier_vat_xml_norm:
                 supplier_code = supplier_vat_xml_norm
+            elif supplier_code_norm:
+                supplier_code = supplier_code_norm
             elif supplier_code_xml:
                 supplier_code = supplier_code_xml
+
+            supplier_name_candidate = (supplier_name_raw or "").strip()
+            if _is_placeholder_supplier_name(
+                supplier_name_candidate,
+                supplier_vat_xml_norm,
+                supplier_code_norm or supplier_code_xml or supplier_code_raw,
+            ):
+                fallback_name = _extract_supplier_name_from_nad(invoice_path)
+                if fallback_name:
+                    supplier_name_candidate = fallback_name.strip()
+            supplier_name_xml = supplier_name_candidate
             log.info("Supplier code extracted: %s", supplier_code)
         except Exception as exc:
             log.debug("Supplier code lookup failed: %s", exc)
@@ -1331,7 +1411,8 @@ def review_links(
     )
 
     service_date = (
-        header_totals.get("service_date")
+        service_date
+        or header_totals.get("service_date")
         or supplier_info.get("service_date")
         or ""
     )
@@ -2333,37 +2414,33 @@ def review_links(
     service_date_txt = str(service_date).strip() if service_date else ""
     invoice_txt = str(invoice_number).strip() if invoice_number else ""
 
-    header_prefix_full: list[str] = []
-    header_prefix_display: list[str] = []
-
-    supplier_header_id = (supplier_vat or supplier_code or "").strip()
-    if supplier_header_id:
-        header_prefix_full.append(supplier_header_id)
-        header_prefix_display.append(supplier_header_id)
-    if service_date_txt:
-        header_prefix_full.append(service_date_txt)
-        header_prefix_display.append(service_date_txt)
-    if invoice_txt:
-        header_prefix_full.append(invoice_txt)
-        header_prefix_display.append(invoice_txt)
-
-    header_var = tk.StringVar()
-    supplier_var = tk.StringVar()
+    header_var = tk.StringVar(value="")
+    supplier_var = tk.StringVar(value=display_full_name)
     date_var = tk.StringVar(value=service_date_txt)
     invoice_var = tk.StringVar(value=invoice_txt)
+
+    def _build_header_text() -> str:
+        parts = [
+            (supplier_code or "").strip(),
+            date_var.get().strip(),
+            invoice_var.get().strip(),
+        ]
+        return " – ".join(str(p) for p in parts if p)
+
+    initial_header_text = _build_header_text()
+    header_var.set(initial_header_text)
+    root.title(f"Ročna revizija – {initial_header_text}")
 
     def _refresh_header():
         supplier_var.set(display_full_name)
 
-        header_text = " – ".join(p for p in header_prefix_display if p)
+        header_text = _build_header_text()
         header_var.set(header_text)
-        if header_text:
-            root.title(f"Ročna revizija – {header_text}")
-        else:
-            root.title("Ročna revizija")
+        root.title(f"Ročna revizija – {header_text}")
         log.debug(
             f"_refresh_header: supplier_var={supplier_var.get()}, "
-            f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
+            f"date_var={date_var.get()}, invoice_var={invoice_var.get()}, "
+            f"header_text={header_text}"
         )
 
     header_lbl = tk.Label(
