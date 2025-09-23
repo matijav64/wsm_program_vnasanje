@@ -1273,6 +1273,7 @@ def review_links(
             return True
         return False
 
+
     full_supplier_name = (
         (supplier_info.get("ime") or inv_name or supplier_code or "")
         .strip()
@@ -1280,6 +1281,7 @@ def review_links(
 
     if inv_name and _is_placeholder_name(full_supplier_name) and not _is_placeholder_name(inv_name):
         full_supplier_name = inv_name.strip()
+
 
     supplier_vat_norm = _norm_vat(supplier_vat or "")
     if not supplier_vat_norm:
@@ -1393,6 +1395,31 @@ def review_links(
     ]
     manual_supplier_names = [name for name in raw_supplier_names if name]
 
+
+    def _is_placeholder_name(value: str | None) -> bool:
+        if not value:
+            return True
+        normalized = str(value).strip()
+        if not normalized:
+            return True
+        lowered = normalized.casefold()
+        if lowered in {"unknown", "neznano"}:
+            return True
+        compact = re.sub(r"[^0-9A-Za-z]", "", normalized)
+        if compact.isdigit():
+            return True
+        if re.fullmatch(r"SI?\d{6,}", compact, re.IGNORECASE):
+            return True
+        if supplier_code and lowered == str(supplier_code).strip().casefold():
+            return True
+        vat_norm = _norm_vat(normalized)
+        if vat_norm and vat_norm.casefold() == normalized.casefold():
+            return True
+        if vat_norm and vat_norm.casefold() == compact.casefold():
+            return True
+        return False
+
+
     manual_full_name = next(
         (name for name in manual_supplier_names if not _is_placeholder_name(name)),
         "",
@@ -1425,6 +1452,7 @@ def review_links(
     log.debug(f"Supplier name nastavljen na: {supplier_name}")
     log.debug("Full supplier name after resolution: %s", full_supplier_name)
     log.info("Default name retrieved: %s", supplier_name)
+
 
     # Normalize codes before lookup
     df["sifra_dobavitelja"] = df["sifra_dobavitelja"].fillna("").astype(str)
@@ -2295,6 +2323,7 @@ def review_links(
         or (supplier_name or "").strip()
         or (supplier_code or "")
     )
+
     header_prefix_full: list[str] = []
     header_prefix_display: list[str] = []
 
@@ -2306,6 +2335,7 @@ def review_links(
         if not vat_display or display_full_name.casefold() != vat_display.casefold():
             header_prefix_full.append(display_full_name)
             header_prefix_display.append(display_full_name)
+
 
     header_var = tk.StringVar()
     supplier_var = tk.StringVar()
@@ -2338,6 +2368,7 @@ def review_links(
             # Preserve any existing invoice number displayed in the entry.
             pass
         supplier_var.set(display_full_name)
+
         header_text = " – ".join(p for p in parts_display if p)
         header_var.set(header_text)
         title_parts = [p for p in parts_full if p]
