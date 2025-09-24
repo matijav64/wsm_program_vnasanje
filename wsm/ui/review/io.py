@@ -260,6 +260,40 @@ def _write_excel_links(
     ].copy()
     df_links["status"] = status_values
 
+    if not df_links.index.is_unique:
+        df_links = df_links.reset_index()
+        df_links["_has_code"] = (
+            df_links["wsm_sifra"].astype("string").fillna("").str.strip().ne("")
+        )
+        df_links = df_links.sort_values(
+            by=["sifra_dobavitelja", "naziv_ckey", "_has_code"],
+            ascending=[True, True, False],
+            kind="stable",
+        )
+        before = len(df_links)
+        dup_preview = df_links[
+            df_links.duplicated(
+                subset=["sifra_dobavitelja", "naziv_ckey"], keep=False
+            )
+        ].head()
+        df_links = df_links.drop_duplicates(
+            subset=["sifra_dobavitelja", "naziv_ckey"],
+            keep="first",
+        )
+        removed = before - len(df_links)
+        if removed:
+            log.warning(
+                "Odstranjenih podvojenih vrstic pri pripravi shranjevanja: %s",
+                removed,
+            )
+            log.debug(
+                "Primer podvojenih povezav pred filtriranjem: %s",
+                dup_preview.to_dict(orient="records"),
+            )
+        df_links = df_links.drop(columns="_has_code").set_index(
+            ["sifra_dobavitelja", "naziv_ckey"]
+        )
+
     if "status" not in manual_new.columns:
         manual_new["status"] = pd.Series(
             "", index=manual_new.index, dtype="string"
