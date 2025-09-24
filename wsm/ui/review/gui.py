@@ -1251,31 +1251,42 @@ def review_links(
         if price_warn_pct is not None
         else PRICE_DIFF_THRESHOLD
     )
-    supplier_code: str = "Unknown"
+    # Dobaviteljeva davčna številka iz XML
+    supplier_code: str = ""
     supplier_code_xml: str = ""
     supplier_name_xml: str = ""
     supplier_vat_xml_norm: str | None = None
-    # Try to extract supplier code directly from the invoice XML
+    # Try to extract supplier VAT directly from the invoice XML
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
-            supplier_code_raw, supplier_name_raw, supplier_vat_xml = (
-                get_supplier_info_vat(invoice_path)
+            code_raw, supplier_name_raw, supplier_vat_xml = get_supplier_info_vat(
+                invoice_path
             )
-            supplier_code_xml = (supplier_code_raw or "").strip()
+            supplier_code_xml = (code_raw or "").strip()
             supplier_code_norm = _norm_vat(supplier_code_xml)
             supplier_vat_xml_norm = _norm_vat(supplier_vat_xml or "")
-            if supplier_vat_xml_norm:
-                supplier_code = supplier_vat_xml_norm
-            elif supplier_code_norm:
+            supplier_code = (
+                supplier_vat_xml_norm
+                or (supplier_vat_xml or "").strip()
+                or ""
+            )
+            if (
+                not supplier_code
+                and supplier_code_norm
+                and supplier_code_xml.upper().startswith("SI")
+            ):
                 supplier_code = supplier_code_norm
-            elif supplier_code_xml:
-                supplier_code = supplier_code_xml
+            if not supplier_code:
+                fallback_code = supplier_code_xml or (code_raw or "").strip()
+                supplier_code = fallback_code or supplier_code_norm or ""
+            if isinstance(supplier_code, str):
+                supplier_code = supplier_code.strip()
 
             supplier_name_candidate = (supplier_name_raw or "").strip()
             if _is_placeholder_supplier_name(
                 supplier_name_candidate,
                 supplier_vat_xml_norm,
-                supplier_code_norm or supplier_code_xml or supplier_code_raw,
+                supplier_code_norm or supplier_code_xml or code_raw,
             ):
                 fallback_name = _extract_supplier_name_from_nad(invoice_path)
                 if fallback_name:
@@ -2387,7 +2398,6 @@ def review_links(
     closing = False
     _after_totals_id: str | None = None
     bindings: list[tuple[tk.Misc, str]] = []
-    header_after_id: str | None = None
     price_tip: tk.Toplevel | None = None
     last_warn_item: str | None = None
 
@@ -2404,44 +2414,25 @@ def review_links(
 
     # Supplier metadata for the GUI header and info labels
 
-    normalized_full_supplier = (full_supplier_name or "").strip()
-    display_full_name = (
-        normalized_full_supplier
-        or (supplier_name or "").strip()
-        or (supplier_code or "")
-    )
+    def format_date(d: str) -> str:
+        try:
+            digits = "".join(ch for ch in d if ch.isdigit())
+            y, m, day = digits[:4], digits[4:6], digits[6:8]
+            return f"{int(day)}.{int(m)}.{y}"
+        except:
+            return d
 
-    service_date_txt = str(service_date).strip() if service_date else ""
-    invoice_txt = str(invoice_number).strip() if invoice_number else ""
+    vat_display = supplier_code or ""
+    date_display = format_date(str(service_date)) if service_date else ""
+    invoice_display = str(invoice_number).strip() if invoice_number else ""
 
-    header_var = tk.StringVar(value="")
-    supplier_var = tk.StringVar(value=display_full_name)
-    date_var = tk.StringVar(value=service_date_txt)
-    invoice_var = tk.StringVar(value=invoice_txt)
+    lines = [vat_display]
+    if date_display or invoice_display:
+        lines.append(" – ".join(p for p in (date_display, invoice_display) if p))
 
-    def _build_header_text() -> str:
-        parts = [
-            (supplier_code or "").strip(),
-            date_var.get().strip(),
-            invoice_var.get().strip(),
-        ]
-        return " – ".join(str(p) for p in parts if p)
-
-    initial_header_text = _build_header_text()
-    header_var.set(initial_header_text)
-    root.title(f"Ročna revizija – {initial_header_text}")
-
-    def _refresh_header():
-        supplier_var.set(display_full_name)
-
-        header_text = _build_header_text()
-        header_var.set(header_text)
-        root.title(f"Ročna revizija – {header_text}")
-        log.debug(
-            f"_refresh_header: supplier_var={supplier_var.get()}, "
-            f"date_var={date_var.get()}, invoice_var={invoice_var.get()}, "
-            f"header_text={header_text}"
-        )
+    header_var = tk.StringVar()
+    header_var.set("\n".join(lines))
+    root.title(f"Ročna revizija – {vat_display}")
 
     header_lbl = tk.Label(
         root,
@@ -2488,21 +2479,14 @@ def review_links(
     ).grid(row=1, column=1, sticky="w", padx=(0, 4))
 
     def copy_invoice_number() -> None:
-        _copy_to_clipboard(invoice_var.get())
+        if invoice_display:
+            _copy_to_clipboard(invoice_display)
 
     tk.Button(
         info_frame,
         text="Kopiraj številko računa",
         command=copy_invoice_number,
     ).grid(row=1, column=2, sticky="w", padx=(0, 4))
-
-    # Refresh header once widgets exist. ``after_idle`` ensures widgets are
-    # fully initialized before values are set so the entries show up
-    header_after_id = root.after_idle(_refresh_header)
-    log.debug(
-        f"after_idle scheduled: supplier_var={supplier_var.get()}, "
-        f"date_var={date_var.get()}, invoice_var={invoice_var.get()}"
-    )
 
     # totals_frame and individual total labels have been removed in favor of
     # displaying aggregated totals only within ``total_frame``.
@@ -4127,11 +4111,6 @@ def review_links(
     def _cleanup():
         nonlocal closing, price_tip, last_warn_item
         closing = True
-        if header_after_id:
-            try:
-                root.after_cancel(header_after_id)
-            except Exception:
-                pass
         for widget, seq in bindings:
             try:
                 widget.unbind(seq)

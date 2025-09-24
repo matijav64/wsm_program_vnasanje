@@ -210,8 +210,8 @@ def test_header_shows_vat_date_and_invoice(monkeypatch, tmp_path):
     )
 
     root = tk._default_root
-    expected = "Ročna revizija – SI73001163 – 2025-09-15 – RAC-12345"
-    assert root.title() == expected
+    expected_title = "Ročna revizija – SI73001163"
+    assert root.title() == expected_title
 
     header_label = next(
         widget
@@ -219,7 +219,8 @@ def test_header_shows_vat_date_and_invoice(monkeypatch, tmp_path):
         if isinstance(widget, tk.Label) and widget.cget("textvariable")
     )
     header_var_name = header_label.cget("textvariable")
-    assert root.getvar(header_var_name) == expected.split(" – ", 1)[1]
+    expected_header = "SI73001163\n15.9.2025 – RAC-12345"
+    assert root.getvar(header_var_name) == expected_header
 
     root.destroy()
 
@@ -244,6 +245,7 @@ def test_totals_indicator_match():
         "skupaj_label": DummyWidget(),
         "root": SimpleNamespace(winfo_exists=lambda: True),
         "closing": False,
+        "_resolve_tolerance": rl._resolve_tolerance,
     }
     exec(snippet, ns)
     ns["_safe_update_totals"]()
@@ -271,6 +273,7 @@ def test_totals_indicator_mismatch():
         "skupaj_label": DummyWidget(),
         "root": SimpleNamespace(winfo_exists=lambda: True),
         "closing": False,
+        "_resolve_tolerance": rl._resolve_tolerance,
     }
     exec(snippet, ns)
     ns["_safe_update_totals"]()
@@ -370,6 +373,7 @@ def test_header_totals_display_small_diff(tmp_path):
         "doc_discount": Decimal("0"),
         "root": SimpleNamespace(winfo_exists=lambda: True),
         "closing": False,
+        "_resolve_tolerance": rl._resolve_tolerance,
     }
     exec(snippet, ns)
     ns["_safe_update_totals"]()
