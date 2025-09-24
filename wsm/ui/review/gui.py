@@ -90,6 +90,11 @@ OVERWRITE_OSTALO_IN_GRID = getenv(
     "WSM_OVERWRITE_OSTALO_IN_GRID", "1"
 ) not in {"0", "false", "False"}
 
+# Ali naj se med urejanjem prikazujejo predlogi WSM nazivov? (privzeto NE)
+ENABLE_WSM_SUGGESTIONS = getenv(
+    "WSM_ENABLE_SUGGESTIONS", "0"
+) not in {"0", "false", "False", ""}
+
 DEC2 = Decimal("0.01")
 DEC_PCT_MIN = Decimal("-100")
 DEC_PCT_MAX = Decimal("100")
@@ -4223,16 +4228,20 @@ def review_links(
             return "break"
         entry.delete(0, "end")
         _close_suggestions(entry, lb)
-        _suggest_on_focus["val"] = True
+        _suggest_on_focus["val"] = ENABLE_WSM_SUGGESTIONS
         entry.focus_set()
-        try:
-            _open_suggestions_if_needed()
-        except Exception:
-            pass
+        if ENABLE_WSM_SUGGESTIONS:
+            try:
+                _open_suggestions_if_needed()
+            except Exception:
+                pass
         return "break"
 
     def _open_suggestions_if_needed():
         """Open the suggestion dropdown if it's not already visible."""
+        if not ENABLE_WSM_SUGGESTIONS:
+            _close_suggestions(entry, lb)
+            return
         txt = entry.get().strip().lower()
         lb.delete(0, "end")
         matches = [n for n in nazivi if not txt or txt in n.lower()]
@@ -4249,6 +4258,9 @@ def review_links(
             _close_suggestions(entry, lb)
 
     def _suggest(evt=None):
+        if not ENABLE_WSM_SUGGESTIONS:
+            _close_suggestions(entry, lb)
+            return
         if evt and evt.keysym in {
             "Return",
             "Escape",
@@ -4281,6 +4293,10 @@ def review_links(
 
     def _init_listbox(evt=None):
         """Give focus to the listbox and handle initial navigation."""
+        if not ENABLE_WSM_SUGGESTIONS:
+            entry.focus_set()
+            _close_suggestions(entry, lb)
+            return "break"
         if _dropdown_is_open(lb):
             lb.focus_set()
             if not lb.curselection():
@@ -4319,14 +4335,15 @@ def review_links(
             _accepting_enter = False
 
     def _on_focus_in(e):
-        if _suggest_on_focus["val"]:
+        if ENABLE_WSM_SUGGESTIONS and _suggest_on_focus["val"]:
             _open_suggestions_if_needed()
 
     def _start_editing_from_tree(_evt=None):
         """Enter na tabeli začne vnos (focus v Entry + predlogi)."""
         try:
             entry.focus_set()
-            _open_suggestions_if_needed()
+            if ENABLE_WSM_SUGGESTIONS:
+                _open_suggestions_if_needed()
         except Exception:
             pass
         return "break"
@@ -4350,6 +4367,18 @@ def review_links(
 
     def _on_entry_escape(evt):
         _close_suggestions(entry, lb)
+        sel_i = tree.focus()
+        if sel_i:
+            try:
+                idx = int(sel_i)
+            except Exception:
+                idx = None
+            if idx is not None and _row_has_booked_code(idx):
+                entry.delete(0, "end")
+                _clear_wsm_connection()
+                return "break"
+        entry.delete(0, "end")
+        tree.focus_set()
         return "break"
 
     def _lb_escape(_):
@@ -4643,6 +4672,27 @@ def review_links(
         )
         return "break"
 
+    def _row_has_booked_code(idx: int) -> bool:
+        try:
+            if "_booked_sifra" in df.columns:
+                booked_val = df.at[idx, "_booked_sifra"]
+                if not pd.isna(booked_val):
+                    text = str(booked_val).strip()
+                    if text and text.upper() != "OSTALO":
+                        return True
+        except Exception:
+            pass
+        try:
+            if "wsm_sifra" in df.columns:
+                code_val = df.at[idx, "wsm_sifra"]
+                if not pd.isna(code_val):
+                    text = str(code_val).strip()
+                    if text and text.upper() != "OSTALO":
+                        return True
+        except Exception:
+            pass
+        return False
+
     def _clear_wsm_connection(_=None):
         sel_i = tree.focus()
         if not sel_i:
@@ -4653,26 +4703,27 @@ def review_links(
         df.at[idx, "status"] = pd.NA
         if "WSM šifra" in df.columns:
             df.at[idx, "WSM šifra"] = ""
-        if "WSM Naziv" in df.columns:
-            df.at[idx, "WSM Naziv"] = ""
+        for display_col in ("WSM Naziv", "WSM naziv"):
+            if display_col in df.columns:
+                df.at[idx, display_col] = ""
         cleared_value = _coerce_booked_code(None)
         if "_booked_sifra" in df.columns:
             df.at[idx, "_booked_sifra"] = cleared_value
         if "_summary_key" in df.columns:
             df.at[idx, "_summary_key"] = cleared_value
         try:
-            tree.set(sel_i, "WSM šifra", "")
-            tree.set(sel_i, "WSM Naziv", "")
+            tree_cols = set(tree["columns"])
+        except Exception:
+            tree_cols = set()
+        try:
+            if "WSM šifra" in tree_cols:
+                tree.set(sel_i, "WSM šifra", "")
+            for name_col in ("WSM naziv", "WSM Naziv"):
+                if name_col in tree_cols:
+                    tree.set(sel_i, name_col, "")
         except Exception:
             pass
-        new_vals = [
-            (
-                _fmt(df.at[idx, c])
-                if isinstance(df.at[idx, c], (Decimal, float, int))
-                else ("" if pd.isna(df.at[idx, c]) else str(df.at[idx, c]))
-            )
-            for c in cols
-        ]
+        new_vals = [_safe_cell(idx, c) for c in cols]
         tree.item(sel_i, values=new_vals)
         # vizualni tagi
         try:
