@@ -266,6 +266,21 @@ _rx_mass = re.compile(
     re.I,
 )
 _rx_fraction = re.compile(r"(\d+(?:[.,]\d+)?)/1\b", re.I)
+_piece_hint_words = (
+    "kos",
+    "kosov",
+    "kom",
+    "komad",
+    "komada",
+    "pcs",
+    "piece",
+    "pieces",
+    "pc",
+)
+_rx_piece_hint = re.compile(
+    r"\b(" + "|".join(re.escape(word) for word in _piece_hint_words) + r")\b",
+    re.I,
+)
 
 
 def _dec(x: str) -> Decimal:
@@ -308,6 +323,11 @@ def _norm_unit(
         ``(quantity, unit)`` in normalized form.
     """
     log.debug(f"Normalizacija: q={q}, u={u}, name={name}")
+    name = name or ""
+    name_l = name.lower()
+    unit_from_map = False
+    unit_from_piece_token = False
+    has_piece_hint = bool(_rx_piece_hint.search(name_l))
     unit_map = {
         "KGM": ("kg", 1),
         "GRM": ("kg", 0.001),
@@ -318,8 +338,11 @@ def _norm_unit(
     }
 
     if u in unit_map:
+        unit_from_map = True
         base_unit, factor = unit_map[u]
         q_norm = q * Decimal(str(factor))
+        if base_unit == "kos":
+            has_piece_hint = True
         log.debug(
             f"Enota v unit_map: {u} -> base_unit={base_unit}, factor={factor}, q_norm={q_norm}"  # noqa: E501
         )
@@ -328,6 +351,8 @@ def _norm_unit(
         if u_norm in _piece:
             base_unit = "kos"
             q_norm = q
+            unit_from_piece_token = True
+            has_piece_hint = True
         elif u_norm in _mass:
             if u_norm.startswith("kg"):
                 factor = Decimal("1")
@@ -342,7 +367,6 @@ def _norm_unit(
             q_norm = q * Decimal(str(mapping[u_norm]))
             base_unit = "L"
         else:
-            name_l = name.lower()
             m_vol = _rx_vol.search(name_l)
             if m_vol:
                 val, typ = _dec(m_vol[1]), m_vol[2].lower()
@@ -432,8 +456,31 @@ def _norm_unit(
             val = _dec(m_frac.group(1))
             log.debug(f"Fractional volume detected: {val}/1 -> using {val} L")
             return q_norm * val, "L"
-        log.debug("VAT rate 9.5% detected -> using 'kg' as fallback unit")
-        base_unit = "kg"
+        # Zaznaj maso v nazivu, npr. '100g', '0.18kg', '5mg'
+        m_mass = re.search(r"\b(\d+(?:[.,]\d+)?)\s*(mg|g|kg)\b", name_l)
+        if has_piece_hint and m_mass:
+            # Izvleci številko in enoto
+            num = m_mass.group(1).replace(",", ".")
+            unit = m_mass.group(2).lower()
+            val = Decimal(num)
+            # Pretvori v kg
+            if unit == "mg":
+                mass_kg = val / Decimal("1000000")
+            elif unit == "g":
+                mass_kg = val / Decimal("1000")
+            else:  # kg
+                mass_kg = val
+            log.debug(
+                f"Kosovni artikel z maso: {q_norm} kos × {mass_kg} kg = {q_norm * mass_kg} kg"
+            )
+            return q_norm * mass_kg, "kg"
+
+        # Če ni mase, ohrani 'kos' za eksplicitne kosovne artikle
+        if unit_from_map or unit_from_piece_token or has_piece_hint:
+            log.debug("VAT 9.5% + kos brez mase -> keeping 'kos'")
+        else:
+            log.debug("VAT 9.5% brez kosovnih namigov -> fallback to 'kg'")
+            base_unit = "kg"
 
     if base_unit == "kos" and q_norm != q_norm.to_integral_value():
         name_l = name.lower()

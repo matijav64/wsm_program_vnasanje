@@ -30,9 +30,9 @@ def test_norm_unit_vat_fraction_to_liter():
     assert q == Decimal("36")
 
 
-def test_norm_unit_vat_default_kg():
+def test_norm_unit_vat_default_kg_no_hint():
     q, unit = _norm_unit(
-        Decimal("2"), "H87", "Artikel brez mere", Decimal("9.5"), None
+        Decimal("2"), "??", "Artikel brez mere", Decimal("9.5"), None
     )
     assert unit == "kg"
     assert q == Decimal("2")
@@ -44,6 +44,14 @@ def test_norm_unit_weight_table():
     )
     assert unit == "kg"
     assert q == Decimal("0.48")
+
+
+def test_norm_unit_vat_piece_unit_kept():
+    q, unit = _norm_unit(
+        Decimal("2"), "H87", "Artikel brez mere", Decimal("9.5"), None
+    )
+    assert unit == "kos"
+    assert q == Decimal("2")
 
 
 def test_norm_unit_fractional_kos_default_kg():
