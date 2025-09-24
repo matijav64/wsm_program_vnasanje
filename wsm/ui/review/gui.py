@@ -4474,6 +4474,28 @@ def review_links(
         price_tip.geometry(f"+{tree.winfo_rootx()+x+w}+{tree.winfo_rooty()+y}")
         last_warn_item = item_id
 
+    def _safe_cell(idx, c, default=""):
+        """Safely extract display values for ``tree`` columns.
+
+        The grid's DataFrame ``df`` can change shape after merges or edits,
+        therefore individual columns might temporarily disappear.  Accessing a
+        missing column would raise, so this helper mirrors the previous
+        inline logic and makes it available to all callbacks that need to
+        refresh the visible row values.
+        """
+
+        if c not in df.columns:
+            return default
+        try:
+            v = df.at[idx, c]
+        except Exception:
+            return default
+        if isinstance(v, (Decimal, float, int)) and not isinstance(v, bool):
+            return _fmt(_clean_neg_zero(v))
+        if v is None or (hasattr(pd, "isna") and pd.isna(v)):
+            return ""
+        return str(v)
+
     def _on_select(_=None):
         sel_i = tree.focus()
         if not sel_i:
@@ -4613,22 +4635,6 @@ def review_links(
             tset.add("gratis")
             tree.item(sel_i, tags=tuple(tset))
             tree.set(sel_i, "warning", "GRATIS")
-
-        def _safe_cell(idx, c, default=""):
-            # Ne zaupaj, da stolpec vedno obstaja po merge/urejanju
-            if c not in df.columns:
-                return default
-            try:
-                v = df.at[idx, c]
-            except Exception:
-                return default
-            if isinstance(v, (Decimal, float, int)) and not isinstance(
-                v, bool
-            ):
-                return _fmt(_clean_neg_zero(v))
-            if v is None or (hasattr(pd, "isna") and pd.isna(v)):
-                return ""
-            return str(v)
 
         new_vals = [_safe_cell(idx, c) for c in cols]
         for j, c in enumerate(cols):

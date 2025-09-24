@@ -193,6 +193,16 @@ def _write_excel_links(
             how="all",
         )
         manual_old["naziv_ckey"] = manual_old["naziv"].map(_clean)
+        before = len(manual_old)
+        manual_old = manual_old.drop_duplicates(
+            subset=["sifra_dobavitelja", "naziv_ckey"],
+            keep="last",
+        )
+        if len(manual_old) != before:
+            log.warning(
+                "Odstranjenih podvojenih povezav: %s",
+                before - len(manual_old),
+            )
         manual_new = manual_old.set_index(["sifra_dobavitelja", "naziv_ckey"])
         if "status" not in manual_new.columns:
             manual_new["status"] = pd.Series(
@@ -250,6 +260,40 @@ def _write_excel_links(
     ].copy()
     df_links["status"] = status_values
 
+    if not df_links.index.is_unique:
+        df_links = df_links.reset_index()
+        df_links["_has_code"] = (
+            df_links["wsm_sifra"].astype("string").fillna("").str.strip().ne("")
+        )
+        df_links = df_links.sort_values(
+            by=["sifra_dobavitelja", "naziv_ckey", "_has_code"],
+            ascending=[True, True, False],
+            kind="stable",
+        )
+        before = len(df_links)
+        dup_preview = df_links[
+            df_links.duplicated(
+                subset=["sifra_dobavitelja", "naziv_ckey"], keep=False
+            )
+        ].head()
+        df_links = df_links.drop_duplicates(
+            subset=["sifra_dobavitelja", "naziv_ckey"],
+            keep="first",
+        )
+        removed = before - len(df_links)
+        if removed:
+            log.warning(
+                "Odstranjenih podvojenih vrstic pri pripravi shranjevanja: %s",
+                removed,
+            )
+            log.debug(
+                "Primer podvojenih povezav pred filtriranjem: %s",
+                dup_preview.to_dict(orient="records"),
+            )
+        df_links = df_links.drop(columns="_has_code").set_index(
+            ["sifra_dobavitelja", "naziv_ckey"]
+        )
+
     if "status" not in manual_new.columns:
         manual_new["status"] = pd.Series(
             "", index=manual_new.index, dtype="string"
@@ -303,6 +347,51 @@ def _write_excel_links(
             non_default_mults[
                 ["sifra_dobavitelja", "naziv", "multiplier"]
             ].to_dict(orient="records"),
+        )
+
+    if "wsm_sifra" in manual_new.columns:
+        manual_new["wsm_sifra"] = (
+            manual_new["wsm_sifra"].astype("string").replace("<NA>", "")
+        )
+        empty_codes = manual_new["wsm_sifra"].fillna("").str.strip().eq("")
+    else:
+        empty_codes = pd.Series(False, index=manual_new.index)
+
+    if "status" in manual_new.columns:
+        manual_new["status"] = (
+            manual_new["status"].astype("string").fillna("").str.strip()
+        )
+        povezana_mask = manual_new["status"].str.upper() == "POVEZANO"
+        if (empty_codes & povezana_mask).any():
+            manual_new.loc[empty_codes & povezana_mask, "status"] = ""
+    else:
+        manual_new["status"] = ""
+        povezana_mask = pd.Series(False, index=manual_new.index)
+
+    drop_mask = empty_codes & manual_new["status"].eq("")
+    if drop_mask.any():
+        log.info(
+            "Odstranim %s povezav brez WSM kode", drop_mask.sum(),
+        )
+        removed_preview = manual_new.loc[
+            drop_mask,
+            [
+                "sifra_dobavitelja",
+                "naziv",
+                "enota_norm",
+                "multiplier",
+            ],
+        ].head()
+        if not removed_preview.empty:
+            log.debug(
+                "Primer odstranjenih povezav: %s",
+                removed_preview.to_dict(orient="records"),
+            )
+        manual_new = manual_new.loc[~drop_mask].copy()
+
+    if "wsm_sifra" in manual_new.columns:
+        manual_new.loc[:, "wsm_sifra"] = manual_new["wsm_sifra"].where(
+            manual_new["wsm_sifra"].ne(""), pd.NA
         )
 
     log.info(f"Shranjujem {len(manual_new)} povezav v {links_file}")
