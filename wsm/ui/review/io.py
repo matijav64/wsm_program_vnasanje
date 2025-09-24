@@ -349,6 +349,51 @@ def _write_excel_links(
             ].to_dict(orient="records"),
         )
 
+    if "wsm_sifra" in manual_new.columns:
+        manual_new["wsm_sifra"] = (
+            manual_new["wsm_sifra"].astype("string").replace("<NA>", "")
+        )
+        empty_codes = manual_new["wsm_sifra"].fillna("").str.strip().eq("")
+    else:
+        empty_codes = pd.Series(False, index=manual_new.index)
+
+    if "status" in manual_new.columns:
+        manual_new["status"] = (
+            manual_new["status"].astype("string").fillna("").str.strip()
+        )
+        povezana_mask = manual_new["status"].str.upper() == "POVEZANO"
+        if (empty_codes & povezana_mask).any():
+            manual_new.loc[empty_codes & povezana_mask, "status"] = ""
+    else:
+        manual_new["status"] = ""
+        povezana_mask = pd.Series(False, index=manual_new.index)
+
+    drop_mask = empty_codes & manual_new["status"].eq("")
+    if drop_mask.any():
+        log.info(
+            "Odstranim %s povezav brez WSM kode", drop_mask.sum(),
+        )
+        removed_preview = manual_new.loc[
+            drop_mask,
+            [
+                "sifra_dobavitelja",
+                "naziv",
+                "enota_norm",
+                "multiplier",
+            ],
+        ].head()
+        if not removed_preview.empty:
+            log.debug(
+                "Primer odstranjenih povezav: %s",
+                removed_preview.to_dict(orient="records"),
+            )
+        manual_new = manual_new.loc[~drop_mask].copy()
+
+    if "wsm_sifra" in manual_new.columns:
+        manual_new.loc[:, "wsm_sifra"] = manual_new["wsm_sifra"].where(
+            manual_new["wsm_sifra"].ne(""), pd.NA
+        )
+
     log.info(f"Shranjujem {len(manual_new)} povezav v {links_file}")
     log.debug(f"Primer shranjenih povezav: {manual_new.head().to_dict()}")
     if "enota_norm" in manual_new.columns:
