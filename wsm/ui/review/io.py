@@ -193,6 +193,16 @@ def _write_excel_links(
             how="all",
         )
         manual_old["naziv_ckey"] = manual_old["naziv"].map(_clean)
+        before = len(manual_old)
+        manual_old = manual_old.drop_duplicates(
+            subset=["sifra_dobavitelja", "naziv_ckey"],
+            keep="last",
+        )
+        if len(manual_old) != before:
+            log.warning(
+                "Odstranjenih podvojenih povezav: %s",
+                before - len(manual_old),
+            )
         manual_new = manual_old.set_index(["sifra_dobavitelja", "naziv_ckey"])
         if "status" not in manual_new.columns:
             manual_new["status"] = pd.Series(
