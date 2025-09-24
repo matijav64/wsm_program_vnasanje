@@ -4703,26 +4703,27 @@ def review_links(
         df.at[idx, "status"] = pd.NA
         if "WSM šifra" in df.columns:
             df.at[idx, "WSM šifra"] = ""
-        if "WSM Naziv" in df.columns:
-            df.at[idx, "WSM Naziv"] = ""
+        for display_col in ("WSM Naziv", "WSM naziv"):
+            if display_col in df.columns:
+                df.at[idx, display_col] = ""
         cleared_value = _coerce_booked_code(None)
         if "_booked_sifra" in df.columns:
             df.at[idx, "_booked_sifra"] = cleared_value
         if "_summary_key" in df.columns:
             df.at[idx, "_summary_key"] = cleared_value
         try:
-            tree.set(sel_i, "WSM šifra", "")
-            tree.set(sel_i, "WSM Naziv", "")
+            tree_cols = set(tree["columns"])
+        except Exception:
+            tree_cols = set()
+        try:
+            if "WSM šifra" in tree_cols:
+                tree.set(sel_i, "WSM šifra", "")
+            for name_col in ("WSM naziv", "WSM Naziv"):
+                if name_col in tree_cols:
+                    tree.set(sel_i, name_col, "")
         except Exception:
             pass
-        new_vals = [
-            (
-                _fmt(df.at[idx, c])
-                if isinstance(df.at[idx, c], (Decimal, float, int))
-                else ("" if pd.isna(df.at[idx, c]) else str(df.at[idx, c]))
-            )
-            for c in cols
-        ]
+        new_vals = [_safe_cell(idx, c) for c in cols]
         tree.item(sel_i, values=new_vals)
         # vizualni tagi
         try:
