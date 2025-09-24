@@ -450,6 +450,7 @@ def get_supplier_info(tree: LET._ElementTree | LET._Element) -> str:
 
     try:
         root = tree.getroot() if hasattr(tree, "getroot") else tree
+        _force_ns_for_doc(root)
 
         groups: List[LET._Element] = [
             sg2
@@ -546,8 +547,42 @@ def get_supplier_info_vat(xml_path: str | Path) -> Tuple[str, str, str | None]:
     except Exception:
         return "", "", None
 
+    _force_ns_for_doc(root)
+
     code = get_supplier_info(tree)
-    vat_val = _find_vat(root) or None
+
+    vat_val: str | None = None
+    try:
+        groups = []
+        for grp in root.findall(".//e:G_SG2", NS):
+            nad = grp.find("./e:S_NAD", NS)
+            if nad is None:
+                continue
+            typ_el = nad.find("./e:D_3035", NS)
+            if typ_el is None:
+                typ_el = next(
+                    (
+                        el
+                        for el in nad.iter()
+                        if el.tag.split("}")[-1] == "D_3035"
+                    ),
+                    None,
+                )
+            typ = _text(typ_el)
+            if typ in {"SU", "SE"}:
+                priority = 0 if typ == "SU" else 1
+                groups.append((priority, grp))
+        groups.sort(key=lambda item: item[0])
+        search_groups = [grp for _, grp in groups] or [root]
+    except Exception:
+        search_groups = [root]
+
+    for grp in search_groups:
+        vat_candidate = _find_vat(grp)
+        if vat_candidate:
+            vat_val = vat_candidate
+            break
+
     name = get_supplier_name(xml_path) or ""
     if vat_val:
         code = vat_val
