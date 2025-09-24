@@ -90,9 +90,9 @@ OVERWRITE_OSTALO_IN_GRID = getenv(
     "WSM_OVERWRITE_OSTALO_IN_GRID", "1"
 ) not in {"0", "false", "False"}
 
-# Ali naj se med urejanjem prikazujejo predlogi WSM nazivov? (privzeto NE)
+# Ali naj se med urejanjem prikazujejo predlogi WSM nazivov? (privzeto DA)
 ENABLE_WSM_SUGGESTIONS = getenv(
-    "WSM_ENABLE_SUGGESTIONS", "0"
+    "WSM_ENABLE_SUGGESTIONS", "1"
 ) not in {"0", "false", "False", ""}
 
 DEC2 = Decimal("0.01")
