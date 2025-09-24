@@ -1009,19 +1009,46 @@ def extract_invoice_type(source: Path | str | Any) -> str:
 # ───────────────────── datum opravljene storitve ─────────────────────
 def extract_service_date(xml_path: Path | str) -> str | None:
     """Vrne datum opravljene storitve (DTM 35) ali datum računa (DTM 137)."""
+
+    def _dtm_value(dtm: LET._Element, field: str) -> str:
+        """Return ``C_C507`` child text regardless of namespaces."""
+
+        try:
+            value = dtm.xpath(
+                f"string(./*[local-name()='C_C507']/*[local-name()='{field}'])"
+            )
+        except Exception:
+            return ""
+        return value.strip()
+
+    def _find_date(nodes: list[LET._Element], qualifier: str) -> str | None:
+        for dtm in nodes:
+            if _dtm_value(dtm, "D_2005") == qualifier:
+                date = _dtm_value(dtm, "D_2380")
+                if date:
+                    return _normalize_date(date)
+        return None
+
     try:
         tree = LET.parse(xml_path, parser=XML_PARSER)
         root = tree.getroot()
-        for dtm in root.findall(".//e:S_DTM", NS):
-            if _text(dtm.find("./e:C_C507/e:D_2005", NS)) == "35":
-                date = _text(dtm.find("./e:C_C507/e:D_2380", NS))
+        _force_ns_for_doc(root)
+
+        header_dtms = list(root.findall("./{*}S_DTM"))
+        seen = {id(node) for node in header_dtms}
+        all_dtms = header_dtms.copy()
+        for node in root.findall(".//{*}S_DTM"):
+            if id(node) not in seen:
+                all_dtms.append(node)
+                seen.add(id(node))
+
+        for nodes in (header_dtms, all_dtms[len(header_dtms) :]):
+            if not nodes:
+                continue
+            for qualifier in ("35", "137"):
+                date = _find_date(nodes, qualifier)
                 if date:
-                    return _normalize_date(date)
-        for dtm in root.findall(".//e:S_DTM", NS):
-            if _text(dtm.find("./e:C_C507/e:D_2005", NS)) == "137":
-                date = _text(dtm.find("./e:C_C507/e:D_2380", NS))
-                if date:
-                    return _normalize_date(date)
+                    return date
     except Exception:
         pass
     return None
