@@ -133,15 +133,20 @@ def review_links_qt(
     )
     df["total_net"] = df["vrednost"]
     df["is_gratis"] = df["rabata_pct"] >= Decimal("99.9")
+    if "override_unit" not in df.columns:
+        df["override_unit"] = pd.Series(pd.NA, index=df.index, dtype="string")
     df["kolicina_norm"], df["enota_norm"] = zip(
         *[
-            _norm_unit(Decimal(str(q)), u, n, vat, code)
-            for q, u, n, vat, code in zip(
+            _norm_unit(
+                Decimal(str(q)), u, n, vat, code, override_unit=override
+            )
+            for q, u, n, vat, code, override in zip(
                 df["kolicina"],
                 df["enota"],
                 df["naziv"],
                 df["ddv_stopnja"],
                 df.get("sifra_artikla"),
+                df.get("override_unit"),
             )
         ]
     )

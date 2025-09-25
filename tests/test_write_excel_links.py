@@ -15,6 +15,7 @@ def test_write_excel_links_saves_multiplier(tmp_path, caplog):
                 "wsm_sifra": "A1",
                 "dobavitelj": "Supp",
                 "enota_norm": "kos",
+                "override_unit": "kg",
                 "multiplier": Decimal("2"),
             }
         ]
@@ -26,5 +27,7 @@ def test_write_excel_links_saves_multiplier(tmp_path, caplog):
     saved = pd.read_excel(links_file)
     assert "multiplier" in saved.columns
     assert saved.loc[0, "multiplier"] == 2
+    assert "override_unit" in saved.columns
+    assert saved.loc[0, "override_unit"] == "kg"
     assert "Saving multipliers for 1 items" in caplog.text
     assert "Multiplier details" in caplog.text

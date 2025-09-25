@@ -313,6 +313,18 @@ def _apply_links_to_df(
     matched = matched.reset_index(drop=True)
     matched.index = df.index
 
+    if "override_unit" in matched.columns:
+        overrides = matched["override_unit"]
+        try:
+            overrides = overrides.astype("string")
+        except Exception:
+            overrides = overrides.astype(str)
+        overrides = overrides.replace({"<NA>": ""}).fillna("").str.strip()
+        cleaned = overrides.replace("", pd.NA)
+        if "override_unit" not in df.columns:
+            df["override_unit"] = pd.Series(pd.NA, index=df.index, dtype="string")
+        df["override_unit"] = cleaned.astype("string")
+
     log.info("=== CODES APPLICATION ===")
     log.info("matched ima stolpce: %s", matched.columns.tolist())
     if "wsm_sifra" in matched.columns:
@@ -1705,18 +1717,62 @@ def review_links(
     )
     df["total_net"] = df["vrednost"]
     df["is_gratis"] = df["rabata_pct"] >= Decimal("99.9")
-    df["kolicina_norm"], df["enota_norm"] = zip(
-        *[
-            _norm_unit(Decimal(str(q)), u, n, vat, code)
-            for q, u, n, vat, code in zip(
-                df["kolicina"],
-                df["enota"],
-                df["naziv"],
-                df["ddv_stopnja"],
-                df.get("sifra_artikla"),
+
+    def _normalize_override_column() -> None:
+        if "override_unit" not in df.columns:
+            df["override_unit"] = pd.Series(pd.NA, index=df.index, dtype="string")
+            return
+        series = df["override_unit"]
+        try:
+            series = series.astype("string")
+        except Exception:
+            series = series.astype(str)
+        series = series.replace({"<NA>": ""}).fillna("").str.strip()
+        df["override_unit"] = series.replace("", pd.NA).astype("string")
+
+    def _override_value(idx: int) -> str | None:
+        if "override_unit" not in df.columns:
+            return None
+        val = df.at[idx, "override_unit"]
+        try:
+            if pd.isna(val):
+                return None
+        except Exception:
+            if val is None:
+                return None
+        text = str(val).strip()
+        return text or None
+
+    def _recalculate_units() -> None:
+        quantities: list[Decimal] = []
+        units: list[str] = []
+        for idx in df.index:
+            raw_qty = df.at[idx, "kolicina"] if "kolicina" in df.columns else Decimal("0")
+            qty_dec = raw_qty if isinstance(raw_qty, Decimal) else _as_dec(raw_qty, "0")
+            raw_unit = df.at[idx, "enota"] if "enota" in df.columns else ""
+            name_val = df.at[idx, "naziv"] if "naziv" in df.columns else ""
+            vat_val = df.at[idx, "ddv_stopnja"] if "ddv_stopnja" in df.columns else None
+            code_val = df.at[idx, "sifra_artikla"] if "sifra_artikla" in df.columns else None
+            override_val = _override_value(idx)
+            qty_norm, unit_norm = _norm_unit(
+                qty_dec,
+                raw_unit,
+                name_val,
+                vat_val,
+                code_val,
+                override_unit=override_val,
             )
-        ]
-    )
+            quantities.append(qty_norm)
+            units.append(unit_norm)
+        if len(df.index) == len(quantities):
+            df.loc[:, "kolicina_norm"] = quantities
+            df.loc[:, "enota_norm"] = units
+        else:
+            df["kolicina_norm"] = quantities
+            df["enota_norm"] = units
+
+    _normalize_override_column()
+    _recalculate_units()
     # Keep ``kolicina_norm`` as ``Decimal`` to avoid losing precision in
     # subsequent calculations and when saving the file. Previously the column
     # was cast to ``float`` which could introduce rounding errors.
@@ -4016,6 +4072,8 @@ def review_links(
             return
         try:
             df, upd_cnt = _apply_links_to_df(df, links_df)
+            _normalize_override_column()
+            _recalculate_units()
             df = _fill_names_from_catalog(df, wsm_df)
             df = _normalize_wsm_display_columns(df)
             # osveži vidne celice v gridu (Treeview)
@@ -4079,6 +4137,27 @@ def review_links(
                                 "rabata_pct",
                                 _fmt(df.at[idx, "rabata_pct"]),
                             )
+                    if (
+                        "kolicina_norm" in df.columns
+                        and tree.exists(rid)
+                        and _tree_has_col("kolicina_norm")
+                    ):
+                        tree.set(
+                            rid,
+                            "kolicina_norm",
+                            _fmt(df.at[idx, "kolicina_norm"]),
+                        )
+                    if (
+                        "enota_norm" in df.columns
+                        and tree.exists(rid)
+                        and _tree_has_col("enota_norm")
+                    ):
+                        unit_val = df.at[idx, "enota_norm"]
+                        try:
+                            unit_disp = "" if pd.isna(unit_val) else str(unit_val)
+                        except Exception:
+                            unit_disp = str(unit_val)
+                        tree.set(rid, "enota_norm", unit_disp)
             except Exception as e:
                 log.warning("Osvežitev grid celic ni uspela: %s", e)
             _apply_saved_multipliers(
@@ -4410,32 +4489,90 @@ def review_links(
             "Editing row %s current unit=%s", idx, df.at[idx, "enota_norm"]
         )
 
+        current_override = None
+        if "override_unit" in df.columns:
+            try:
+                override_val = df.at[idx, "override_unit"]
+                if not pd.isna(override_val) and str(override_val).strip():
+                    current_override = str(override_val).strip()
+            except Exception:
+                current_override = None
+
+        initial = current_override or str(df.at[idx, "enota_norm"] or "")
+        if initial not in unit_options:
+            initial = unit_options[0]
+
         top = tk.Toplevel(root)
         top.title("Spremeni enoto")
-        var = tk.StringVar(value=df.at[idx, "enota_norm"])
+        var = tk.StringVar(value=initial)
         cb = ttk.Combobox(
             top, values=unit_options, textvariable=var, state="readonly"
         )
         cb.pack(padx=10, pady=10)
         log.debug("Edit dialog opened with value %s", var.get())
 
-        def _apply(_=None):
-            new_u = var.get()
-            before = df.at[idx, "enota_norm"]
-            # Only change the normalized value so the original
-            # invoice unit remains intact. ``enota`` is needed to
-            # detect H87 when applying saved overrides.
-            df.at[idx, "enota_norm"] = new_u
-            tree.set(row_id, "enota_norm", new_u)
+        def _apply_override(selected: str | None) -> None:
+            override_val = selected.strip() if selected else ""
+            if "override_unit" not in df.columns:
+                df["override_unit"] = pd.Series(pd.NA, index=df.index, dtype="string")
+            df.at[idx, "override_unit"] = (
+                override_val if override_val else pd.NA
+            )
+            _normalize_override_column()
 
-            log.info("Updated row %s unit from %s to %s", idx, before, new_u)
-            log.debug("Combobox in edit dialog value: %s", cb.get())
+            raw_qty = df.at[idx, "kolicina"] if "kolicina" in df.columns else Decimal("0")
+            qty_dec = raw_qty if isinstance(raw_qty, Decimal) else _as_dec(raw_qty, "0")
+            raw_unit = df.at[idx, "enota"] if "enota" in df.columns else ""
+            name_val = df.at[idx, "naziv"] if "naziv" in df.columns else ""
+            vat_val = df.at[idx, "ddv_stopnja"] if "ddv_stopnja" in df.columns else None
+            code_val = df.at[idx, "sifra_artikla"] if "sifra_artikla" in df.columns else None
+            override_for_calc = override_val if override_val else None
+            qty_norm, unit_norm = _norm_unit(
+                qty_dec,
+                raw_unit,
+                name_val,
+                vat_val,
+                code_val,
+                override_unit=override_for_calc,
+            )
+            df.at[idx, "kolicina_norm"] = qty_norm
+            df.at[idx, "enota_norm"] = unit_norm
+
+            if tree.exists(row_id) and _tree_has_col("kolicina_norm"):
+                tree.set(row_id, "kolicina_norm", _fmt(qty_norm))
+            if tree.exists(row_id) and _tree_has_col("enota_norm"):
+                tree.set(row_id, "enota_norm", unit_norm)
+
+            new_vals = [_safe_cell(idx, c) for c in cols]
+            tree.item(row_id, values=new_vals)
+
+            log.info(
+                "Updated row %s override=%s -> unit=%s quantity=%s",
+                idx,
+                override_val if override_val else "AUTO",
+                unit_norm,
+                qty_norm,
+            )
 
             _update_summary()
             _schedule_totals()
+
+        def _apply(_=None):
+            new_u = var.get()
+            _apply_override(new_u)
             top.destroy()
 
-        tk.Button(top, text="OK", command=_apply).pack(pady=(0, 10))
+        def _reset_to_auto():
+            _apply_override(None)
+            top.destroy()
+
+        btn_frame = tk.Frame(top)
+        btn_frame.pack(pady=(0, 10))
+        tk.Button(btn_frame, text="OK", command=_apply).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Samodejno", command=_reset_to_auto).pack(
+            side="left", padx=5
+        )
+
         cb.bind("<Return>", _apply)
         cb.focus_set()
         return "break"
