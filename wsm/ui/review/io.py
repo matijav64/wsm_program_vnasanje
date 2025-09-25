@@ -210,6 +210,10 @@ def _write_excel_links(
             )
         if "enota_norm" not in manual_new.columns:
             manual_new["enota_norm"] = pd.NA
+        if "override_unit" not in manual_new.columns:
+            manual_new["override_unit"] = pd.Series(
+                pd.NA, index=manual_new.index, dtype="string"
+            )
         if "multiplier" not in manual_new.columns:
             manual_new["multiplier"] = 1
         log.info(
@@ -229,6 +233,7 @@ def _write_excel_links(
                 "wsm_sifra",
                 "dobavitelj",
                 "enota_norm",
+                "override_unit",
                 "multiplier",
                 "status",
             ]
@@ -255,8 +260,18 @@ def _write_excel_links(
     has_status = status_values.ne("")
     status_values = status_values.where(~has_code | has_status, "POVEZANO")
 
+    if "override_unit" not in df.columns:
+        df["override_unit"] = pd.Series(pd.NA, index=df.index, dtype="string")
+
     df_links = df.set_index(["sifra_dobavitelja", "naziv_ckey"])[
-        ["naziv", "wsm_sifra", "dobavitelj", "enota_norm", "multiplier"]
+        [
+            "naziv",
+            "wsm_sifra",
+            "dobavitelj",
+            "enota_norm",
+            "override_unit",
+            "multiplier",
+        ]
     ].copy()
     df_links["status"] = status_values
 
@@ -315,6 +330,7 @@ def _write_excel_links(
                     "wsm_sifra",
                     "dobavitelj",
                     "enota_norm",
+                    "override_unit",
                     "multiplier",
                     "status",
                 ],
@@ -333,6 +349,13 @@ def _write_excel_links(
     if "status" not in manual_new.columns:
         manual_new["status"] = ""
     manual_new["status"] = manual_new["status"].astype("string").fillna("")
+    if "override_unit" in manual_new.columns:
+        override_series = manual_new["override_unit"].astype("string")
+        override_series = override_series.replace({"<NA>": ""}).fillna("")
+        override_series = override_series.str.strip()
+        manual_new["override_unit"] = (
+            override_series.replace("", pd.NA).astype("string")
+        )
     if "wsm_sifra" in manual_new.columns:
         has_code = manual_new["wsm_sifra"].astype("string").fillna("").str.strip().ne("")
         manual_new.loc[

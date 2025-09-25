@@ -68,3 +68,27 @@ def test_norm_unit_fractional_kos_to_liter():
     )
     assert unit == "L"
     assert q == Decimal("2.1")
+
+
+def test_norm_unit_override_to_liter():
+    q, unit = _norm_unit(
+        Decimal("3"), "kos", "Sok", Decimal("22"), None, override_unit="L"
+    )
+    assert unit == "L"
+    assert q == Decimal("3")
+
+
+def test_norm_unit_override_to_pieces():
+    q, unit = _norm_unit(
+        Decimal("2"), "kg", "Moka", Decimal("9.5"), None, override_unit="kos"
+    )
+    assert unit == "kos"
+    assert q == Decimal("2")
+
+
+def test_norm_unit_override_to_kg_uses_normalized_quantity():
+    q, unit = _norm_unit(
+        Decimal("500"), "mg", "Vitamin C", Decimal("22"), None, override_unit="kg"
+    )
+    assert unit == "kg"
+    assert q == Decimal("0.0005")

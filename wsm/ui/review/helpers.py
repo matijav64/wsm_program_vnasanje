@@ -301,6 +301,7 @@ def _norm_unit(
     name: str,
     vat_rate: Decimal | float | str | None = None,
     code: str | None = None,
+    override_unit: str | None = None,
 ) -> Tuple[Decimal, str]:
     """Normalize quantity and unit to ``kg``/``L``/``kos``.
 
@@ -511,6 +512,27 @@ def _norm_unit(
             "Fractional piece quantity detected -> using 'kg' as fallback unit"
         )
         return q_norm, "kg"
+
+    override_clean = None
+    if override_unit is not None:
+        try:
+            if pd.isna(override_unit):
+                override_clean = None
+            else:
+                override_clean = str(override_unit).strip()
+        except Exception:
+            override_clean = str(override_unit).strip()
+        if override_clean:
+            override_lower = override_clean.lower()
+            if override_lower == "l":
+                log.debug("Override unit applied: using raw quantity for liters")
+                return q, "L"
+            if override_lower == "kos":
+                log.debug("Override unit applied: using raw quantity for pieces")
+                return q, "kos"
+            if override_lower == "kg":
+                log.debug("Override unit applied: using normalized quantity for kilograms")
+                return q_norm, "kg"
 
     log.debug(f"Končna normalizacija: q_norm={q_norm}, base_unit={base_unit}")
     return q_norm, base_unit
