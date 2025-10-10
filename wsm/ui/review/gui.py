@@ -3651,6 +3651,8 @@ def review_links(
                 if bruto_s is not None
                 else pd.Series([Decimal("0")] * len(df), index=df.index)
             ),
+            "cena_pred_rabatom": _col(df, "cena_pred_rabatom"),
+            "cena_bruto": _col(df, "cena_bruto"),
             "eff_discount_pct": eff_s,
             "_summary_gkey": _col(df, "_summary_gkey"),
         }
@@ -3727,6 +3729,19 @@ def review_links(
                         tot += abs(dv)
                 except Exception:
                     pass
+            return tot
+
+        def dsum_prod(q_series, u_series):
+            tot = _D("0")
+            if q_series is None or u_series is None:
+                return tot
+            for qty, unit in zip(q_series, u_series):
+                try:
+                    q_val = qty if isinstance(qty, _D) else _D(str(qty))
+                    u_val = unit if isinstance(unit, _D) else _D(str(unit))
+                except Exception:
+                    continue
+                tot += q_val * u_val
             return tot
 
         df_b = work.copy()
@@ -3813,11 +3828,43 @@ def review_links(
             if net_total == _D("0") and net_return > _D("0"):
                 net_total = -net_return
 
+            pre_discount_series = first_existing_series(
+                g,
+                [
+                    "Skupna neto pred rabatom",
+                    "neto_pred_rabatom",
+                    "vrednost_pred_rabatom",
+                    "net_pred_rab",
+                ],
+            )
+            pre_discount_total = (
+                dsum(pre_discount_series) if pre_discount_series is not None else _D("0")
+            )
+
+            if pre_discount_total == _D("0"):
+                unit_before_series = first_existing_series(
+                    g,
+                    [
+                        "cena_pred_rabatom",
+                        "cena_bruto",
+                        "net_pred_rab",
+                        "unit_net_before",
+                        "Net. pred rab.",
+                        "Net. pred rab",
+                    ],
+                )
+                pre_discount_total = dsum_prod(qty_series, unit_before_series)
+
+
             amount_value = (
                 dsum(_col(g, "bruto"))
                 if bruto_source_col is not None
                 else amount_total
             )
+
+            if amount_value == _D("0") and pre_discount_total != _D("0"):
+                amount_value = pre_discount_total
+
 
             records.append(
                 {

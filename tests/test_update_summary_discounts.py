@@ -141,3 +141,40 @@ def test_update_summary_preserves_amount_for_full_discount(monkeypatch):
     assert len(records) == 1
     assert records[0]["Znesek"] == Decimal("20.95")
     assert records[0]["Neto po rabatu"] == Decimal("0")
+
+
+def test_update_summary_recovers_amount_from_unit_price(monkeypatch):
+    records_holder: dict[str, list] = {}
+
+    def fake_summary_df_from_records(records):
+        records_holder["records"] = records
+        return pd.DataFrame()
+
+    monkeypatch.setattr(
+        summary_utils, "summary_df_from_records", fake_summary_df_from_records
+    )
+
+    _update_summary, ns = _extract_update_summary()
+
+    df = pd.DataFrame(
+        {
+            "wsm_sifra": ["KAVA"],
+            "wsm_naziv": ["Kava"],
+            "kolicina_norm": [Decimal("2")],
+            "Skupna neto": [Decimal("0")],
+            "Neto po rabatu": [Decimal("0")],
+            "cena_pred_rabatom": [Decimal("20.95")],
+            "rabata_pct": [Decimal("100")],
+            "eff_discount_pct": [Decimal("100")],
+        }
+    )
+
+    ns.update({"df": df, "_render_summary": lambda df: None})
+
+    _update_summary()
+
+    records = records_holder["records"]
+    assert len(records) == 1
+    assert records[0]["Znesek"] == Decimal("41.90")
+    assert records[0]["Neto po rabatu"] == Decimal("0")
+
