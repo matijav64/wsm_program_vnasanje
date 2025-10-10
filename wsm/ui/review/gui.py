@@ -3563,12 +3563,38 @@ def review_links(
             pass
 
         # Priprava polj
-        val_s = first_existing_series(
-            df, ["Neto po rabatu", "Skupna neto", "vrednost", "total_net"]
+        amount_s = first_existing_series(
+            df,
+            [
+                "Skupna neto",
+                "vrednost",
+                "Neto po rabatu",
+                "neto_po_rabatu",
+                "total_net",
+            ],
+            fill_value=Decimal("0"),
         )
-        bruto_s = first_existing_series(
-            df, ["Bruto", "vrednost_bruto", "Skupna bruto", "vrednost"]
+        net_after_s = first_existing_series(
+            df,
+            [
+                "Neto po rabatu",
+                "neto_po_rabatu",
+                "total_net",
+                "Skupna neto",
+                "vrednost",
+            ],
+            fill_value=Decimal("0"),
         )
+        bruto_candidates = [
+            "Bruto",
+            "vrednost_bruto",
+            "Skupna bruto",
+            "vrednost",
+        ]
+        bruto_source_col = next(
+            (col for col in bruto_candidates if col in df.columns), None
+        )
+        bruto_s = first_existing_series(df, bruto_candidates)
         qty_s = first_existing_series(df, ["Količina", "kolicina_norm"])
 
         # Za naziv uporabljamo isto koalescentno kodo
@@ -3593,7 +3619,7 @@ def review_links(
             if _m.any():
                 name_s = name_s.where(~_m, "Ostalo")
 
-        if wsm_s is None or val_s is None:
+        if wsm_s is None or amount_s is None:
             _render_summary(summary_df_from_records([]))
             return
 
@@ -3611,8 +3637,8 @@ def review_links(
             ),
             "wsm_naziv": name_s,
             "znesek": (
-                val_s
-                if val_s is not None
+                amount_s
+                if amount_s is not None
                 else pd.Series([Decimal("0")] * len(df), index=df.index)
             ),
             "kolicina": (
@@ -3625,9 +3651,16 @@ def review_links(
                 if bruto_s is not None
                 else pd.Series([Decimal("0")] * len(df), index=df.index)
             ),
+            "cena_pred_rabatom": _col(df, "cena_pred_rabatom"),
+            "cena_bruto": _col(df, "cena_bruto"),
             "eff_discount_pct": eff_s,
             "_summary_gkey": _col(df, "_summary_gkey"),
         }
+        data["neto_po_rabatu"] = (
+            net_after_s
+            if net_after_s is not None
+            else pd.Series([Decimal("0")] * len(df), index=df.index)
+        )
         if "status" in df.columns:
             data["status"] = _col(df, "status")
 
@@ -3698,6 +3731,19 @@ def review_links(
                     pass
             return tot
 
+        def dsum_prod(q_series, u_series):
+            tot = _D("0")
+            if q_series is None or u_series is None:
+                return tot
+            for qty, unit in zip(q_series, u_series):
+                try:
+                    q_val = qty if isinstance(qty, _D) else _D(str(qty))
+                    u_val = unit if isinstance(unit, _D) else _D(str(unit))
+                except Exception:
+                    continue
+                tot += q_val * u_val
+            return tot
+
         df_b = work.copy()
         groups = list(df_b.groupby("_summary_gkey", dropna=False))
 
@@ -3764,23 +3810,66 @@ def review_links(
             if qty_total == _D("0") and qty_ret > _D("0"):
                 qty_total = -qty_ret
 
-            net_series = _col(g, "znesek")
+            amount_series = _col(g, "znesek")
+            amount_total = dsum(amount_series)
+            amount_return = dsum_neg(amount_series)
+
+            if amount_total == _D("0") and amount_return > _D("0"):
+                amount_total = -amount_return
+
+            net_series = first_existing_series(
+                g,
+                ["neto_po_rabatu", "Neto po rabatu", "total_net", "znesek"],
+                fill_value=_D("0"),
+            )
             net_total = dsum(net_series)
             net_return = dsum_neg(net_series)
 
             if net_total == _D("0") and net_return > _D("0"):
                 net_total = -net_return
 
+            pre_discount_series = first_existing_series(
+                g,
+                [
+                    "Skupna neto pred rabatom",
+                    "neto_pred_rabatom",
+                    "vrednost_pred_rabatom",
+                    "net_pred_rab",
+                ],
+            )
+            pre_discount_total = (
+                dsum(pre_discount_series) if pre_discount_series is not None else _D("0")
+            )
+
+            if pre_discount_total == _D("0"):
+                unit_before_series = first_existing_series(
+                    g,
+                    [
+                        "cena_pred_rabatom",
+                        "cena_bruto",
+                        "net_pred_rab",
+                        "unit_net_before",
+                        "Net. pred rab.",
+                        "Net. pred rab",
+                    ],
+                )
+                pre_discount_total = dsum_prod(qty_series, unit_before_series)
+
+            amount_value = (
+                dsum(_col(g, "bruto"))
+                if bruto_source_col is not None
+                else amount_total
+            )
+
+            if amount_value == _D("0") and pre_discount_total != _D("0"):
+                amount_value = pre_discount_total
+
             records.append(
                 {
                     "WSM šifra": show_code,
                     "WSM Naziv": disp_name if is_booked else "Ostalo",
                     "Količina": qty_total,
-                    "Znesek": (
-                        dsum(_col(g, "bruto"))
-                        if bruto_s is not None
-                        else net_total
-                    ),
+                    "Znesek": amount_value,
                     "Rabat (%)": rab,
                     "Neto po rabatu": net_total,
                 }
