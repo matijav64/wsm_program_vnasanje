@@ -28,7 +28,11 @@ def _extract_update_summary():
         "series_to_dec": lambda s: s.map(Decimal),
         "to_dec": Decimal,
         "summary_df_from_records": summary_utils.summary_df_from_records,
-        "np": __import__('numpy'),
+        "np": __import__("numpy"),
+        "_excluded_codes_upper": rl._excluded_codes_upper,
+        "_booked_mask_from": rl._booked_mask_from,
+        "_norm_wsm_code": rl._norm_wsm_code,
+        "DEC_SMALL_DISCOUNT": rl.DEC_SMALL_DISCOUNT,
     }
     exec(snippet, ns)
     return ns["_update_summary"], ns
