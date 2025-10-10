@@ -24,7 +24,6 @@ def summary_df_from_records(records: Sequence[dict] | None) -> pd.DataFrame:
 
     numeric_cols = [
         "Količina",
-        "Vrnjeno",
         "Znesek",
         "Rabat (%)",
         "Neto po rabatu",

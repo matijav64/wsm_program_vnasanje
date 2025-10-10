@@ -3332,7 +3332,6 @@ def review_links(
 
     numeric_pairs = [
         ("kolicina_norm", "Količina"),
-        ("vrnjeno", "Vrnjeno"),
         ("vrednost", "Znesek"),
         ("rabata_pct", "Rabat (%)"),
         ("neto_po_rabatu", "Neto po rabatu"),
@@ -3571,7 +3570,6 @@ def review_links(
             df, ["Bruto", "vrednost_bruto", "Skupna bruto", "vrednost"]
         )
         qty_s = first_existing_series(df, ["Količina", "kolicina_norm"])
-        ret_s = first_existing_series(df, ["vrnjeno", "Vrnjeno"])
 
         # Za naziv uporabljamo isto koalescentno kodo
         wsm_s = df["_summary_key"]
@@ -3620,11 +3618,6 @@ def review_links(
             "kolicina": (
                 qty_s
                 if qty_s is not None
-                else pd.Series([Decimal("0")] * len(df), index=df.index)
-            ),
-            "vrnjeno": (
-                ret_s
-                if ret_s is not None
                 else pd.Series([Decimal("0")] * len(df), index=df.index)
             ),
             "bruto": (
@@ -3756,26 +3749,40 @@ def review_links(
                 g, ["kolicina_norm", "Količina", "kolicina"]
             )
             qty_total = dsum(qty_series)
-            ret_series = first_existing_series(g, ["vrnjeno", "Vrnjeno"])
+            ret_cols = [c for c in ("vrnjeno", "Vrnjeno") if c in g.columns]
+            ret_series = (
+                first_existing_series(g, ret_cols)
+                if ret_cols
+                else None
+            )
             qty_ret = (
                 dsum(ret_series)
                 if ret_series is not None
                 else dsum_neg(qty_series)
             )
 
+            if qty_total == _D("0") and qty_ret > _D("0"):
+                qty_total = -qty_ret
+
+            net_series = _col(g, "znesek")
+            net_total = dsum(net_series)
+            net_return = dsum_neg(net_series)
+
+            if net_total == _D("0") and net_return > _D("0"):
+                net_total = -net_return
+
             records.append(
                 {
                     "WSM šifra": show_code,
                     "WSM Naziv": disp_name if is_booked else "Ostalo",
                     "Količina": qty_total,
-                    "Vrnjeno": qty_ret,
                     "Znesek": (
                         dsum(_col(g, "bruto"))
                         if bruto_s is not None
-                        else dsum(_col(g, "znesek"))
+                        else net_total
                     ),
                     "Rabat (%)": rab,
-                    "Neto po rabatu": dsum(_col(g, "znesek")),
+                    "Neto po rabatu": net_total,
                 }
             )
 

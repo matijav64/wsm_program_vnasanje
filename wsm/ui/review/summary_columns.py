@@ -9,7 +9,6 @@ SUMMARY_COLUMN_DEFS = [
     ("wsm_sifra", "WSM šifra"),
     ("wsm_naziv", "WSM Naziv"),
     ("kolicina_norm", "Količina"),
-    ("vrnjeno", "Vrnjeno"),
     ("vrednost", "Znesek"),
     ("rabata_pct", "Rabat (%)"),
     ("neto_po_rabatu", "Neto po rabatu"),
