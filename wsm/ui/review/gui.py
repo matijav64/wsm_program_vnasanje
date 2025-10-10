@@ -3855,6 +3855,7 @@ def review_links(
                 )
                 pre_discount_total = dsum_prod(qty_series, unit_before_series)
 
+
             amount_value = (
                 dsum(_col(g, "bruto"))
                 if bruto_source_col is not None
@@ -3863,6 +3864,7 @@ def review_links(
 
             if amount_value == _D("0") and pre_discount_total != _D("0"):
                 amount_value = pre_discount_total
+
 
             records.append(
                 {

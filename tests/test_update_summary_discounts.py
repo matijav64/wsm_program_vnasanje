@@ -177,3 +177,4 @@ def test_update_summary_recovers_amount_from_unit_price(monkeypatch):
     assert len(records) == 1
     assert records[0]["Znesek"] == Decimal("41.90")
     assert records[0]["Neto po rabatu"] == Decimal("0")
+
