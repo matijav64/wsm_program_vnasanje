@@ -2169,6 +2169,8 @@ def parse_eslog_invoice(
     hdr125 = hdr125 if hdr125 != 0 else None
     hdr9 = _first_moa(root, {"9", "388"}, ignore_sg26=True)
     hdr9 = hdr9 if hdr9 != 0 else None
+    hdr_net = _first_moa(root, {Moa.HEADER_NET.value, "79", "389"}, ignore_sg26=True)
+    hdr_net = hdr_net if hdr_net != 0 else None
 
     hdr260_present = False
     for moa in root.findall(".//e:S_MOA", NS) + root.findall(".//S_MOA"):
@@ -2280,25 +2282,43 @@ def parse_eslog_invoice(
             ln.get("carried_doc_disc", Decimal("0")),
         )
 
+    gross_before_doc = _dec2(sum_line_net + tax_total)
+    header_net_for_doc = hdr_net if hdr_net is not None else hdr125
+    header_totals_match = (
+        header_net_for_doc is not None
+        and hdr9 is not None
+        and -TOL <= (sum_line_net - header_net_for_doc) <= TOL
+        and -TOL <= (gross_before_doc - hdr9) <= TOL
+    )
+
     # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
     discount_set = set(discount_codes or DEFAULT_DOC_DISCOUNT_CODES)
-    net_after_doc, doc_allow_header, doc_charge_total = (
-        _apply_doc_allowances_sequential(
-            sum_line_net,
-            root,
-            discount_codes=discount_set,
-            charge_codes=set(DEFAULT_DOC_CHARGE_CODES),
+    if header_totals_match:
+        net_after_doc = sum_line_net
+        doc_allow_header = Decimal("0")
+        doc_charge_total = Decimal("0")
+        doc_discount_from_lines = Decimal("0")
+    else:
+        net_after_doc, doc_allow_header, doc_charge_total = (
+            _apply_doc_allowances_sequential(
+                sum_line_net,
+                root,
+                discount_codes=discount_set,
+                charge_codes=set(DEFAULT_DOC_CHARGE_CODES),
+            )
         )
-    )
-    doc_allow_total = doc_allow_header + doc_discount_from_lines
-    if doc_allow_total == 0:
-        extra_doc_allow = sum_moa(
-            root, list(discount_set), doc_level_only=True, tax_amount=None
-        )
-        if extra_doc_allow != 0:
-            # Header-level MOA discounts without explicit S_ALC should reduce
-            # the net amount, so treat the detected value as an allowance.
-            doc_allow_total = -extra_doc_allow
+    if header_totals_match:
+        doc_allow_total = Decimal("0")
+    else:
+        doc_allow_total = doc_allow_header + doc_discount_from_lines
+        if doc_allow_total == 0:
+            extra_doc_allow = sum_moa(
+                root, list(discount_set), doc_level_only=True, tax_amount=None
+            )
+            if extra_doc_allow != 0:
+                # Header-level MOA discounts without explicit S_ALC should reduce
+                # the net amount, so treat the detected value as an allowance.
+                doc_allow_total = -extra_doc_allow
 
     doc_adjust_total = doc_allow_total + doc_charge_total
 
