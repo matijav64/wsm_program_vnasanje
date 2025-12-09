@@ -878,13 +878,16 @@ def _apply_doc_allowances_sequential(
     header_node: LET._Element,
     *,
     discount_codes: set[str] | None = None,
+    charge_codes: set[str] | None = None,
 ) -> tuple[Decimal, Decimal, Decimal]:
     """Apply document-level allowances/charges sequentially."""
     base = sum_line_net
     run = base
     allow_total = Decimal("0")
     charge_total = Decimal("0")
-    codes = discount_codes or DOC_DISCOUNT_MOA
+    codes = set(discount_codes or DOC_DISCOUNT_MOA) | set(
+        charge_codes or DEFAULT_DOC_CHARGE_CODES
+    )
     for sg in header_node.findall(".//e:G_SG50", NS) + header_node.findall(
         ".//G_SG50"
     ):
@@ -897,7 +900,7 @@ def _apply_doc_allowances_sequential(
                 in_summary = True
                 break
             ancestor = ancestor.getparent()
-        if in_summary and _sum_moa(sg, DOC_DISCOUNT_MOA, deep=False) == 0:
+        if in_summary and _sum_moa(sg, codes, deep=False) == 0:
             continue
         alc = sg.find("./e:S_ALC/e:D_5463", NS)
         if alc is None:
@@ -1145,6 +1148,7 @@ def sum_moa(
     codes: List[str],
     *,
     tax_amount: Decimal | None = None,
+    doc_level_only: bool = False,
 ) -> Decimal:
     """Return the sum of MOA amounts for the given codes.
 
@@ -1166,6 +1170,9 @@ def sum_moa(
         skip = False
         while ancestor is not None:
             if ancestor.tag.split("}")[-1] == "G_SG52":
+                skip = True
+                break
+            if doc_level_only and ancestor.tag.split("}")[-1] == "G_SG26":
                 skip = True
                 break
             ancestor = ancestor.getparent()
@@ -1527,6 +1534,10 @@ def _line_net(sg26: LET._Element) -> Decimal:
         if not has_moa204:
             net -= _line_pct_discount(sg26)
         return _dec2(net)
+
+    fallback_price = _line_gross(sg26)
+    if fallback_price != 0:
+        return _dec2(fallback_price)
 
     return _line_amount_after_allowances(sg26)
 
@@ -1939,6 +1950,7 @@ def parse_eslog_invoice(
             add_doc += net_before
             tax_amount = Decimal("0")
 
+        item["_pre_doc_net"] = net_amount
         item["ddv"] = tax_amount
 
         if (
@@ -2180,7 +2192,7 @@ def parse_eslog_invoice(
         base_net: Decimal, doc_disc: Decimal, by_rate: dict[Decimal, Decimal]
     ) -> Decimal:
         net_after_doc, doc_allow_header, _ = _apply_doc_allowances_sequential(
-            base_net, root
+            base_net, root, charge_codes=set(DEFAULT_DOC_CHARGE_CODES)
         )
         net_t = net_after_doc + doc_disc
         doc_allow_total = doc_allow_header + doc_disc
@@ -2233,6 +2245,7 @@ def parse_eslog_invoice(
                 rate = it.get("ddv_stopnja", Decimal("0"))
                 it["cena_netto"] = base
                 it["vrednost"] = base
+                it["_pre_doc_net"] = base
                 it["rabata"] = Decimal("0")
                 it["rabata_pct"] = Decimal("0.00")
                 it["ddv"] = calculate_vat(base, rate)
@@ -2267,20 +2280,68 @@ def parse_eslog_invoice(
             ln.get("carried_doc_disc", Decimal("0")),
         )
 
-    for it in items:
-        it.pop("_idx", None)
-        it.pop("_base203", None)
-        it.pop("_net_std", None)
-
     # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
     discount_set = set(discount_codes or DEFAULT_DOC_DISCOUNT_CODES)
     net_after_doc, doc_allow_header, doc_charge_total = (
         _apply_doc_allowances_sequential(
-            sum_line_net, root, discount_codes=discount_set
+            sum_line_net,
+            root,
+            discount_codes=discount_set,
+            charge_codes=set(DEFAULT_DOC_CHARGE_CODES),
         )
     )
     doc_allow_total = doc_allow_header + doc_discount_from_lines
-    net_total = net_after_doc + doc_discount_from_lines
+    if doc_allow_total == 0:
+        extra_doc_allow = sum_moa(
+            root, list(discount_set), doc_level_only=True, tax_amount=None
+        )
+        if extra_doc_allow != 0:
+            # Header-level MOA discounts without explicit S_ALC should reduce
+            # the net amount, so treat the detected value as an allowance.
+            doc_allow_total = -extra_doc_allow
+
+    doc_adjust_total = doc_allow_total + doc_charge_total
+
+    line_indices = [idx for idx, it in enumerate(items) if "_pre_doc_net" in it]
+    base_total = sum((items[idx]["_pre_doc_net"] for idx in line_indices), Decimal("0"))
+
+    allocations: dict[int, Decimal] = {}
+    if base_total != 0 and doc_adjust_total != 0 and line_indices:
+        running = Decimal("0")
+        for idx in line_indices:
+            share = items[idx]["_pre_doc_net"] / base_total
+            alloc = _dec2(doc_adjust_total * share)
+            allocations[idx] = alloc
+            running += alloc
+
+        remainder = _dec2(doc_adjust_total - running)
+        if remainder != 0:
+            idx_biggest = max(line_indices, key=lambda i: abs(items[i]["_pre_doc_net"]))
+            allocations[idx_biggest] = allocations.get(idx_biggest, Decimal("0")) + remainder
+
+    net_total = Decimal("0")
+    tax_total = Decimal("0")
+    lines_by_rate = {}
+    for idx, it in enumerate(items):
+        if "_pre_doc_net" not in it:
+            continue
+        alloc = allocations.get(idx, Decimal("0"))
+        if alloc != 0:
+            it["doc_discount_alloc"] = alloc
+        new_net = _dec2(it["vrednost"] + alloc)
+        it["vrednost"] = new_net
+        qty = it.get("kolicina", Decimal("0"))
+        if qty:
+            it["cena_netto"] = (new_net / qty).quantize(DEC4, rounding=ROUND_HALF_UP)
+
+        rate = it.get("ddv_stopnja", Decimal("0"))
+        vat_val = calculate_vat(new_net, rate) if rate else Decimal("0")
+        it["ddv"] = vat_val
+
+        net_total = (net_total + new_net).quantize(DEC2, ROUND_HALF_UP)
+        tax_total = (tax_total + vat_val).quantize(DEC2, ROUND_HALF_UP)
+        if rate:
+            lines_by_rate[rate] = lines_by_rate.get(rate, Decimal("0")) + new_net
 
     if doc_allow_total != 0:
         items.append(
@@ -2317,17 +2378,25 @@ def parse_eslog_invoice(
         )
 
     header_vat = extract_total_tax(root)
-    sum_tax_124 = (
-        header_vat
-        if header_vat != 0
-        else (tax_total if tax_total != 0 else None)
-    )
-    vat_total = _vat_total_after_doc(
-        sum_tax_124, lines_by_rate, -doc_allow_total
-    )
+    vat_total = tax_total
+    if header_vat != 0:
+        sum_vat = _dec2(tax_total)
+        diff_vat = header_vat - sum_vat
+        if diff_vat != 0 and line_indices:
+            idx_biggest_vat = max(
+                line_indices, key=lambda i: abs(items[i].get("ddv", Decimal("0")))
+            )
+            items[idx_biggest_vat]["ddv"] = _dec2(
+                items[idx_biggest_vat].get("ddv", Decimal("0")) + diff_vat
+            )
+            tax_total = _dec2(
+                sum(items[i].get("ddv", Decimal("0")) for i in line_indices)
+            )
+        vat_total = header_vat
 
     net_total = _dec2(net_total)
     gross_calc = (net_total + vat_total).quantize(DEC2, ROUND_HALF_UP)
+    gross_attr = gross_calc
     header_gross = _first_moa(root, {"9", "388"}, ignore_sg26=True)
     diff_gross = Decimal("0")
     ok = True
@@ -2354,6 +2423,10 @@ def parse_eslog_invoice(
         vat_total = header_vat
     elif header_gross != 0:
         vat_total = _dec2(header_gross - net_total)
+
+    if hdr125 in (None, Decimal("0")) and header_gross != 0 and header_vat != 0:
+        net_total = _dec2(header_gross - header_vat)
+        gross_calc = (net_total + vat_total).quantize(DEC2, ROUND_HALF_UP)
     if header_gross != 0:
         gross_calc = header_gross
 
@@ -2372,10 +2445,16 @@ def parse_eslog_invoice(
     else:
         final_diff = Decimal("0")
 
+    for it in items:
+        it.pop("_idx", None)
+        it.pop("_base203", None)
+        it.pop("_net_std", None)
+        it.pop("_pre_doc_net", None)
+
     df = pd.DataFrame(items)
     df.attrs["vat_mismatch"] = vat_mismatch
     df.attrs["info_discounts"] = _INFO_DISCOUNTS
-    df.attrs["gross_calc"] = gross_calc
+    df.attrs["gross_calc"] = gross_attr
     df.attrs["gross_mismatch"] = header_gross != 0 and final_diff > DEC2
     if "sifra_dobavitelja" in df.columns and not df["sifra_dobavitelja"].any():
         df["sifra_dobavitelja"] = supplier_code
@@ -2387,9 +2466,12 @@ def parse_eslog_invoice(
     return df, ok
 
 
+INFO_LINE_CODES = {"_DOC_", "DOC_CHG"}
+
+
 def build_invoice_model(
     tree: LET._Element | LET._ElementTree,
-) -> SimpleNamespace:
+ ) -> SimpleNamespace:
     """Construct and return basic invoice totals model.
 
     The helper serializes ``tree`` and feeds it through
@@ -2405,10 +2487,17 @@ def build_invoice_model(
     buf = io.BytesIO(LET.tostring(root))
     df, ok = parse_eslog_invoice(buf)
 
+    if "sifra_dobavitelja" in df.columns:
+        info_mask = df["sifra_dobavitelja"].isin(INFO_LINE_CODES)
+        df_main = df[~info_mask]
+    else:
+        df_main = df
     net_total = (
-        df["vrednost"].sum() if "vrednost" in df.columns else Decimal("0")
+        df_main["vrednost"].sum() if "vrednost" in df_main.columns else Decimal("0")
     )
-    vat_total = df["ddv"].sum() if "ddv" in df.columns else Decimal("0")
+    vat_total = (
+        df_main["ddv"].sum() if "ddv" in df_main.columns else Decimal("0")
+    )
     gross_total = net_total + vat_total
     mismatch = (not ok) or bool(df.attrs.get("vat_mismatch", False))
 
@@ -2438,12 +2527,19 @@ def parse_invoice_totals(
     buf = io.BytesIO(LET.tostring(xml_root))
     df, _ = parse_eslog_invoice(buf)
 
+    if "sifra_dobavitelja" in df.columns:
+        info_mask = df["sifra_dobavitelja"].isin(INFO_LINE_CODES)
+        df_main = df[~info_mask]
+    else:
+        df_main = df
     net_total = (
-        _dec2(df["vrednost"].sum())
-        if "vrednost" in df.columns
+        _dec2(df_main["vrednost"].sum())
+        if "vrednost" in df_main.columns
         else Decimal("0")
     )
-    vat_total = _dec2(df["ddv"].sum()) if "ddv" in df.columns else Decimal("0")
+    vat_total = (
+        _dec2(df_main["ddv"].sum()) if "ddv" in df_main.columns else Decimal("0")
+    )
 
     header_net = extract_header_net(xml_root)
     header_vat = extract_total_tax(xml_root)
