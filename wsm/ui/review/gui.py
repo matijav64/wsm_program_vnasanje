@@ -3286,7 +3286,7 @@ def review_links(
 
     # Povzetek skupnih neto cen po WSM šifrah
     summary_frame = tk.Frame(root)
-    summary_frame.pack(fill="both", expand=True, pady=10)
+    summary_frame.pack(fill="x", pady=(6, 2))
     tk.Label(
         summary_frame,
         text="Povzetek po WSM šifrah",
@@ -4146,7 +4146,7 @@ def review_links(
     entry_frame.pack(fill="x", padx=8)
 
     entry = ttk.Entry(entry_frame, width=120)
-    lb = tk.Listbox(entry_frame, height=6)
+    lb = tk.Listbox(entry_frame, height=10)
     parent = entry.master
     try:
         parent.columnconfigure(0, weight=1)
