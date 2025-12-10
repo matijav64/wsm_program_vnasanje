@@ -74,6 +74,7 @@ decimal.getcontext().prec = 28  # Python's default precision
 DEC2 = Decimal("0.01")
 DEC4 = Decimal("0.0001")
 TOL = Decimal("0.01")
+NET_TOL = Decimal("0.05")
 
 
 def _first_text(root, xpaths: list[str]) -> str | None:
@@ -1269,17 +1270,46 @@ def _line_discount(sg26: LET._Element) -> Decimal:
     if _INFO_DISCOUNTS:
         return Decimal("0")
     total = Decimal("0")
-    for amt_el in sg26.xpath(
-        "./e:S_MOA[e:C_C516/e:D_5025='204']/e:C_C516/e:D_5004",
-        namespaces=NS,
-    ) + sg26.xpath("./S_MOA[C_C516/D_5025='204']/C_C516/D_5004"):
+    if hasattr(sg26, "xpath"):
+        nodes = sg26.xpath(
+            "./e:S_MOA[e:C_C516/e:D_5025='204']/e:C_C516/e:D_5004",
+            namespaces=NS,
+        ) + sg26.xpath("./S_MOA[C_C516/D_5025='204']/C_C516/D_5004")
+    else:
+        nodes = []
+        for moa in sg26.findall("./e:S_MOA", NS) + sg26.findall("./S_MOA"):
+            code_el = moa.find("./e:C_C516/e:D_5025", NS) or moa.find(
+                "./C_C516/D_5025"
+            )
+            if _text(code_el) != "204":
+                continue
+            val_el = moa.find("./e:C_C516/e:D_5004", NS) or moa.find(
+                "./C_C516/D_5004"
+            )
+            if val_el is not None:
+                nodes.append(val_el)
+    for amt_el in nodes:
         total += _decimal(amt_el).quantize(DEC2, ROUND_HALF_UP)
 
-    pct_nodes = sg26.xpath(
-        "./e:S_PCD[e:C_C501/e:D_5245='1']/e:C_C501/e:D_5482", namespaces=NS
-    )
-    if not pct_nodes:
-        pct_nodes = sg26.xpath("./S_PCD[C_C501/D_5245='1']/C_C501/D_5482")
+    if hasattr(sg26, "xpath"):
+        pct_nodes = sg26.xpath(
+            "./e:S_PCD[e:C_C501/e:D_5245='1']/e:C_C501/e:D_5482", namespaces=NS
+        )
+        if not pct_nodes:
+            pct_nodes = sg26.xpath("./S_PCD[C_C501/D_5245='1']/C_C501/D_5482")
+    else:
+        pct_nodes = []
+        for pcd in sg26.findall("./e:S_PCD", NS) + sg26.findall("./S_PCD"):
+            qual_el = pcd.find("./e:C_C501/e:D_5245", NS) or pcd.find(
+                "./C_C501/D_5245"
+            )
+            if _text(qual_el) != "1":
+                continue
+            val_el = pcd.find("./e:C_C501/e:D_5482", NS) or pcd.find(
+                "./C_C501/D_5482"
+            )
+            if val_el is not None:
+                pct_nodes.append(val_el)
     pct = _decimal(pct_nodes[0] if pct_nodes else None)
     if pct != 0:
         base_nodes = sg26.xpath(
@@ -1904,6 +1934,9 @@ def parse_eslog_invoice(
 
         net_amount_moa: Decimal | None = None
         net_amount_code = ""
+        net_203 = base203 if base203 != 0 else None
+        net_125_val = _first_moa(sg26, {"125"})
+        net_125 = _dec2(net_125_val) if net_125_val != 0 else None
         for candidate in ("125", Moa.NET.value):
             val = _first_moa(sg26, {candidate})
             if val != 0:
@@ -1952,6 +1985,10 @@ def parse_eslog_invoice(
 
         item["_pre_doc_net"] = net_amount
         item["ddv"] = tax_amount
+        if net_203 is not None:
+            item["net_203"] = net_203
+        if net_125 is not None:
+            item["net_125"] = net_125
 
         if (
             net_amount_moa is not None
@@ -2162,8 +2199,84 @@ def parse_eslog_invoice(
                 )
 
     # ───────── POST LINE CHECK ─────────
-    sum203 = _dec2(sum((b for _, b, _ in line_items), Decimal("0")))
-    sum_line_net_std = _dec2(sum((n for _, _, n in line_items), Decimal("0")))
+    doc_net: Decimal | None = None
+    hdr389 = _first_moa(root, {"389"}, ignore_sg26=True)
+    if hdr389 != 0:
+        doc_net = _dec2(hdr389)
+    else:
+        hdr79 = _first_moa(root, {"79"}, ignore_sg26=True)
+        if hdr79 != 0:
+            doc_net = _dec2(hdr79)
+
+    sum_203_vals = [it["net_203"] for it in items if "net_203" in it]
+    sum_125_vals = [it["net_125"] for it in items if "net_125" in it]
+    sum203 = _dec2(sum(sum_203_vals, Decimal("0"))) if sum_203_vals else None
+    sum_125 = _dec2(sum(sum_125_vals, Decimal("0"))) if sum_125_vals else None
+
+    use_203 = False
+    use_125 = False
+    if sum203 is not None and doc_net is not None and abs(sum203 - doc_net) <= NET_TOL:
+        use_203 = True
+    elif sum_125 is not None and doc_net is not None and abs(sum_125 - doc_net) <= NET_TOL:
+        use_125 = True
+    elif sum203 is not None and sum_125 is not None and abs(sum203 - sum_125) <= NET_TOL:
+        use_203 = True
+    elif sum203 is not None:
+        use_203 = True
+    elif sum_125 is not None:
+        use_125 = True
+
+    for it in items:
+        if "_pre_doc_net" not in it:
+            continue
+        chosen_net: Decimal = Decimal("0")
+        if use_203 and "net_203" in it:
+            chosen_net = it["net_203"]
+        elif use_125 and "net_125" in it:
+            chosen_net = it["net_125"]
+        elif "net_203" in it:
+            chosen_net = it["net_203"]
+        elif "net_125" in it:
+            chosen_net = it["net_125"]
+        else:
+            chosen_net = it.get("_pre_doc_net", Decimal("0"))
+
+        it["net"] = chosen_net
+        it["_pre_doc_net"] = chosen_net
+        it["_net_std"] = chosen_net
+        it["vrednost"] = chosen_net
+        qty = it.get("kolicina", Decimal("0"))
+        if qty:
+            it["cena_netto"] = (chosen_net / qty).quantize(
+                DEC4, rounding=ROUND_HALF_UP
+            )
+        idx = it.get("_idx")
+        if idx is not None:
+            for ln in line_logs:
+                if ln.get("idx") == idx:
+                    ln["net_std"] = chosen_net
+                    break
+
+    net_total = Decimal("0")
+    tax_total = Decimal("0")
+    lines_by_rate = {}
+    for it in items:
+        if "_pre_doc_net" not in it:
+            continue
+        net_total = (net_total + it["_pre_doc_net"]).quantize(DEC2, ROUND_HALF_UP)
+        tax_total = (tax_total + it.get("ddv", Decimal("0"))).quantize(
+            DEC2, ROUND_HALF_UP
+        )
+        rate = it.get("ddv_stopnja", Decimal("0"))
+        if rate:
+            lines_by_rate[rate] = lines_by_rate.get(rate, Decimal("0")) + it[
+                "_pre_doc_net"
+            ]
+
+    sum203 = _dec2(sum(sum_203_vals, Decimal("0"))) if sum_203_vals else Decimal("0")
+    sum_line_net_std = _dec2(
+        sum((it["_net_std"] for it in items if "_net_std" in it), Decimal("0"))
+    )
 
     hdr125 = _first_moa(root, {"125"}, ignore_sg26=True)
     hdr125 = hdr125 if hdr125 != 0 else None
@@ -2171,6 +2284,11 @@ def parse_eslog_invoice(
     hdr9 = hdr9 if hdr9 != 0 else None
     hdr_net = _first_moa(root, {Moa.HEADER_NET.value, "79", "389"}, ignore_sg26=True)
     hdr_net = hdr_net if hdr_net != 0 else None
+
+    sum_lines_net = _dec2(
+        sum((it["net"] for it in items if "net" in it and "_pre_doc_net" in it), Decimal("0"))
+    )
+    net_mismatch = False
 
     hdr260_present = False
     for moa in root.findall(".//e:S_MOA", NS) + root.findall(".//S_MOA"):
@@ -2248,6 +2366,7 @@ def parse_eslog_invoice(
                 it["cena_netto"] = base
                 it["vrednost"] = base
                 it["_pre_doc_net"] = base
+                it["net"] = base
                 it["rabata"] = Decimal("0")
                 it["rabata_pct"] = Decimal("0.00")
                 it["ddv"] = calculate_vat(base, rate)
@@ -2272,7 +2391,12 @@ def parse_eslog_invoice(
         )
 
     gross_before_doc = _dec2(sum_line_net + tax_total)
-    header_net_for_doc = hdr_net if hdr_net is not None else hdr125
+    if hdr_net is None:
+        header_net_for_doc = sum203 if hdr125 is None else hdr125
+    else:
+        header_net_for_doc = hdr_net
+    if header_net_for_doc is not None:
+        net_mismatch = abs(header_net_for_doc - sum_lines_net) > TOL
     header_totals_match = (
         header_net_for_doc is not None
         and hdr9 is not None
@@ -2339,6 +2463,7 @@ def parse_eslog_invoice(
             it["doc_discount_alloc"] = alloc
         new_net = _dec2(it["vrednost"] + alloc)
         it["vrednost"] = new_net
+        it["net"] = new_net
         qty = it.get("kolicina", Decimal("0"))
         if qty:
             it["cena_netto"] = (new_net / qty).quantize(DEC4, rounding=ROUND_HALF_UP)
@@ -2439,6 +2564,9 @@ def parse_eslog_invoice(
     if header_gross != 0:
         gross_calc = header_gross
 
+    if net_mismatch:
+        ok = False
+
     final_diff = diff_gross
     if header_gross != 0:
         gross_check = (net_total + vat_total).quantize(DEC2, ROUND_HALF_UP)
@@ -2454,7 +2582,11 @@ def parse_eslog_invoice(
     else:
         final_diff = Decimal("0")
 
+    if net_mismatch:
+        ok = False
+
     mode_result = "error" if not ok else mode
+    _INFO_DISCOUNTS = mode_result == "info"
 
     # Debug: remove once sanity checks pass
     log.info(
@@ -2475,6 +2607,7 @@ def parse_eslog_invoice(
 
     df = pd.DataFrame(items)
     df.attrs["vat_mismatch"] = vat_mismatch
+    df.attrs["net_mismatch"] = net_mismatch
     df.attrs["info_discounts"] = _INFO_DISCOUNTS
     df.attrs["gross_calc"] = gross_attr
     df.attrs["gross_mismatch"] = header_gross != 0 and final_diff > DEC2
