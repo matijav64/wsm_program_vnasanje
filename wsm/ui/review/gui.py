@@ -9,6 +9,7 @@ from collections.abc import Callable
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Tuple, Optional
+from types import SimpleNamespace
 
 import pandas as pd
 import tkinter as tk
@@ -1250,6 +1251,9 @@ def review_links(
         AUTO_APPLY_LINKS,
         "BODO uveljavljene" if AUTO_APPLY_LINKS else "NE bodo",
     )
+
+    eslog_totals = SimpleNamespace(mode=df.attrs.get("mode"))
+    log.info("ESLOG totals mode: %s", eslog_totals.mode)
 
     df = df.copy()
     df = df.loc[:, ~df.columns.duplicated()].copy()
@@ -4080,14 +4084,19 @@ def review_links(
         net = net_total
         vat = vat_val
         gross = calc_total
+        header_ok = (
+            eslog_totals.mode != "error"
+            if eslog_totals.mode is not None
+            else difference <= tolerance
+        )
         try:
             if indicator_label is None or not indicator_label.winfo_exists():
                 return
             indicator_label.config(
-                text="✓" if difference <= tolerance else "✗",
+                text="✓" if header_ok else "✗",
                 style=(
                     "Indicator.Green.TLabel"
-                    if difference <= tolerance
+                    if header_ok
                     else "Indicator.Red.TLabel"
                 ),
             )

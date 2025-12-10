@@ -2259,17 +2259,6 @@ def parse_eslog_invoice(
 
     global _INFO_DISCOUNTS
     _INFO_DISCOUNTS = mode == "info"
-    # Debug: remove once sanity checks pass
-    log.info(
-        "hdr125=%s, sum203=%s, sum_line_net_std=%s, hdr260_present=%s, "
-        "mode=%s",
-        _dec2(hdr125) if hdr125 is not None else None,
-        sum203,
-        sum_line_net_std,
-        hdr260_present,
-        mode,
-    )
-
     for ln in line_logs:
         line_net_used = ln["moa203"] if _INFO_DISCOUNTS else ln["net_std"]
         log.debug(
@@ -2465,6 +2454,19 @@ def parse_eslog_invoice(
     else:
         final_diff = Decimal("0")
 
+    mode_result = "error" if not ok else mode
+
+    # Debug: remove once sanity checks pass
+    log.info(
+        "hdr125=%s, sum203=%s, sum_line_net_std=%s, hdr260_present=%s, "
+        "mode_result=%s",
+        _dec2(hdr125) if hdr125 is not None else None,
+        sum203,
+        sum_line_net_std,
+        hdr260_present,
+        mode_result,
+    )
+
     for it in items:
         it.pop("_idx", None)
         it.pop("_base203", None)
@@ -2476,6 +2478,7 @@ def parse_eslog_invoice(
     df.attrs["info_discounts"] = _INFO_DISCOUNTS
     df.attrs["gross_calc"] = gross_attr
     df.attrs["gross_mismatch"] = header_gross != 0 and final_diff > DEC2
+    df.attrs["mode"] = mode_result
     if "sifra_dobavitelja" in df.columns and not df["sifra_dobavitelja"].any():
         df["sifra_dobavitelja"] = supplier_code
     if not df.empty:
