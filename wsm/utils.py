@@ -365,15 +365,16 @@ def povezi_z_wsm(
     supplier_code: str | None = None,
 ) -> pd.DataFrame:
     """
-    Poskusi vsaki vrstici v ``df_items`` pripisati WSM kodo:
-      1) če obstaja ročna povezava → status ``POVEZANO``
-      2) če se v nazivu pojavi ključna beseda → status ``KLJUCNA_BES``
-      3) sicer status ``NaN`` (prazno)
-    Nove zadetke po ključnih besedah doda v datoteko povezav.
+    Poveže vrstice v ``df_items`` samo z ročno potrjenimi povezavami.
 
-    ``keywords_path`` je neobvezen. Če ni podan, funkcija prebere
-    okoljsko spremenljivko ``WSM_KEYWORDS_FILE`` in privzeto uporabi
-    ``kljucne_besede_wsm_kode.xlsx``.
+    Za razliko od prejšnje različice funkcija ne ustvarja več novih predlogov
+    na podlagi ključnih besed ali ponavljajočih se vzorcev.  Rezultat vsebuje
+    zgolj obstoječe povezave (status ``POVEZANO``); vse ostale vrstice ostanejo
+    nepovezane.
+
+    Parametri ``keywords_path`` in ``sifre_path`` so ohranjeni zaradi
+    združljivosti z obstoječimi klici, vendar se ključne besede pri povezovanju
+    ne uporabijo več.
     """
     if keywords_path is None:
         keywords_path = os.getenv(
@@ -381,16 +382,25 @@ def povezi_z_wsm(
         )
     if links_dir is None or supplier_code is None:
         raise TypeError("links_dir and supplier_code must be provided")
-    kw_path = Path(keywords_path)
-    if not kw_path.exists():
-        extract_keywords(links_dir, kw_path)
 
-    _, kw_df, manual_links = load_wsm_data(
-        sifre_path, str(kw_path), links_dir, supplier_code
+    suppliers_file = links_dir
+    sup_map = _load_supplier_map(suppliers_file)
+    supplier_info = sup_map.get(supplier_code, {})
+    supplier_name = (
+        supplier_info.get("ime", supplier_code)
+        if isinstance(supplier_info, dict)
+        else supplier_code
     )
+    vat_id = supplier_info.get("vat") if isinstance(supplier_info, dict) else None
+    safe_id = sanitize_folder_name(vat_id or supplier_name)
 
-    if kw_df.empty:
-        kw_df = extract_keywords(links_dir, kw_path)
+    links_path = links_dir / safe_id / f"{supplier_code}_{safe_id}_povezane.xlsx"
+    if links_path.exists():
+        manual_links = pd.read_excel(links_path, dtype=str)
+    else:
+        manual_links = pd.DataFrame(
+            columns=["sifra_dobavitelja", "naziv", "naziv_ckey", "wsm_sifra"]
+        )
 
     df_items = df_items.copy()
     df_items["naziv_ckey"] = df_items["naziv"].map(_clean)
@@ -404,65 +414,6 @@ def povezi_z_wsm(
     df["status"] = (
         df["wsm_sifra"].notna().map({True: "POVEZANO", False: pd.NA})
     )
-
-    new_links: List[Dict] = []
-    mask = df["status"].isna()
-    if not kw_df.empty:
-        for idx, row in df[mask].iterrows():
-            text = row["naziv"].lower()
-            hit = kw_df[
-                kw_df["keyword"]
-                .str.lower()
-                .apply(
-                    lambda k: bool(
-                        re.search(r"\b%s\b" % re.escape(k.lower()), text)
-                    )
-                )
-            ]
-            if not hit.empty:
-                wsm_code = hit.iloc[0]["wsm_sifra"]
-                df.at[idx, "wsm_sifra"] = wsm_code
-                df.at[idx, "status"] = "KLJUCNA_BES"
-                new_links.append(
-                    {
-                        "sifra_dobavitelja": row["sifra_dobavitelja"],
-                        "naziv": row["naziv"],
-                        "naziv_ckey": row["naziv_ckey"],
-                        "wsm_sifra": wsm_code,
-                    }
-                )
-
-    # če so novosti → posodobi datoteko povezav
-    if new_links:
-        suppliers_file = links_dir
-        sup_map = _load_supplier_map(suppliers_file)
-        supplier_info = sup_map.get(supplier_code, {})
-        supplier_name = (
-            supplier_info.get("ime", supplier_code)
-            if isinstance(supplier_info, dict)
-            else supplier_code
-        )
-        vat_id = (
-            supplier_info.get("vat")
-            if isinstance(supplier_info, dict)
-            else None
-        )
-        safe_id = sanitize_folder_name(vat_id or supplier_name)
-
-        dst = links_dir / safe_id
-        dst.mkdir(parents=True, exist_ok=True)
-        links_path = dst / f"{supplier_code}_{safe_id}_povezane.xlsx"
-
-        manual_links = pd.concat(
-            [manual_links, pd.DataFrame(new_links)], ignore_index=True
-        )
-        manual_links.drop_duplicates(
-            subset=["sifra_dobavitelja", "naziv_ckey"],
-            keep="first",
-            inplace=True,
-        )
-        manual_links.to_excel(links_path, index=False)
-        extract_keywords(links_dir, kw_path)
 
     return df
 

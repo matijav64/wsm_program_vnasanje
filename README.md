@@ -145,15 +145,9 @@ Lahko pa pot do datoteke določite tudi z okoljsko spremenljivko
 do dobaviteljev. GUI in ukazi CLI privzeto upoštevajo ti spremenljivki,
 če argumenti niso podani.
 
-Za datoteko s ključnimi besedami lahko nastavite okoljsko spremenljivko
-`WSM_KEYWORDS_FILE`, ki kaže na `kljucne_besede_wsm_kode.xlsx`. Če ni
-nastavljena, program privzeto bere to datoteko iz trenutne mape.
-
-
-Pri samodejnem povezovanju lahko program iz teh ročno
-shranjenih datotek sam izdela datoteko `kljucne_besede_wsm_kode.xlsx`.
-Če ta datoteka ne obstaja, jo funkcija `povezi_z_wsm`
-samodejno napolni z najpogostejšimi izrazi iz `*_povezane.xlsx`.
+Povezovanje artiklov temelji izključno na ročno potrjenih povezavah v
+datotekah `*_povezane.xlsx`.  Datoteka `kljucne_besede_wsm_kode.xlsx`
+se ne uporablja več za samodejno ustvarjanje novih predlogov knjiženja.
 
 Za artikle, kjer masa na kos ni razvidna iz naziva, preverite slovar
 `WEIGHTS_PER_PIECE` v `wsm/constants.py`. Če naletite na novo kodo s

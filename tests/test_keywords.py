@@ -64,9 +64,9 @@ def test_povezi_z_wsm_autolearn(tmp_path):
     result = povezi_z_wsm(
         df_items, str(sifre_path), str(keywords_path), links_dir, "SUP"
     )
-    assert result.loc[0, "wsm_sifra"] == "100"
-    assert result.loc[0, "status"] == "KLJUCNA_BES"
-    assert keywords_path.exists()
+    assert pd.isna(result.loc[0, "wsm_sifra"])
+    assert pd.isna(result.loc[0, "status"])
+    assert not keywords_path.exists()
 
 
 def test_povezi_z_wsm_reads_env(monkeypatch, tmp_path):
@@ -89,8 +89,8 @@ def test_povezi_z_wsm_reads_env(monkeypatch, tmp_path):
     result = povezi_z_wsm(
         df_items, str(sifre_path), links_dir=links_dir, supplier_code="SUP"
     )
-    assert result.loc[0, "wsm_sifra"] == "100"
-    assert env_path.exists()
+    assert pd.isna(result.loc[0, "wsm_sifra"])
+    assert not env_path.exists()
 
 
 def test_povezi_z_wsm_default_path(monkeypatch, tmp_path):
@@ -112,8 +112,8 @@ def test_povezi_z_wsm_default_path(monkeypatch, tmp_path):
     result = povezi_z_wsm(
         df_items, str(sifre_path), links_dir=links_dir, supplier_code="SUP"
     )
-    assert result.loc[0, "wsm_sifra"] == "100"
-    assert (tmp_path / "kljucne_besede_wsm_kode.xlsx").exists()
+    assert pd.isna(result.loc[0, "wsm_sifra"])
+    assert not (tmp_path / "kljucne_besede_wsm_kode.xlsx").exists()
 
 
 def test_keywords_updated_after_new_links(tmp_path):
@@ -140,13 +140,14 @@ def test_keywords_updated_after_new_links(tmp_path):
         }
     )
 
+    # brez samodejnega učenja ključne besede ostanejo nespremenjene
     povezi_z_wsm(
         df_items, str(sifre_path), str(keywords_path), links_dir, "SUP"
     )
 
     updated_kw = pd.read_excel(keywords_path, dtype=str)
     tokens = updated_kw[updated_kw["wsm_sifra"] == "100"]["keyword"].tolist()
-    assert "zero" in tokens
+    assert "zero" not in tokens
 
 
 def test_keyword_partial_match_not_matched(tmp_path):
