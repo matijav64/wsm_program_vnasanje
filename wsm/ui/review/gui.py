@@ -4114,6 +4114,26 @@ def review_links(
     status_count_label = ttk.Label(total_frame, textvariable=_status_var)
     status_count_label.pack(side="left", padx=5)
 
+    # --- Legenda za ikone neto stanja ---
+    legend_frame = tk.Frame(total_frame)
+    legend_frame.pack(side="right", padx=10)
+
+    legend_label_error = tk.Label(
+        legend_frame,
+        text="✗ – razlika v neto znesku, samodejno ujemanje onemogočeno",
+        font=("Arial", 8),
+        anchor="w",
+    )
+    legend_label_error.pack(anchor="w")
+
+    legend_label_warn = tk.Label(
+        legend_frame,
+        text="⚠ – razlika v neto znesku (verjetno zaokroževanje)",
+        font=("Arial", 8),
+        anchor="w",
+    )
+    legend_label_warn.pack(anchor="w")
+
     def _safe_update_totals():
         if closing or not root.winfo_exists():
             return
