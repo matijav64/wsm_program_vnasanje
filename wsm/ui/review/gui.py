@@ -2490,7 +2490,9 @@ def review_links(
     # 500px is taken by the header, summary and button sections so we convert
     # the remaining space to a row count assuming ~20px per row.
     screen_height = root.winfo_screenheight()
-    tree_height = max(10, (screen_height - 500) // 20)
+    # The invoice lines Treeview easily dominates the window on tall screens, so
+    # cap its height to keep the footer/input area visible.
+    tree_height = min(15, max(10, (screen_height - 500) // 20))
     # Start maximized but keep the window decorations visible
     try:
         root.state("zoomed")
