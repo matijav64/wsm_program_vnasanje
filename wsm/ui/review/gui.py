@@ -1246,11 +1246,21 @@ def review_links(
     log.info("WSM_AUTO_APPLY_LINKS env = %s", os.getenv("WSM_AUTO_APPLY_LINKS"))
     log.info("AUTO_APPLY_LINKS env = %s", os.getenv("AUTO_APPLY_LINKS"))
 
+    net_mismatch = bool(df.attrs.get("net_mismatch"))
+    net_warning = bool(df.attrs.get("net_warning"))
+    auto_apply_links = AUTO_APPLY_LINKS
+    if net_mismatch and auto_apply_links:
+        auto_apply_links = False
+        log.info(
+            "Samodejno ujemanje onemogočeno zaradi net_mismatch iz vhodnega df."
+        )
+
     log.info(
         "AUTO_APPLY_LINKS=%s → shranjene povezave %s.",
-        AUTO_APPLY_LINKS,
-        "BODO uveljavljene" if AUTO_APPLY_LINKS else "NE bodo",
+        auto_apply_links,
+        "BODO uveljavljene" if auto_apply_links else "NE bodo",
     )
+    log.info("net_mismatch=%s, net_warning=%s", net_mismatch, net_warning)
 
     eslog_totals = SimpleNamespace(mode=df.attrs.get("mode"))
     log.info("ESLOG totals mode: %s", eslog_totals.mode)
@@ -1591,16 +1601,16 @@ def review_links(
     )
     df["naziv_ckey"] = df["naziv"].map(_clean)
     globals()["_PENDING_LINKS_DF"] = links_df
-    log.info("Klic _apply_links_to_df with apply_codes=%s", AUTO_APPLY_LINKS)
+    log.info("Klic _apply_links_to_df with apply_codes=%s", auto_apply_links)
     df, auto_upd_cnt = _apply_links_to_df(
-        df, links_df, apply_codes=AUTO_APPLY_LINKS
+        df, links_df, apply_codes=auto_apply_links
     )
     # Shrani trenutno stanje mreže tako, da je na voljo tudi drugim handlerjem,
     # še preden morebitne kasnejše operacije dodatno prilagodijo DataFrame.
     globals()["_CURRENT_GRID_DF"] = df
-    log.info("AUTO_APPLY_LINKS=%s", AUTO_APPLY_LINKS)
+    log.info("AUTO_APPLY_LINKS=%s", auto_apply_links)
     saved_status = df["status"].copy() if "status" in df.columns else None
-    if AUTO_APPLY_LINKS:
+    if auto_apply_links:
         try:
             df = _fill_names_from_catalog(df, wsm_df)
             df = _normalize_wsm_display_columns(df)
@@ -1616,7 +1626,7 @@ def review_links(
                 df["status"] = saved_status
     else:
         log.info(
-            "AUTO_APPLY_LINKS=0 → shranjene povezave NE bodo "
+            "AUTO_APPLY_LINKS=0 ali onemogočeno → shranjene povezave NE bodo "
             "uveljavljene samodejno.",
         )
 
@@ -1635,7 +1645,7 @@ def review_links(
     if status_before_normalize is not None:
         df["status"] = status_before_normalize
 
-    if not AUTO_APPLY_LINKS:
+    if not auto_apply_links:
         if "status" not in df.columns:
             df["status"] = ""
         mask_not_booked = df["status"].astype(str).str.upper().ne("POVEZANO")
@@ -2460,11 +2470,21 @@ def review_links(
     root.supplier_code = supplier_code
     root.service_date = service_date
 
+    if net_mismatch:
+        try:
+            messagebox.showerror(
+                "Neto znesek",
+                "Razlika v neto znesku – samodejno ujemanje je onemogočeno.",
+            )
+        except Exception as exc:
+            log.warning("Prikaz opozorila o neto razliki ni uspel: %s", exc)
+
     closing = False
     _after_totals_id: str | None = None
     bindings: list[tuple[tk.Misc, str]] = []
     price_tip: tk.Toplevel | None = None
     last_warn_item: str | None = None
+    status_tip: tk.Toplevel | None = None
 
     # Determine how many rows can fit based on the screen height. Roughly
     # 500px is taken by the header, summary and button sections so we convert
@@ -4023,6 +4043,69 @@ def review_links(
     style = ttk.Style()
     style.configure("Indicator.Green.TLabel", foreground="green")
     style.configure("Indicator.Red.TLabel", foreground="red")
+
+    def _hide_status_tip(_=None):
+        nonlocal status_tip
+        if status_tip is not None:
+            try:
+                status_tip.destroy()
+            except Exception:
+                pass
+            status_tip = None
+
+    def _show_status_tip(widget: tk.Widget, text: str | None) -> None:
+        nonlocal status_tip
+        _hide_status_tip()
+        if not text:
+            return
+        try:
+            status_tip = tk.Toplevel(root)
+            status_tip.wm_overrideredirect(True)
+            tk.Label(
+                status_tip,
+                text=text,
+                background="#ffe6b3",
+                relief="solid",
+                borderwidth=1,
+            ).pack()
+            status_tip.geometry(
+                f"+{widget.winfo_rootx()}+{widget.winfo_rooty()+widget.winfo_height()}"
+            )
+        except Exception as exc:
+            log.debug("Prikaz tooltipa ni uspel: %s", exc)
+            _hide_status_tip()
+
+    def _bind_status_tooltip(widget: tk.Widget, text: str | None) -> None:
+        if widget is None:
+            return
+        widget.bind(
+            "<Enter>",
+            lambda _e, w=widget, t=text: _show_status_tip(w, t),
+        )
+        widget.bind("<Leave>", _hide_status_tip)
+
+    if net_mismatch:
+        net_error_label = ttk.Label(
+            total_frame, text="✗", style="Indicator.Red.TLabel"
+        )
+        net_error_label.pack(side="left", padx=5)
+        _bind_status_tooltip(
+            net_error_label,
+            "Razlika v neto znesku – samodejno ujemanje je onemogočeno.",
+        )
+
+    if net_warning:
+        net_warning_label = ttk.Label(
+            total_frame,
+            text="⚠",
+            foreground="#d48c00",
+        )
+        net_warning_label.pack(side="left", padx=5)
+        _bind_status_tooltip(
+            net_warning_label,
+            "Razlika v neto znesku (verjetno zaokroževanje)",
+        )
+
     indicator_label = ttk.Label(
         total_frame, text="", style="Indicator.Red.TLabel"
     )
@@ -4293,14 +4376,14 @@ def review_links(
     unit_options = ["kos", "kg", "L"]
 
     # Če smo povezave auto-uveljavili že ob odpiranju, zdaj osveži še grid.
-    if AUTO_APPLY_LINKS:
+    if auto_apply_links:
         try:
             root.after(0, lambda: _apply_saved_links_now(_silent=True))
         except Exception as e:
             log.debug("AUTO refresh WSM stolpcev v gridu preskočen: %s", e)
 
     def _cleanup():
-        nonlocal closing, price_tip, last_warn_item
+        nonlocal closing, price_tip, last_warn_item, status_tip
         closing = True
         for widget, seq in bindings:
             try:
@@ -4314,6 +4397,12 @@ def review_links(
                 pass
             price_tip = None
             last_warn_item = None
+        if status_tip is not None:
+            try:
+                status_tip.destroy()
+            except Exception:
+                pass
+            status_tip = None
 
     def _finalize_and_save(_=None):
         _update_summary()
