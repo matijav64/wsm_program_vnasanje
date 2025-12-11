@@ -4067,6 +4067,7 @@ def review_links(
                 background="#ffe6b3",
                 relief="solid",
                 borderwidth=1,
+                wraplength=320,
             ).pack()
             status_tip.geometry(
                 f"+{widget.winfo_rootx()}+{widget.winfo_rooty()+widget.winfo_height()}"
@@ -4083,6 +4084,14 @@ def review_links(
             lambda _e, w=widget, t=text: _show_status_tip(w, t),
         )
         widget.bind("<Leave>", _hide_status_tip)
+
+    _bind_status_tooltip(
+        lbl_net,
+        (
+            "Seštevek neto zneskov vseh postavk po upoštevanih popustih "
+            "(enako kot neto znesek na računu)."
+        ),
+    )
 
     if net_mismatch:
         net_error_label = ttk.Label(
