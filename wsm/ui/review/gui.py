@@ -4143,6 +4143,17 @@ def review_links(
     )
     legend_label_warn.pack(anchor="w")
 
+    legend_label_net = tk.Label(
+        legend_frame,
+        text=(
+            "Neto – seštevek neto zneskov vseh postavk po upoštevanih popustih "
+            "(enako kot neto znesek na računu)"
+        ),
+        font=("Arial", 8),
+        anchor="w",
+    )
+    legend_label_net.pack(anchor="w")
+
     def _safe_update_totals():
         if closing or not root.winfo_exists():
             return
