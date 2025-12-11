@@ -4072,6 +4072,11 @@ def review_links(
             status_tip.geometry(
                 f"+{widget.winfo_rootx()}+{widget.winfo_rooty()+widget.winfo_height()}"
             )
+
+            try:
+                widget.focus_set()
+            except Exception:
+                pass
         except Exception as exc:
             log.debug("Prikaz tooltipa ni uspel: %s", exc)
             _hide_status_tip()
