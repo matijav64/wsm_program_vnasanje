@@ -74,7 +74,7 @@ decimal.getcontext().prec = 28  # Python's default precision
 DEC2 = Decimal("0.01")
 DEC4 = Decimal("0.0001")
 TOL = Decimal("0.01")
-NET_TOL = Decimal("0.05")
+NET_TOL = Decimal("0.10")
 
 
 def _first_text(root, xpaths: list[str]) -> str | None:
@@ -2395,8 +2395,15 @@ def parse_eslog_invoice(
         header_net_for_doc = sum203 if hdr125 is None else hdr125
     else:
         header_net_for_doc = hdr_net
+
+    net_diff: Decimal | None = None
+    net_mismatch = False
+    net_warn = False
+
     if header_net_for_doc is not None:
-        net_mismatch = abs(header_net_for_doc - sum_lines_net) > TOL
+        net_diff = abs(header_net_for_doc - sum_lines_net)
+        net_mismatch = net_diff > NET_TOL
+        net_warn = TOL < net_diff <= NET_TOL
     header_totals_match = (
         header_net_for_doc is not None
         and hdr9 is not None
@@ -2566,6 +2573,11 @@ def parse_eslog_invoice(
 
     if net_mismatch:
         ok = False
+    elif net_warn:
+        log.warning(
+            "Header net total differs from line sum by %s (tolerated as rounding)",
+            net_diff,
+        )
 
     final_diff = diff_gross
     if header_gross != 0:
@@ -2581,9 +2593,6 @@ def parse_eslog_invoice(
             )
     else:
         final_diff = Decimal("0")
-
-    if net_mismatch:
-        ok = False
 
     mode_result = "error" if not ok else mode
     _INFO_DISCOUNTS = mode_result == "info"
@@ -2608,6 +2617,7 @@ def parse_eslog_invoice(
     df = pd.DataFrame(items)
     df.attrs["vat_mismatch"] = vat_mismatch
     df.attrs["net_mismatch"] = net_mismatch
+    df.attrs["net_warning"] = net_warn
     df.attrs["info_discounts"] = _INFO_DISCOUNTS
     df.attrs["gross_calc"] = gross_attr
     df.attrs["gross_mismatch"] = header_gross != 0 and final_diff > DEC2
