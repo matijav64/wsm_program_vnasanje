@@ -3978,6 +3978,16 @@ def review_links(
         df_summary = df_summary.loc[:, ~df_summary.columns.duplicated()].copy()
         _render_summary(df_summary)
 
+    def format_eur(value: Decimal | float | int | str) -> str:
+        try:
+            dec_val = value if isinstance(value, Decimal) else Decimal(str(value))
+        except Exception:
+            dec_val = Decimal("0")
+        dec_val = dec_val.quantize(Decimal("0.01"))
+        formatted = f"{dec_val:,.2f}".replace(",", " ")
+        formatted = formatted.replace(".", ",").replace(" ", ".")
+        return f"{formatted} €"
+
     # Skupni zneski pod povzetkom
     total_frame = tk.Frame(root)
     total_frame.pack(fill="x", pady=5)
@@ -3986,17 +3996,18 @@ def review_links(
     if not isinstance(vat_val, Decimal):
         vat_val = Decimal(str(vat_val))
     vat_total = vat_val.quantize(Decimal("0.01"))
-    gross = net_total + vat_total
     inv_total = (
         header_totals["gross"]
         if isinstance(header_totals["gross"], Decimal)
         else Decimal(str(header_totals["gross"]))
     )
+    inv_total = inv_total.quantize(Decimal("0.01"))
+    calc_total = net_total + vat_total
     tolerance = _resolve_tolerance(net_total, inv_total)
-    diff = inv_total - gross
+    diff = inv_total - calc_total
     if abs(diff) > tolerance:
         if doc_discount:
-            diff2 = inv_total - (gross + abs(doc_discount))
+            diff2 = inv_total - (calc_total + abs(doc_discount))
             if abs(diff2) > tolerance:
                 messagebox.showwarning(
                     "Opozorilo",
@@ -4015,24 +4026,25 @@ def review_links(
             )
     net = net_total
     vat = vat_total
+    gross = inv_total
 
     lbl_net = tk.Label(
         total_frame,
-        text=f"Neto: {net:,.2f} €",
+        text=f"Neto: {format_eur(net)}",
         font=("Arial", 10, "bold"),
         name="total_net",
     )
     lbl_net.pack(side="left", padx=10)
     lbl_vat = tk.Label(
         total_frame,
-        text=f"DDV: {vat:,.2f} €",
+        text=f"DDV: {format_eur(vat)}",
         font=("Arial", 10, "bold"),
         name="total_vat",
     )
     lbl_vat.pack(side="left", padx=10)
     lbl_gross = tk.Label(
         total_frame,
-        text=f"Skupaj: {gross:,.2f} €",
+        text=f"Skupaj: {format_eur(gross)}",
         font=("Arial", 10, "bold"),
         name="total_gross",
     )
@@ -4168,6 +4180,21 @@ def review_links(
         warn_state = getattr(_safe_update_totals, "_warn_state", {"val": None})
         _safe_update_totals._warn_state = warn_state
 
+        try:
+            _format_eur = format_eur  # type: ignore[name-defined]
+        except Exception:
+            def _format_eur(value: Decimal | float | int | str) -> str:
+                try:
+                    dec_val = (
+                        value if isinstance(value, Decimal) else Decimal(str(value))
+                    )
+                except Exception:
+                    dec_val = Decimal("0")
+                dec_val = dec_val.quantize(Decimal("0.01"))
+                formatted = f"{dec_val:,.2f}".replace(",", " ")
+                formatted = formatted.replace(".", ",").replace(" ", ".")
+                return f"{formatted} €"
+
         net_raw = df["total_net"].sum()
         net_total = (
             Decimal(str(net_raw))
@@ -4184,6 +4211,7 @@ def review_links(
             if isinstance(header_totals["gross"], Decimal)
             else Decimal(str(header_totals["gross"]))
         )
+        inv_total = inv_total.quantize(Decimal("0.01"))
         tolerance = _resolve_tolerance(net_total, inv_total)
         diff = inv_total - calc_total
         difference = abs(diff)
@@ -4213,11 +4241,14 @@ def review_links(
 
         net = net_total
         vat = vat_val
-        gross = calc_total
+        gross = inv_total
+        try:
+            eslog_mode = eslog_totals.mode  # type: ignore[name-defined]
+        except Exception:
+            eslog_mode = None
+
         header_ok = (
-            eslog_totals.mode != "error"
-            if eslog_totals.mode is not None
-            else difference <= tolerance
+            eslog_mode != "error" if eslog_mode is not None else difference <= tolerance
         )
         try:
             if indicator_label is None or not indicator_label.winfo_exists():
@@ -4234,20 +4265,20 @@ def review_links(
             return
         widget = total_frame.children.get("total_net")
         if widget and getattr(widget, "winfo_exists", lambda: True)():
-            widget.config(text=f"Neto: {net:,.2f} €")
+            widget.config(text=f"Neto: {_format_eur(net)}")
         widget = total_frame.children.get("total_vat")
         if widget and getattr(widget, "winfo_exists", lambda: True)():
-            widget.config(text=f"DDV: {vat:,.2f} €")
+            widget.config(text=f"DDV: {_format_eur(vat)}")
         widget = total_frame.children.get("total_gross")
         if widget and getattr(widget, "winfo_exists", lambda: True)():
-            widget.config(text=f"Skupaj: {gross:,.2f} €")
+            widget.config(text=f"Skupaj: {_format_eur(gross)}")
         widget = total_frame.children.get("total_sum")
         if widget and getattr(widget, "winfo_exists", lambda: True)():
             widget.config(
                 text=(
-                    f"Neto:   {net:,.2f} €\n"
-                    f"DDV:    {vat:,.2f} €\n"
-                    f"Skupaj: {gross:,.2f} €"
+                    f"Neto:   {_format_eur(net)}\n"
+                    f"DDV:    {_format_eur(vat)}\n"
+                    f"Skupaj: {_format_eur(gross)}"
                 )
             )
 
