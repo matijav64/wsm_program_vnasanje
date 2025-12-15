@@ -4327,6 +4327,25 @@ def review_links(
             if header_net_dec is not None
             else None
         )
+
+        explained_by_doc_discount = False
+        try:
+            doc_discount_candidates = df[(df["ddv"] == 0) & (df["neto"] < 0)]
+
+            if len(doc_discount_candidates) == 1 and net_diff is not None:
+                raw_disc_value = doc_discount_candidates["neto"].iloc[0]
+                if raw_disc_value is not None:
+                    # poskrbimo, da imamo Decimal na obeh straneh
+                    doc_disc_value = (
+                        raw_disc_value
+                        if isinstance(raw_disc_value, Decimal)
+                        else Decimal(str(raw_disc_value))
+                    )
+                    tolerance_doc = Decimal("0.10")  # 0,10 € tolerance
+                    if abs(abs(net_diff) - abs(doc_disc_value)) <= tolerance_doc:
+                        explained_by_doc_discount = True
+        except Exception:
+            explained_by_doc_discount = False
         try:
             default_net_icon = net_icon_label
         except NameError:
@@ -4334,7 +4353,7 @@ def review_links(
         net_icon_label_ref = getattr(
             _safe_update_totals, "_net_icon", default_net_icon
         )
-        if net_status == "ok":
+        if net_status == "ok" or explained_by_doc_discount:
             if net_icon_label_ref and getattr(net_icon_label_ref, "winfo_exists", lambda: False)():
                 try:
                     net_icon_label_ref.pack_forget()
