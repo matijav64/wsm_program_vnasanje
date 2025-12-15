@@ -892,6 +892,39 @@ def _clean_neg_zero(val):
     return d if d != 0 else _as_dec("0", default="0")
 
 
+def classify_net_difference(
+    header_net, computed_net, tolerance: Decimal = Decimal("0.05")
+):
+    """
+    Vrne razvrstitev razlike med neto zneskom iz glave in izračunanim netom.
+
+    * "ok"        → brez razlike
+    * "rounding" → razlika je manjša ali enaka toleranci (zaokroževanje)
+    * "mismatch" → razlika je večja od tolerance
+    """
+
+    if header_net is None or computed_net is None:
+        return "ok"
+
+    try:
+        header = header_net if isinstance(header_net, Decimal) else Decimal(str(header_net))
+        computed = (
+            computed_net
+            if isinstance(computed_net, Decimal)
+            else Decimal(str(computed_net))
+        )
+    except Exception:
+        return "ok"
+
+    diff = (computed - header).copy_abs()
+
+    if diff == 0:
+        return "ok"
+    if diff <= tolerance:
+        return "rounding"
+    return "mismatch"
+
+
 _CURRENT_GRID_DF: pd.DataFrame | None = None
 
 
@@ -3978,6 +4011,16 @@ def review_links(
         df_summary = df_summary.loc[:, ~df_summary.columns.duplicated()].copy()
         _render_summary(df_summary)
 
+    def format_eur(value: Decimal | float | int | str) -> str:
+        try:
+            dec_val = value if isinstance(value, Decimal) else Decimal(str(value))
+        except Exception:
+            dec_val = Decimal("0")
+        dec_val = dec_val.quantize(Decimal("0.01"))
+        formatted = f"{dec_val:,.2f}".replace(",", " ")
+        formatted = formatted.replace(".", ",").replace(" ", ".")
+        return f"{formatted} €"
+
     # Skupni zneski pod povzetkom
     total_frame = tk.Frame(root)
     total_frame.pack(fill="x", pady=5)
@@ -3986,17 +4029,34 @@ def review_links(
     if not isinstance(vat_val, Decimal):
         vat_val = Decimal(str(vat_val))
     vat_total = vat_val.quantize(Decimal("0.01"))
-    gross = net_total + vat_total
     inv_total = (
         header_totals["gross"]
         if isinstance(header_totals["gross"], Decimal)
         else Decimal(str(header_totals["gross"]))
     )
+    inv_total = inv_total.quantize(Decimal("0.01"))
+    calc_total = net_total + vat_total
     tolerance = _resolve_tolerance(net_total, inv_total)
-    diff = inv_total - gross
+    diff = inv_total - calc_total
+    try:
+        header_net_dec = (
+            header_totals.get("net")
+            if isinstance(header_totals.get("net"), Decimal)
+            else Decimal(str(header_totals.get("net")))
+        )
+    except Exception:
+        header_net_dec = None
+    net_status = classify_net_difference(
+        header_net_dec, net_total, tolerance=tolerance
+    )
+    net_diff = (
+        (net_total - header_net_dec).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if header_net_dec is not None
+        else None
+    )
     if abs(diff) > tolerance:
         if doc_discount:
-            diff2 = inv_total - (gross + abs(doc_discount))
+            diff2 = inv_total - (calc_total + abs(doc_discount))
             if abs(diff2) > tolerance:
                 messagebox.showwarning(
                     "Opozorilo",
@@ -4015,24 +4075,25 @@ def review_links(
             )
     net = net_total
     vat = vat_total
+    gross = inv_total
 
     lbl_net = tk.Label(
         total_frame,
-        text=f"Neto: {net:,.2f} €",
+        text=f"Neto: {format_eur(net)}",
         font=("Arial", 10, "bold"),
         name="total_net",
     )
     lbl_net.pack(side="left", padx=10)
     lbl_vat = tk.Label(
         total_frame,
-        text=f"DDV: {vat:,.2f} €",
+        text=f"DDV: {format_eur(vat)}",
         font=("Arial", 10, "bold"),
         name="total_vat",
     )
     lbl_vat.pack(side="left", padx=10)
     lbl_gross = tk.Label(
         total_frame,
-        text=f"Skupaj: {gross:,.2f} €",
+        text=f"Skupaj: {format_eur(gross)}",
         font=("Arial", 10, "bold"),
         name="total_gross",
     )
@@ -4100,27 +4161,37 @@ def review_links(
         ),
     )
 
-    if net_mismatch:
-        net_error_label = ttk.Label(
-            total_frame, text="✗", style="Indicator.Red.TLabel"
-        )
-        net_error_label.pack(side="left", padx=5)
-        _bind_status_tooltip(
-            net_error_label,
-            "Razlika v neto znesku – samodejno ujemanje je onemogočeno.",
-        )
-
-    if net_warning:
-        net_warning_label = ttk.Label(
+    net_icon_label: ttk.Label | None = None
+    if net_status == "rounding":
+        net_icon_label = ttk.Label(
             total_frame,
-            text="⚠",
+            text="△",
             foreground="#d48c00",
         )
-        net_warning_label.pack(side="left", padx=5)
-        _bind_status_tooltip(
-            net_warning_label,
-            "Razlika v neto znesku (verjetno zaokroževanje)",
+        net_icon_label.pack(side="left", padx=5)
+        diff_text = (
+            f"{net_diff:+.2f} €" if isinstance(net_diff, Decimal) else None
         )
+        tooltip = (
+            f"Razlika v neto znesku je {diff_text} (verjetno zaokroževanje)."
+            if diff_text
+            else "Razlika v neto znesku (verjetno zaokroževanje)."
+        )
+        _bind_status_tooltip(net_icon_label, tooltip)
+    elif net_status == "mismatch":
+        net_icon_label = ttk.Label(
+            total_frame, text="✗", style="Indicator.Red.TLabel"
+        )
+        net_icon_label.pack(side="left", padx=5)
+        diff_text = (
+            f"{net_diff:+.2f} €" if isinstance(net_diff, Decimal) else None
+        )
+        tooltip = (
+            f"Razlika v neto znesku je {diff_text} (preveri račun!)."
+            if diff_text
+            else "Razlika v neto znesku – preveri račun!"
+        )
+        _bind_status_tooltip(net_icon_label, tooltip)
 
     indicator_label = ttk.Label(
         total_frame, text="", style="Indicator.Red.TLabel"
@@ -4144,7 +4215,7 @@ def review_links(
 
     legend_label_warn = tk.Label(
         legend_frame,
-        text="⚠ – razlika v neto znesku (verjetno zaokroževanje)",
+        text="△ – razlika v neto znesku (verjetno zaokroževanje)",
         font=("Arial", 8),
         anchor="w",
     )
@@ -4168,6 +4239,21 @@ def review_links(
         warn_state = getattr(_safe_update_totals, "_warn_state", {"val": None})
         _safe_update_totals._warn_state = warn_state
 
+        try:
+            _format_eur = format_eur  # type: ignore[name-defined]
+        except Exception:
+            def _format_eur(value: Decimal | float | int | str) -> str:
+                try:
+                    dec_val = (
+                        value if isinstance(value, Decimal) else Decimal(str(value))
+                    )
+                except Exception:
+                    dec_val = Decimal("0")
+                dec_val = dec_val.quantize(Decimal("0.01"))
+                formatted = f"{dec_val:,.2f}".replace(",", " ")
+                formatted = formatted.replace(".", ",").replace(" ", ".")
+                return f"{formatted} €"
+
         net_raw = df["total_net"].sum()
         net_total = (
             Decimal(str(net_raw))
@@ -4184,6 +4270,7 @@ def review_links(
             if isinstance(header_totals["gross"], Decimal)
             else Decimal(str(header_totals["gross"]))
         )
+        inv_total = inv_total.quantize(Decimal("0.01"))
         tolerance = _resolve_tolerance(net_total, inv_total)
         diff = inv_total - calc_total
         difference = abs(diff)
@@ -4213,11 +4300,93 @@ def review_links(
 
         net = net_total
         vat = vat_val
-        gross = calc_total
+        gross = inv_total
+        try:
+            _classify_net_difference = classify_net_difference
+        except Exception:
+            _classify_net_difference = globals().get("classify_net_difference")
+        if not callable(_classify_net_difference):
+            _classify_net_difference = lambda *_args, **_kwargs: "ok"
+        try:
+            _round_half_up = ROUND_HALF_UP
+        except Exception:
+            _round_half_up = getattr(Decimal, "ROUND_HALF_UP", None) or "ROUND_HALF_UP"
+        try:
+            header_net_dec = (
+                header_totals.get("net")
+                if isinstance(header_totals.get("net"), Decimal)
+                else Decimal(str(header_totals.get("net")))
+            )
+        except Exception:
+            header_net_dec = None
+        net_status = _classify_net_difference(
+            header_net_dec, net_total, tolerance=tolerance
+        )
+        net_diff = (
+            (net_total - header_net_dec).quantize(Decimal("0.01"), rounding=_round_half_up)
+            if header_net_dec is not None
+            else None
+        )
+        try:
+            default_net_icon = net_icon_label
+        except NameError:
+            default_net_icon = None
+        net_icon_label_ref = getattr(
+            _safe_update_totals, "_net_icon", default_net_icon
+        )
+        if net_status == "ok":
+            if net_icon_label_ref and getattr(net_icon_label_ref, "winfo_exists", lambda: False)():
+                try:
+                    net_icon_label_ref.pack_forget()
+                    net_icon_label_ref.destroy()
+                except Exception:
+                    pass
+                net_icon_label_ref = None
+        else:
+            if net_icon_label_ref is None or not net_icon_label_ref.winfo_exists():
+                net_icon_label_ref = ttk.Label(total_frame)
+                net_icon_label_ref.pack(side="left", padx=5)
+            try:
+                _hide_status_tip()
+            except Exception:
+                pass
+            if net_status == "rounding":
+                diff_text = f"{net_diff:+.2f} €" if net_diff is not None else None
+                tooltip = (
+                    f"Razlika v neto znesku je {diff_text} (verjetno zaokroževanje)."
+                    if diff_text
+                    else "Razlika v neto znesku (verjetno zaokroževanje)."
+                )
+                net_icon_label_ref.config(text="△", style="TLabel")
+                try:
+                    net_icon_label_ref.configure(foreground="#d48c00")
+                except Exception:
+                    pass
+            else:
+                diff_text = f"{net_diff:+.2f} €" if net_diff is not None else None
+                tooltip = (
+                    f"Razlika v neto znesku je {diff_text} (preveri račun!)."
+                    if diff_text
+                    else "Razlika v neto znesku – preveri račun!"
+                )
+                net_icon_label_ref.config(text="✗", style="Indicator.Red.TLabel")
+                try:
+                    net_icon_label_ref.configure(foreground="")
+                except Exception:
+                    pass
+            _bind_status_tooltip(net_icon_label_ref, tooltip)
+            try:
+                net_icon_label_ref.pack_configure(padx=5)
+            except Exception:
+                pass
+        _safe_update_totals._net_icon = net_icon_label_ref
+        try:
+            eslog_mode = eslog_totals.mode  # type: ignore[name-defined]
+        except Exception:
+            eslog_mode = None
+
         header_ok = (
-            eslog_totals.mode != "error"
-            if eslog_totals.mode is not None
-            else difference <= tolerance
+            eslog_mode != "error" if eslog_mode is not None else difference <= tolerance
         )
         try:
             if indicator_label is None or not indicator_label.winfo_exists():
@@ -4234,20 +4403,20 @@ def review_links(
             return
         widget = total_frame.children.get("total_net")
         if widget and getattr(widget, "winfo_exists", lambda: True)():
-            widget.config(text=f"Neto: {net:,.2f} €")
+            widget.config(text=f"Neto: {_format_eur(net)}")
         widget = total_frame.children.get("total_vat")
         if widget and getattr(widget, "winfo_exists", lambda: True)():
-            widget.config(text=f"DDV: {vat:,.2f} €")
+            widget.config(text=f"DDV: {_format_eur(vat)}")
         widget = total_frame.children.get("total_gross")
         if widget and getattr(widget, "winfo_exists", lambda: True)():
-            widget.config(text=f"Skupaj: {gross:,.2f} €")
+            widget.config(text=f"Skupaj: {_format_eur(gross)}")
         widget = total_frame.children.get("total_sum")
         if widget and getattr(widget, "winfo_exists", lambda: True)():
             widget.config(
                 text=(
-                    f"Neto:   {net:,.2f} €\n"
-                    f"DDV:    {vat:,.2f} €\n"
-                    f"Skupaj: {gross:,.2f} €"
+                    f"Neto:   {_format_eur(net)}\n"
+                    f"DDV:    {_format_eur(vat)}\n"
+                    f"Skupaj: {_format_eur(gross)}"
                 )
             )
 
