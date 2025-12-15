@@ -4254,12 +4254,29 @@ def review_links(
                 formatted = formatted.replace(".", ",").replace(" ", ".")
                 return f"{formatted} €"
 
-        net_raw = df["total_net"].sum()
-        net_total = (
-            Decimal(str(net_raw))
-            if not isinstance(net_raw, Decimal)
-            else net_raw
+        if "neto" in df.columns:
+            neto_series = df["neto"].apply(lambda x: _as_dec(x, "0"))
+        else:
+            neto_series = df["total_net"].apply(lambda x: _as_dec(x, "0"))
+        if "ddv" in df.columns:
+            ddv_series = df["ddv"].apply(lambda x: _as_dec(x, "0"))
+        else:
+            import pandas as pd
+
+            ddv_series = pd.Series([
+                _as_dec("0", "0")
+            ] * len(df), index=df.index)
+        doc_discount_mask = (ddv_series == Decimal("0")) & (neto_series < 0)
+        sum_doc_discount = _sum_decimal(neto_series[doc_discount_mask]).quantize(
+            Decimal("0.01")
+        )
+        sum_net_lines_without_doc_discount = _sum_decimal(
+            neto_series[~doc_discount_mask]
         ).quantize(Decimal("0.01"))
+        net_after_doc_discount = (
+            sum_net_lines_without_doc_discount + sum_doc_discount
+        ).quantize(Decimal("0.01"))
+        net_total = net_after_doc_discount
         vat_val = header_totals["vat"]
         if not isinstance(vat_val, Decimal):
             vat_val = Decimal(str(vat_val))
@@ -4319,33 +4336,36 @@ def review_links(
             )
         except Exception:
             header_net_dec = None
+        net_for_header_compare = sum_net_lines_without_doc_discount
         net_status = _classify_net_difference(
-            header_net_dec, net_total, tolerance=tolerance
+            header_net_dec, net_for_header_compare, tolerance=tolerance
         )
+
         net_diff = (
-            (net_total - header_net_dec).quantize(Decimal("0.01"), rounding=_round_half_up)
+            (net_for_header_compare - header_net_dec).quantize(
+                Decimal("0.01"), rounding=_round_half_up
+            )
             if header_net_dec is not None
             else None
         )
 
+        # preveri, ali je razlika med glavo in netom po popustu razložena z dokumentarnim popustom
         explained_by_doc_discount = False
-        try:
-            doc_discount_candidates = df[(df["ddv"] == 0) & (df["neto"] < 0)]
-
-            if len(doc_discount_candidates) == 1 and net_diff is not None:
-                raw_disc_value = doc_discount_candidates["neto"].iloc[0]
-                if raw_disc_value is not None:
-                    # poskrbimo, da imamo Decimal na obeh straneh
-                    doc_disc_value = (
-                        raw_disc_value
-                        if isinstance(raw_disc_value, Decimal)
-                        else Decimal(str(raw_disc_value))
+        if header_net_dec is not None and sum_doc_discount != 0:
+            try:
+                net_diff_after_disc = (
+                    (header_net_dec - net_total).quantize(
+                        Decimal("0.01"), rounding=_round_half_up
                     )
-                    tolerance_doc = Decimal("0.10")  # 0,10 € tolerance
-                    if abs(abs(net_diff) - abs(doc_disc_value)) <= tolerance_doc:
-                        explained_by_doc_discount = True
-        except Exception:
-            explained_by_doc_discount = False
+                )
+                tolerance_doc = Decimal("0.10")  # 0,10 € tolerance
+                if (
+                    abs(abs(net_diff_after_disc) - abs(sum_doc_discount))
+                    <= tolerance_doc
+                ):
+                    explained_by_doc_discount = True
+            except Exception:
+                explained_by_doc_discount = False
         try:
             default_net_icon = net_icon_label
         except NameError:
