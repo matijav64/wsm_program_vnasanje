@@ -2340,6 +2340,144 @@ def review_links(
         .to_dict("records"),
     )
 
+    def _build_wsm_summary(
+        df_all: pd.DataFrame, hdr_net_total: Decimal | None
+    ) -> tuple[pd.DataFrame, str, Decimal | None]:
+        """
+        Zgradi POVZETEK po WSM šifrah + OSTALO, da se vsota ujema z glavo.
+
+        Vrne:
+          - summary_df: DataFrame v formatu, ki ga pričakuje _render_summary
+          - status: "" / "Δ" / "X"
+          - net_diff: razlika header_net - grid_net (ali None, če header_net ni znan)
+        """
+        if df_all is None or df_all.empty:
+            return summary_df_from_records([]), "", None
+
+        # ---- 1) Učinkovita WSM koda po vrstici (_booked_sifra > wsm_sifra > WSM šifra) ----
+        code_s = first_existing_series(
+            df_all,
+            ["_booked_sifra", "wsm_sifra", "WSM šifra"],
+        )
+        if code_s is None:
+            code_s = pd.Series([""] * len(df_all), index=df_all.index)
+
+        code_s = code_s.astype("string").fillna("").str.strip()
+
+        # izloči "izključene" kode – te gredo pod OSTALO
+        excl_fn = globals().get("_excluded_codes_upper")
+        excluded = excl_fn() if callable(excl_fn) else frozenset()
+        code_upper = code_s.str.upper()
+
+        is_booked = code_s.ne("") & ~code_upper.isin(excluded)
+
+        # vse, kar ni "prava" WSM šifra, gre pod OSTALO
+        eff_code = code_s.where(is_booked, "OSTALO")
+
+        # ---- 2) količina, znesek, rabat, naziv ----
+        qty_s = first_existing_series(
+            df_all, ["kolicina_norm", "Količina"], fill_value=Decimal("0")
+        )
+
+        # uporabi isto prioriteto kot zgoraj pri total_s,
+        # da ne bo razlike med net_total in povzetkom
+        amount_s = first_existing_series(
+            df_all,
+            ["total_net", "Neto po rabatu", "vrednost", "Skupna neto"],
+            fill_value=Decimal("0"),
+        )
+
+        rab_s = first_existing_series(
+            df_all, ["rabata_pct", "eff_discount_pct"], fill_value=Decimal("0")
+        )
+
+        name_s = first_existing_series(
+            df_all, ["WSM Naziv", "WSM naziv", "wsm_naziv"]
+        )
+        if name_s is None:
+            name_s = pd.Series([""] * len(df_all), index=df_all.index, dtype="string")
+        name_s = name_s.astype("string").fillna("")
+
+        work = pd.DataFrame(
+            {
+                "code": eff_code,
+                "qty": qty_s,
+                "net": amount_s,
+                "rabat": rab_s,
+                "name": name_s,
+            }
+        )
+
+        # ---- 3) grupiranje po kodi (WSM šifra + OSTALO) ----
+        records: list[dict[str, object]] = []
+
+        for code, g in work.groupby("code", dropna=False):
+            # varno seštevanje kot Decimal
+            def _dsum(series):
+                total = Decimal("0")
+                for v in series:
+                    if v in (None, ""):
+                        continue
+                    try:
+                        total += v if isinstance(v, Decimal) else Decimal(str(v))
+                    except Exception:
+                        continue
+                return total
+
+            net_total = _dsum(g["net"])
+            qty_total = _dsum(g["qty"])
+
+            rab_val = g["rabat"].iloc[0]
+            if not isinstance(rab_val, Decimal):
+                try:
+                    rab_val = Decimal(str(rab_val))
+                except Exception:
+                    rab_val = Decimal("0")
+
+            if code == "OSTALO":
+                disp_code = ""
+                disp_name = "OSTALO (brez WSM šifre)"
+            else:
+                disp_code = str(code)
+                nm = g["name"].astype(str).str.strip()
+                nm = nm[nm != ""]
+                disp_name = nm.iloc[0] if len(nm) else disp_code
+
+            records.append(
+                {
+                    "WSM šifra": disp_code,
+                    "WSM Naziv": disp_name,
+                    "Količina": qty_total,
+                    "Znesek": net_total,
+                    "Rabat (%)": rab_val,
+                    "Neto po rabatu": net_total,
+                }
+            )
+
+        summary_df = summary_df_from_records(records)
+
+        # ---- 4) status X / Δ glede na header_totals["net"] ----
+        grid_net_total = summary_df["Neto po rabatu"].map(
+            lambda v: v if isinstance(v, Decimal) else Decimal(str(v))
+        ).sum()
+
+        hdr_net = hdr_net_total if isinstance(hdr_net_total, Decimal) else None
+        net_diff: Decimal | None = None
+        tolerance_rounding = Decimal("0.05")
+
+        if hdr_net is None:
+            status = ""
+        else:
+            net_diff = hdr_net - grid_net_total
+            if abs(net_diff) > tolerance_rounding:
+                status = "X"
+            elif abs(net_diff) > Decimal("0.00"):
+                status = "Δ"
+            else:
+                status = ""
+
+        return summary_df, status, net_diff
+
     # Po združevanju lahko 'rabat_opis' izgine – ga ponovno zgradimo.
     try:
         if "rabata_pct" in df.columns:
@@ -2483,6 +2621,15 @@ def review_links(
         .sum()
         .quantize(Decimal("0.01"))
     )
+
+    try:
+        header_net_dec = (
+            header_totals.get("net")
+            if isinstance(header_totals.get("net"), Decimal)
+            else Decimal(str(header_totals.get("net")))
+        )
+    except Exception:
+        header_net_dec = None
 
     # 3) shrani grid za povzetek
     global _CURRENT_GRID_DF
@@ -3512,504 +3659,79 @@ def review_links(
 
     def _update_summary():
         import pandas as pd
-        from decimal import Decimal, ROUND_HALF_UP
-        from wsm.ui.review.helpers import _norm_wsm_code as _norm_code
-
-        # privzeto grupiraj po rabatu
-        globals().setdefault("GROUP_BY_DISCOUNT", True)
+        nonlocal net_icon_label
 
         df = globals().get("_CURRENT_GRID_DF")
         if df is None:
             df = globals().get("df")
-        df = (
-            df.loc[:, ~df.columns.duplicated()].copy()
-            if df is not None
-            else None
-        )
+
         if df is not None:
-            dups = df.columns[df.columns.duplicated()].tolist()
-            if dups:
-                log.warning(
-                    "SUMMARY: duplicated columns still present: %s", dups
-                )
+            df = df.loc[:, ~df.columns.duplicated()].copy()
+
         if df is None or df.empty:
             _render_summary(summary_df_from_records([]))
             globals()["_SUMMARY_COUNTS"] = (0, 0)
-            return
-
-        def _col(frame, column):
-            if column not in frame.columns:
-                import pandas as pd
-
-                return pd.Series([None] * len(frame), index=frame.index)
-            s = frame[column]
-            return s.iloc[:, 0] if hasattr(s, "ndim") and s.ndim == 2 else s
-
-        # --- KOALESCENCA KODE: _booked_sifra → wsm_sifra →
-        #     "WSM šifra" → _summary_key ---
-        b = (
-            _col(df, "_booked_sifra")
-            if "_booked_sifra" in df.columns
-            else None
-        )
-        f = first_existing_series(
-            df, ["wsm_sifra", "WSM šifra", "_summary_key"]
-        )
-        if b is None:
-            code_s = (
-                f
-                if f is not None
-                else pd.Series([""] * len(df), index=df.index)
-            )
-        else:
-            code_s = b.astype("string")
-            if f is not None:
-                f = f.astype("string")
-                norm_b = code_s.fillna("").map(_norm_code)
-                empty_b = norm_b.fillna("").str.strip().eq("")
-                code_s = code_s.where(~empty_b, f)
-
-        excl_fn = globals().get("_excluded_codes_upper")
-        excluded = excl_fn() if callable(excl_fn) else frozenset()
-        code_s = code_s.astype("string").fillna("").map(_norm_code)
-        code_s = code_s.astype("string").fillna("").str.strip()
-        code_upper = code_s.str.upper()
-        is_booked = code_s.ne("") & ~code_upper.isin(excluded)
-        df["_summary_key"] = code_s.where(is_booked, "OSTALO")
-        df["_is_booked"] = is_booked
-        code_or_ostalo = df["_summary_key"]
-
-        unit_s = first_existing_series(df, ["enota_norm", "enota"])
-        if unit_s is None:
-            unit_s = pd.Series([""] * len(df), index=df.index)
-        unit_s = unit_s.astype(object).fillna("").map(str).str.strip()
-
-        # Rabat za grouping: najprej rabata_pct, sicer eff_discount_pct
-        def _to_dec(x):
             try:
-                return x if isinstance(x, Decimal) else Decimal(str(x))
-            except Exception:
-                return Decimal("0")
-
-        if "rabata_pct" in df.columns:
-            rab_s = _col(df, "rabata_pct").apply(_to_dec)
-        else:
-            rab_s = _col(df, "eff_discount_pct").apply(_to_dec)
-
-        small_thr = globals().get("DEC_SMALL_DISCOUNT", Decimal("0.1"))
-
-        def _q2p(d: Decimal) -> Decimal:
-            q = d.quantize(Decimal("0.01"), ROUND_HALF_UP)
-            if q.copy_abs() < small_thr:
-                return Decimal("0.00")
-            return Decimal("0.00") if q == 0 else q
-
-        rab_s = rab_s.map(_q2p)
-        # Unbooked lines (code "OSTALO") ignore rabat dimension so they don't
-        # split into multiple summary rows based on discount.
-        rab_s = rab_s.where(is_booked, Decimal("0.00"))
-        if not globals().get("GROUP_BY_DISCOUNT", True):
-            rab_s[:] = Decimal("0.00")
-
-        df["_summary_gkey"] = list(
-            zip(code_or_ostalo.tolist(), unit_s.tolist(), rab_s.tolist())
-        )
-
-        # Ensure eff_discount_pct
-        try:
-            _ensure_eff_discount_pct(df)
-        except NameError:
-            pass
-
-        # Priprava polj
-        amount_s = first_existing_series(
-            df,
-            [
-                "Skupna neto",
-                "vrednost",
-                "Neto po rabatu",
-                "neto_po_rabatu",
-                "total_net",
-            ],
-            fill_value=Decimal("0"),
-        )
-        net_after_s = first_existing_series(
-            df,
-            [
-                "Neto po rabatu",
-                "neto_po_rabatu",
-                "total_net",
-                "Skupna neto",
-                "vrednost",
-            ],
-            fill_value=Decimal("0"),
-        )
-        bruto_candidates = [
-            "Bruto",
-            "vrednost_bruto",
-            "Skupna bruto",
-            "vrednost",
-        ]
-        bruto_source_col = next(
-            (col for col in bruto_candidates if col in df.columns), None
-        )
-        bruto_s = first_existing_series(df, bruto_candidates)
-        qty_s = first_existing_series(df, ["Količina", "kolicina_norm"])
-
-        # Za naziv uporabljamo isto koalescentno kodo
-        wsm_s = df["_summary_key"]
-
-        # Naziv (serija)
-        if "WSM Naziv" in df.columns:
-            name_s = _col(df, "WSM Naziv").astype("string")
-        elif "WSM naziv" in df.columns:
-            name_s = _col(df, "WSM naziv").astype("string")
-        elif "wsm_naziv" in df.columns:
-            name_s = _col(df, "wsm_naziv").astype("string")
-        else:
-            name_s = pd.Series([""] * len(df), index=df.index, dtype="string")
-
-        if wsm_s is not None:
-            wsm_s = wsm_s.map(_norm_code).astype("string")
-
-        name_s = name_s.astype("string").fillna("")
-        if wsm_s is not None:
-            _m = wsm_s.astype(str).eq("OSTALO")
-            if _m.any():
-                name_s = name_s.where(~_m, "Ostalo")
-
-        if wsm_s is None or amount_s is None:
-            _render_summary(summary_df_from_records([]))
-            return
-
-        eff_s = (
-            _col(df, "eff_discount_pct")
-            if "eff_discount_pct" in df.columns
-            else pd.Series([Decimal("0")] * len(df), index=df.index)
-        )
-
-        data = {
-            "wsm_sifra": (
-                wsm_s
-                if wsm_s is not None
-                else pd.Series(["OSTALO"] * len(df), index=df.index)
-            ),
-            "wsm_naziv": name_s,
-            "znesek": (
-                amount_s
-                if amount_s is not None
-                else pd.Series([Decimal("0")] * len(df), index=df.index)
-            ),
-            "kolicina": (
-                qty_s
-                if qty_s is not None
-                else pd.Series([Decimal("0")] * len(df), index=df.index)
-            ),
-            "bruto": (
-                bruto_s
-                if bruto_s is not None
-                else pd.Series([Decimal("0")] * len(df), index=df.index)
-            ),
-            "cena_pred_rabatom": _col(df, "cena_pred_rabatom"),
-            "cena_bruto": _col(df, "cena_bruto"),
-            "eff_discount_pct": eff_s,
-            "_summary_gkey": _col(df, "_summary_gkey"),
-        }
-        data["neto_po_rabatu"] = (
-            net_after_s
-            if net_after_s is not None
-            else pd.Series([Decimal("0")] * len(df), index=df.index)
-        )
-        if "status" in df.columns:
-            data["status"] = _col(df, "status")
-
-        # Varna konstrukcija DataFrame-a
-        n = len(df)
-
-        def _to_list(x):
-            if isinstance(x, pd.Series):
-                return x.reindex(df.index).tolist()
-            if isinstance(x, pd.Index):
-                return pd.Series(x).reindex(df.index).tolist()
-            try:
-                import numpy as np
-
-                if isinstance(x, np.ndarray):
-                    x = x.reshape(-1).tolist()
+                sum_booked_var.set("Knjiženo: 0")
+                sum_unbooked_var.set("Ostane: 0")
             except Exception:
                 pass
-            if isinstance(x, (list, tuple)):
-                arr = list(x)
-            else:
-                arr = [x]
-            if len(arr) == n:
-                return arr
-            if len(arr) == 1:
-                return arr * n
-            if len(arr) < n:
-                return arr + [None] * (n - len(arr))
-            return arr[:n]
+            if net_icon_label is not None:
+                net_icon_label.config(text="")
+            return
 
-        data = {k: _to_list(v) for k, v in data.items()}
-        work = pd.DataFrame(data)
-
-        # knjiženost
-        try:
-            work["_is_booked"] = _booked_mask_from(work).astype(int)
-        except Exception:
-            _ws = _col(work, "wsm_sifra").fillna("").astype(str).str.strip()
-            work["_is_booked"] = _ws.ne("") & ~_ws.str.upper().isin(
-                _excluded_codes_upper()
-            )
-
-        if globals().get("ONLY_BOOKED_IN_SUMMARY"):
-            work = work[work["_is_booked"] > 0]
-            if work.empty:
-                _render_summary(summary_df_from_records([]))
-                return
-
-        from decimal import Decimal as _D
-
-        def dsum(s):
-            tot = _D("0")
-            for v in s:
-                try:
-                    tot += v if isinstance(v, _D) else _D(str(v))
-                except Exception:
-                    pass
-            return tot
-
-        def dsum_neg(s):
-            tot = _D("0")
-            for v in s:
-                try:
-                    dv = v if isinstance(v, _D) else _D(str(v))
-                    if dv < 0:
-                        tot += abs(dv)
-                except Exception:
-                    pass
-            return tot
-
-        def dsum_prod(q_series, u_series):
-            tot = _D("0")
-            if q_series is None or u_series is None:
-                return tot
-            for qty, unit in zip(q_series, u_series):
-                try:
-                    q_val = qty if isinstance(qty, _D) else _D(str(qty))
-                    u_val = unit if isinstance(unit, _D) else _D(str(unit))
-                except Exception:
-                    continue
-                tot += q_val * u_val
-            return tot
-
-        df_b = work.copy()
-        groups = list(df_b.groupby("_summary_gkey", dropna=False))
-
-        # katalog za fallback imena
-        try:
-            _sdf = globals().get("sifre_df") or globals().get("wsm_df")
-            _CODE2NAME = (
-                (
-                    _sdf.assign(
-                        wsm_sifra=_col(_sdf, "wsm_sifra")
-                        .astype(str)
-                        .str.strip(),
-                        wsm_naziv=_col(_sdf, "wsm_naziv").astype(str),
-                    )
-                    .dropna(subset=["wsm_naziv"])
-                    .drop_duplicates("wsm_sifra")
-                    .set_index("wsm_sifra")["wsm_naziv"]
-                    .to_dict()
-                )
-                if _sdf is not None
-                and {"wsm_sifra", "wsm_naziv"}.issubset(_sdf.columns)
-                else {}
-            )
-        except Exception as _e:
-            log.warning("SUMMARY name map build failed: %s", _e)
-            _CODE2NAME = {}
-
-        records = []
-        for key, g in groups:
-            code, _, rab = key
-            is_booked = code != "OSTALO"
-            show_code = code if is_booked else "OSTALO"
-
-            disp_name = ""
-            nm_s = first_existing_series(
-                g, ["WSM Naziv", "WSM naziv", "wsm_naziv"]
-            )
-            if nm_s is not None:
-                _nm = nm_s.astype(str).str.strip()
-                _nm = _nm[(_nm != "") & (_nm.str.lower() != "ostalo")]
-                if len(_nm):
-                    disp_name = _nm.iloc[0]
-
-            if disp_name == "" and is_booked:
-                code_str = str(code).strip()
-                disp_name = _CODE2NAME.get(code_str, "")
-
-            qty_series = first_existing_series(
-                g, ["kolicina_norm", "Količina", "kolicina"]
-            )
-            qty_total = dsum(qty_series)
-            ret_cols = [c for c in ("vrnjeno", "Vrnjeno") if c in g.columns]
-            ret_series = (
-                first_existing_series(g, ret_cols)
-                if ret_cols
-                else None
-            )
-            qty_ret = (
-                dsum(ret_series)
-                if ret_series is not None
-                else dsum_neg(qty_series)
-            )
-
-            if qty_total == _D("0") and qty_ret > _D("0"):
-                qty_total = -qty_ret
-
-            amount_series = _col(g, "znesek")
-            amount_total = dsum(amount_series)
-            amount_return = dsum_neg(amount_series)
-
-            if amount_total == _D("0") and amount_return > _D("0"):
-                amount_total = -amount_return
-
-            net_series = first_existing_series(
-                g,
-                ["neto_po_rabatu", "Neto po rabatu", "total_net", "znesek"],
-                fill_value=_D("0"),
-            )
-            net_total = dsum(net_series)
-            net_return = dsum_neg(net_series)
-
-            if net_total == _D("0") and net_return > _D("0"):
-                net_total = -net_return
-
-            pre_discount_series = first_existing_series(
-                g,
-                [
-                    "Skupna neto pred rabatom",
-                    "neto_pred_rabatom",
-                    "vrednost_pred_rabatom",
-                    "net_pred_rab",
-                ],
-            )
-            pre_discount_total = (
-                dsum(pre_discount_series) if pre_discount_series is not None else _D("0")
-            )
-
-            if pre_discount_total == _D("0"):
-                unit_before_series = first_existing_series(
-                    g,
-                    [
-                        "cena_pred_rabatom",
-                        "cena_bruto",
-                        "net_pred_rab",
-                        "unit_net_before",
-                        "Net. pred rab.",
-                        "Net. pred rab",
-                    ],
-                )
-                pre_discount_total = dsum_prod(qty_series, unit_before_series)
-
-
-            amount_value = (
-                dsum(_col(g, "bruto"))
-                if bruto_source_col is not None
-                else amount_total
-            )
-
-            if amount_value == _D("0") and pre_discount_total != _D("0"):
-                amount_value = pre_discount_total
-
-
-            records.append(
-                {
-                    "WSM šifra": show_code,
-                    "WSM Naziv": disp_name if is_booked else "Ostalo",
-                    "Količina": qty_total,
-                    "Znesek": amount_value,
-                    "Rabat (%)": rab,
-                    "Neto po rabatu": net_total,
-                }
-            )
-
-        df_summary = summary_df_from_records(records)
-
-        df_summary["WSM šifra"] = (
-            first_existing_series(df_summary, ["WSM šifra", "wsm_sifra"])
-            .fillna("")
-            .astype(str)
-        )
-        df_summary["WSM Naziv"] = (
-            first_existing_series(
-                df_summary, ["WSM Naziv", "WSM naziv", "wsm_naziv"]
-            )
-            .fillna("")
-            .astype(str)
+        # --- novi povzetek z OSTALO vrstico ---
+        summary_df, summary_status, net_diff_val = _build_wsm_summary(
+            df, header_net_dec
         )
 
-        try:
-            bm = _booked_mask_from(df_summary)
-        except Exception:
-            _ws = (
-                _col(df_summary, "WSM šifra")
-                .fillna("")
-                .astype(str)
-                .str.strip()
-            )
-            bm = _ws.ne("") & ~_ws.str.upper().isin(_excluded_codes_upper())
-        booked_mask_new = bm
+        _render_summary(summary_df)
 
-        # Backfill imen po konsolidaciji, če je še prazno/"Ostalo"
-        try:
-            sdf = globals().get("sifre_df") or globals().get("wsm_df")
-            if sdf is not None and {"wsm_sifra", "wsm_naziv"}.issubset(
-                sdf.columns
-            ):
-                code2name = (
-                    sdf.assign(
-                        wsm_sifra=_col(sdf, "wsm_sifra")
-                        .astype(str)
-                        .str.strip(),
-                        wsm_naziv=_col(sdf, "wsm_naziv").astype(str),
-                    )
-                    .dropna(subset=["wsm_naziv"])
-                    .drop_duplicates("wsm_sifra")
-                    .set_index("wsm_sifra")["wsm_naziv"]
-                )
-                names = df_summary["WSM Naziv"].astype(str)
-                booked_mask_new = (
-                    df_summary["WSM šifra"].astype(str).str.strip().ne("")
-                )
-                still_empty = names.str.strip().eq("") | names.str.lower().eq(
-                    "ostalo"
-                )
-                mask = booked_mask_new & still_empty
-                df_summary.loc[mask, "WSM Naziv"] = (
-                    df_summary.loc[mask, "WSM šifra"]
-                    .astype(str)
-                    .str.strip()
-                    .map(code2name)
-                    .fillna(df_summary.loc[mask, "WSM Naziv"])
-                )
-        except Exception as e:
-            log.warning("WSM Naziv backfill from catalog failed: %s", e)
+        # --- števec "Knjiženo / Ostane" po vrsticah v gridu ---
+        codes_series = (
+            df.get("_booked_sifra")
+            if "_booked_sifra" in df.columns
+            else df.get("wsm_sifra")
+        )
+        if codes_series is None:
+            booked_count = 0
+            remaining_count = len(df)
+        else:
+            codes_series = codes_series.astype("string").fillna("").str.strip()
+            booked_count = int((codes_series != "").sum())
+            remaining_count = int(len(df) - booked_count)
 
-        b, u = globals().get(
-            "_fallback_count_from_grid", lambda df: (0, len(df))
-        )(df)
-        globals()["_SUMMARY_COUNTS"] = (b, u)
+        globals()["_SUMMARY_COUNTS"] = (booked_count, remaining_count)
         try:
-            sum_booked_var.set(f"Knjiženo: {b}")
-            sum_unbooked_var.set(f"Ostane: {u}")
+            sum_booked_var.set(f"Knjiženo: {booked_count}")
+            sum_unbooked_var.set(f"Ostane: {remaining_count}")
         except Exception:
             pass
 
-        df_summary = df_summary.loc[:, ~df_summary.columns.duplicated()].copy()
-        _render_summary(df_summary)
+        # --- NET indikator (X / Δ) ---
+        if net_icon_label is None or not net_icon_label.winfo_exists():
+            net_icon_label = ttk.Label(total_frame)
+            net_icon_label.pack(side="left", padx=5)
+
+        if summary_status == "X":
+            net_icon_label.config(text="✗", style="Indicator.Red.TLabel")
+            tooltip = (
+                f"Razlika v neto znesku je {net_diff_val:+.2f} € (preveri račun!)."
+                if net_diff_val is not None
+                else "Razlika v neto znesku – preveri račun!"
+            )
+        elif summary_status == "Δ":
+            net_icon_label.config(text="△", style="TLabel")
+            tooltip = (
+                f"Razlika v neto znesku je {net_diff_val:+.2f} € (verjetno zaokroževanje)."
+                if net_diff_val is not None
+                else "Razlika v neto znesku (verjetno zaokroževanje)."
+            )
+        else:
+            net_icon_label.config(text="", style="TLabel")
+            tooltip = None
+
+        _bind_status_tooltip(net_icon_label, tooltip)
 
     def format_eur(value: Decimal | float | int | str) -> str:
         try:
