@@ -2456,14 +2456,27 @@ def review_links(
             lambda v: v if isinstance(v, Decimal) else Decimal(str(v))
         ).sum()
 
-        hdr_net = hdr_net_total if isinstance(hdr_net_total, Decimal) else None
+        try:
+            hdr_net = (
+                Decimal(str(hdr_net_total))
+                if hdr_net_total is not None
+                else None
+            )
+        except Exception:
+            hdr_net = None
         net_diff: Decimal | None = None
         tolerance_rounding = Decimal("0.05")
 
         if hdr_net is None:
             status = ""
         else:
-            net_diff = hdr_net - grid_net_total
+            net_diff = (hdr_net - grid_net_total).quantize(Decimal("0.01"))
+            log.info(
+                "NET DIFF CHECK: doc_net=%s, grid_net=%s, diff=%s",
+                hdr_net,
+                grid_net_total,
+                net_diff,
+            )
             if abs(net_diff) > tolerance_rounding:
                 status = "X"
             elif abs(net_diff) > Decimal("0.00"):
@@ -2617,6 +2630,7 @@ def review_links(
         .quantize(Decimal("0.01"))
     )
 
+    # header_net_dec izračunamo enkrat in ga uporabimo tudi v povzetku
     try:
         header_net_dec = (
             header_totals.get("net")
@@ -2625,6 +2639,8 @@ def review_links(
         )
     except Exception:
         header_net_dec = None
+
+    summary_totals: dict[str, Decimal] = {}
 
     # 3) shrani grid za povzetek
     global _CURRENT_GRID_DF
@@ -3672,7 +3688,7 @@ def review_links(
 
         # --- novi povzetek z OSTALO vrstico ---
         summary_df, summary_status, net_diff_val = _build_wsm_summary(
-            df, header_net_dec
+            df, summary_totals.get("net", header_net_dec)
         )
 
         _render_summary(summary_df)
@@ -3752,16 +3768,9 @@ def review_links(
     )
     inv_total = inv_total.quantize(Decimal("0.01"))
     calc_total = net_total + vat_total
+    summary_totals.update({"net": net_total, "vat": vat_total, "gross": calc_total})
     tolerance = _resolve_tolerance(net_total, inv_total)
     diff = inv_total - calc_total
-    try:
-        header_net_dec = (
-            header_totals.get("net")
-            if isinstance(header_totals.get("net"), Decimal)
-            else Decimal(str(header_totals.get("net")))
-        )
-    except Exception:
-        header_net_dec = None
     net_status = classify_net_difference(
         header_net_dec, net_total, tolerance=tolerance
     )
@@ -3949,6 +3958,7 @@ def review_links(
     legend_label_net.pack(anchor="w")
 
     def _safe_update_totals():
+        nonlocal summary_totals
         if closing or not root.winfo_exists():
             return
 
@@ -3993,6 +4003,7 @@ def review_links(
         net_total = net_after_doc_discount
         vat_val = _sum_decimal(ddv_series).quantize(Decimal("0.01"))
         calc_total = net_total + vat_val
+        summary_totals.update({"net": net_total, "vat": vat_val, "gross": calc_total})
         inv_total = (
             header_totals["gross"]
             if isinstance(header_totals["gross"], Decimal)
