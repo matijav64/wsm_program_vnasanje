@@ -709,8 +709,6 @@ def _format_opozorilo(row: pd.Series) -> str:
         pct = row.get("eff_discount_pct", row.get("rabata_pct", Decimal("0")))
         if not isinstance(pct, Decimal):
             try:
-                import pandas as pd
-
                 if pd.isna(pct):
                     pct = Decimal("0")
                 else:
@@ -745,8 +743,6 @@ def _as_dec(x, default: str = "0") -> Decimal:
             return x if x.is_finite() else Decimal(default)
         # pandas/numpy NaN or None
         try:
-            import pandas as pd  # local import to avoid hard dep
-
             if x is None or pd.isna(x):
                 return Decimal(default)
         except Exception:
@@ -1197,9 +1193,8 @@ def review_links(
         rows.
     """
 
-    # Prepreči UnboundLocalError za 'pd' in 'Decimal' zaradi poznejših lokalnih
+    # Prepreči UnboundLocalError za 'Decimal' zaradi poznejših lokalnih
     # importov v tej funkciji ter poskrbi za Decimal util.
-    import pandas as pd
     from decimal import Decimal, ROUND_HALF_UP
 
     def _is_placeholder_supplier_name(
@@ -3126,8 +3121,6 @@ def review_links(
             _t(f"_sync_wsm_cols_local skipped: {_e}")
 
     def _refresh_summary_ui():
-        import pandas as pd
-
         # poravnaj WSM stolpce (display → internal)
         _sync_wsm_cols_local()
         try:
@@ -3624,8 +3617,6 @@ def review_links(
             )
 
     def _fallback_count_from_grid(df):
-        import pandas as pd
-
         try:
             codes = first_existing_series(
                 df,
@@ -3658,7 +3649,6 @@ def review_links(
             return 0, len(df)
 
     def _update_summary():
-        import pandas as pd
         nonlocal net_icon_label
 
         df = globals().get("_CURRENT_GRID_DF")
@@ -3747,10 +3737,14 @@ def review_links(
     total_frame = tk.Frame(root)
     total_frame.pack(fill="x", pady=5)
 
-    vat_val = header_totals["vat"]
-    if not isinstance(vat_val, Decimal):
-        vat_val = Decimal(str(vat_val))
-    vat_total = vat_val.quantize(Decimal("0.01"))
+    if df is not None and "ddv" in df.columns:
+        vat_series = df["ddv"].apply(lambda x: _as_dec(x, "0"))
+    else:
+        vat_series = pd.Series(
+            [_as_dec("0", "0")] * (len(df) if df is not None else 0),
+            index=(df.index if df is not None else None),
+        )
+    vat_total = _sum_decimal(vat_series).quantize(Decimal("0.01"))
     inv_total = (
         header_totals["gross"]
         if isinstance(header_totals["gross"], Decimal)
@@ -3797,7 +3791,7 @@ def review_links(
             )
     net = net_total
     vat = vat_total
-    gross = inv_total
+    gross = calc_total
 
     lbl_net = tk.Label(
         total_frame,
@@ -3983,11 +3977,9 @@ def review_links(
         if "ddv" in df.columns:
             ddv_series = df["ddv"].apply(lambda x: _as_dec(x, "0"))
         else:
-            import pandas as pd
-
-            ddv_series = pd.Series([
-                _as_dec("0", "0")
-            ] * len(df), index=df.index)
+            ddv_series = pd.Series(
+                [_as_dec("0", "0")] * len(df), index=df.index
+            )
         doc_discount_mask = (ddv_series == Decimal("0")) & (neto_series < 0)
         sum_doc_discount = _sum_decimal(neto_series[doc_discount_mask]).quantize(
             Decimal("0.01")
@@ -3999,10 +3991,7 @@ def review_links(
             sum_net_lines_without_doc_discount + sum_doc_discount
         ).quantize(Decimal("0.01"))
         net_total = net_after_doc_discount
-        vat_val = header_totals["vat"]
-        if not isinstance(vat_val, Decimal):
-            vat_val = Decimal(str(vat_val))
-        vat_val = vat_val.quantize(Decimal("0.01"))
+        vat_val = _sum_decimal(ddv_series).quantize(Decimal("0.01"))
         calc_total = net_total + vat_val
         inv_total = (
             header_totals["gross"]
@@ -4039,7 +4028,7 @@ def review_links(
 
         net = net_total
         vat = vat_val
-        gross = inv_total
+        gross = calc_total
         try:
             _classify_net_difference = classify_net_difference
         except Exception:
