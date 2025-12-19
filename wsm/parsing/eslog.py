@@ -1105,29 +1105,44 @@ def extract_invoice_number(xml_path: Path | str) -> str | None:
 
 
 def extract_total_tax(source: Path | str | Any) -> Decimal:
-    """Sum MOA values with qualifier 124 inside all ``G_SG52`` groups."""
+    """Return invoice VAT total using SG52 summary, TaxAmount or MOA 124 fallbacks."""
     try:
         if hasattr(source, "findall"):
             root = source
         else:
             tree = LET.parse(source, parser=XML_PARSER)
             root = tree.getroot()
+        _force_ns_for_doc(root)
+        summary = _parse_tax_summary(root)
+        if summary.has_complete:
+            return summary.tax_total
+        if summary.partial_tax_total != 0:
+            return summary.partial_tax_total
+
         total = Decimal("0")
-        # Prefer tax summary groups (G_SG52) if present
-        for sg52 in root.findall(".//e:G_SG52", NS) + root.findall(
-            ".//G_SG52"
+        header_tax = Decimal("0")
+        line_tax = Decimal("0")
+
+        def _is_in_sg26(node: LET._Element) -> bool:
+            anc = node.getparent()
+            while anc is not None:
+                if anc.tag.split("}")[-1] == "G_SG26":
+                    return True
+                anc = anc.getparent()
+            return False
+
+        # Fallback to explicit TaxAmount in SG34 (prefer header-level)
+        for tax_el in root.findall(".//e:G_SG34//e:TaxAmount", NS) + root.findall(
+            ".//G_SG34//TaxAmount"
         ):
-            for moa in sg52.findall("./e:S_MOA", NS) + sg52.findall("./S_MOA"):
-                code_el = moa.find("./e:C_C516/e:D_5025", NS)
-                if code_el is None:
-                    code_el = moa.find("./C_C516/D_5025")
-                if _text(code_el) == "124":
-                    val_el = moa.find("./e:C_C516/e:D_5004", NS)
-                    if val_el is None:
-                        val_el = moa.find("./C_C516/D_5004")
-                    total += _decimal(val_el)
+            val = _decimal(tax_el)
+            if _is_in_sg26(tax_el):
+                line_tax += val
+            else:
+                header_tax += val
+        total = header_tax if header_tax != 0 else line_tax
+
         if total == 0:
-            # Fallback to header totals (G_SG34)
             for moa in root.findall(".//e:G_SG34/e:S_MOA", NS) + root.findall(
                 ".//G_SG34/S_MOA"
             ):
@@ -1138,10 +1153,311 @@ def extract_total_tax(source: Path | str | Any) -> Decimal:
                     val_el = moa.find("./e:C_C516/e:D_5004", NS)
                     if val_el is None:
                         val_el = moa.find("./C_C516/D_5004")
-                    total += _decimal(val_el)
-        return total.quantize(Decimal("0.01"), ROUND_HALF_UP)
+                    val = _decimal(val_el)
+                    if _is_in_sg26(moa):
+                        line_tax += val
+                    else:
+                        header_tax += val
+            total = header_tax if header_tax != 0 else line_tax
+
+        return _dec2(total)
     except Exception:
         return Decimal("0")
+
+
+def _parse_tax_summary(root: LET._Element) -> SimpleNamespace:
+    """Return tax summary totals from ``G_SG52`` with swapped MOA handling."""
+    try:
+        _force_ns_for_doc(root)
+        base_total = Decimal("0")
+        tax_total = Decimal("0")
+        partial_tax = Decimal("0")
+        base_only_total = Decimal("0")
+        has_complete = False
+        has_partial_tax = False
+        for sg52 in root.findall(".//e:G_SG52", NS) + root.findall(".//G_SG52"):
+            amounts: dict[str, Decimal] = {}
+            for moa in sg52.findall("./e:S_MOA", NS) + sg52.findall("./S_MOA"):
+                code_el = moa.find("./e:C_C516/e:D_5025", NS)
+                if code_el is None:
+                    code_el = moa.find("./C_C516/D_5025")
+                qualifier = _text(code_el)
+                if qualifier not in {"124", "125"}:
+                    continue
+                val_el = moa.find("./e:C_C516/e:D_5004", NS)
+                if val_el is None:
+                    val_el = moa.find("./C_C516/D_5004")
+                amounts[qualifier] = amounts.get(qualifier, Decimal("0")) + _decimal(
+                    val_el
+                )
+
+            def _rate_for_summary(node: LET._Element) -> Decimal:
+                rate = Decimal("0")
+                for tax in node.findall("./e:S_TAX", NS) + node.findall("./S_TAX"):
+                    r_el = tax.find("./e:C_C243/e:D_5278", NS)
+                    if r_el is None:
+                        r_el = tax.find("./C_C243/D_5278")
+                    r = _decimal(r_el)
+                    if r != 0:
+                        rate = r
+                        break
+                return rate
+
+            base_val = amounts.get("125")
+            tax_val = amounts.get("124")
+            rate_percent = _rate_for_summary(sg52)
+
+            if base_val is not None and tax_val is not None:
+                base = base_val
+                tax = tax_val
+                swapped = False
+                if abs(tax) > abs(base):
+                    swapped = True
+                if rate_percent:
+                    expected_tax = _dec2(abs(base) * rate_percent / Decimal("100"))
+                    alt_expected = _dec2(abs(tax) * rate_percent / Decimal("100"))
+                    if abs(abs(tax) - expected_tax) > Decimal("0.02") and abs(
+                        abs(base) - alt_expected
+                    ) <= Decimal("0.02"):
+                        swapped = True
+                if swapped:
+                    base, tax = tax_val, base_val
+                base_total += base
+                tax_total += tax
+                has_complete = True
+            elif tax_val is not None:
+                partial_tax += tax_val
+                has_partial_tax = True
+            elif base_val is not None:
+                base_only_total += base_val
+        return SimpleNamespace(
+            base_total=_dec2(base_total) if base_total != 0 else Decimal("0"),
+            tax_total=_dec2(tax_total) if tax_total != 0 else Decimal("0"),
+            partial_tax_total=_dec2(partial_tax)
+            if partial_tax != 0
+            else Decimal("0"),
+            base_only_total=_dec2(base_only_total)
+            if base_only_total != 0
+            else Decimal("0"),
+            has_complete=has_complete,
+            has_partial=has_partial_tax,
+        )
+    except Exception:
+        return SimpleNamespace(
+            base_total=Decimal("0"),
+            tax_total=Decimal("0"),
+            partial_tax_total=Decimal("0"),
+            base_only_total=Decimal("0"),
+            has_complete=False,
+            has_partial=False,
+        )
+
+
+def extract_header_totals_preferred(
+    source: Path | str | Any,
+    *,
+    net_fallback: Decimal | None = None,
+    tax_fallback: Decimal | None = None,
+) -> tuple[Decimal, Decimal, Decimal, dict[str, Any]]:
+    """Return (net, vat, gross) totals preferring MOA 9/79 with robust TAX.
+
+    The totals prioritise MOA 9 for the gross (``payable``) amount and MOA 79
+    for the net base.  VAT is primarily derived from ``MOA9 - MOA79``.  When
+    tax summary values (``G_SG52``) contain swapped MOA 124/125 values, the
+    function treats the larger value as the base and the smaller as VAT.  Any
+    missing header amount falls back to the provided ``net_fallback`` or
+    ``tax_fallback``.
+    """
+
+    try:
+        if hasattr(source, "findall"):
+            root = source
+        else:
+            tree = LET.parse(source, parser=XML_PARSER)
+            root = tree.getroot()
+        _force_ns_for_doc(root)
+
+        gross_candidates: list[tuple[Decimal, str]] = []
+        gross9 = _first_moa(root, {"9"}, ignore_sg26=True)
+        if gross9 != 0:
+            gross_candidates.append((gross9, "MOA9"))
+        gross388 = _first_moa(root, {"388"}, ignore_sg26=True)
+        if gross388 != 0 and gross388 not in {g for g, _ in gross_candidates}:
+            gross_candidates.append((gross388, "MOA388"))
+        gross77 = _first_moa(root, {"77"}, ignore_sg26=True)
+        if gross77 != 0:
+            gross_candidates.append((gross77, "MOA77"))
+        gross_total: Decimal | None = None
+        gross_source = ""
+        if gross_candidates:
+            gross_total, gross_source = gross_candidates[0]
+
+        net_raw = _first_moa(root, {"79"}, ignore_sg26=True)
+        net_source = "MOA79" if net_raw != 0 else ""
+        net_total: Decimal | None = _dec2(net_raw) if net_raw != 0 else None
+        if net_total is None:
+            net_alt = _first_moa(
+                root, {Moa.HEADER_NET.value, "389"}, ignore_sg26=True
+            )
+            if net_alt != 0:
+                net_total = _dec2(net_alt)
+                net_source = "MOA389"
+        if net_total is None and net_fallback is not None:
+            net_total = _dec2(net_fallback)
+            if not net_source:
+                net_source = "fallback-net"
+        net_hint_q: Decimal | None = None
+        net_hint = extract_header_net(root)
+        if net_hint != 0:
+            net_hint_q = _dec2(net_hint)
+
+        summary = _parse_tax_summary(root)
+
+        tax_hint: Decimal | None = None
+        if summary.has_complete and summary.tax_total != 0:
+            tax_hint = summary.tax_total
+        elif summary.has_partial and summary.partial_tax_total != 0:
+            tax_hint = summary.partial_tax_total
+
+        def _candidate(
+            gross: Decimal | None, net: Decimal | None, label: str
+        ) -> tuple[Decimal, Decimal, Decimal, str] | None:
+            if gross is None or net is None:
+                return None
+            vat = _dec2(gross - net)
+            return _dec2(net), vat, _dec2(gross), label
+
+        candidates: list[tuple[Decimal, Decimal, Decimal, str]] = []
+
+        for g_val, g_src in gross_candidates or [(gross_total, gross_source)]:
+            g_val_q = _dec2(g_val) if g_val is not None else None
+            cand_standard = _candidate(
+                g_val_q,
+                net_total,
+                f"{g_src}-MOA79" if g_src else "MOA9-79",
+            )
+            if cand_standard:
+                candidates.append(cand_standard)
+            if net_hint_q is not None:
+                cand_hdr = _candidate(g_val_q, net_hint_q, f"{g_src}-header_net")
+                if cand_hdr:
+                    candidates.append(cand_hdr)
+            cand_swap = _candidate(
+                _dec2(net_total) if net_total is not None else None,
+                g_val_q,
+                f"{g_src}-swap" if g_src else "MOA79-9",
+            )
+            if cand_swap:
+                candidates.append(cand_swap)
+            if tax_hint is not None:
+                cand_tax_hint = _candidate(
+                    g_val_q,
+                    _dec2(g_val_q - tax_hint) if g_val_q is not None else None,
+                    f"{g_src}-taxhint" if g_src else "MOA9-taxhint",
+                )
+                if cand_tax_hint:
+                    candidates.append(cand_tax_hint)
+
+        def _score(
+            cand: tuple[Decimal, Decimal, Decimal, str]
+        ) -> tuple[Decimal, bool, Decimal, Decimal]:
+            net_c, vat_c, gross_c, label = cand
+            gross_net_ok = abs(gross_c) + Decimal("0.05") >= abs(net_c)
+            priority = Decimal("5")
+            if "header_net" in label:
+                priority = Decimal("0")
+            elif "MOA9" in label and "MOA79" in label and "swap" not in label:
+                priority = Decimal("1")
+            elif "swap" in label or label == "MOA79-9":
+                priority = Decimal("2")
+            elif "taxhint" in label:
+                priority = Decimal("3")
+
+            if tax_hint is None:
+                return (Decimal("0"), gross_net_ok, priority, abs(vat_c))
+            sign_ok = vat_c == 0 or vat_c * tax_hint >= 0
+            diff = abs(vat_c - tax_hint)
+            return (diff, sign_ok and gross_net_ok, priority, abs(vat_c))
+
+        best: tuple[Decimal, Decimal, Decimal, str] | None = None
+        if candidates:
+            scored = []
+            for cand in candidates:
+                diff, valid, priority, vat_abs = _score(cand)
+                scored.append((diff, valid, priority, vat_abs, cand))
+            # Prefer valid sign/ratio, then smallest diff, then priority, then |vat|
+            scored.sort(key=lambda item: (not item[1], item[0], item[2], item[3]))
+            best = scored[0][4]
+
+        vat_source = ""
+        if best is None:
+            # derive from available hints or fallbacks
+            if gross_total is None and net_total is not None and tax_hint is not None:
+                gross_total = _dec2(net_total + tax_hint)
+                gross_source = gross_source or "net+taxhint"
+            if net_total is None and gross_total is not None and tax_hint is not None:
+                net_total = _dec2(gross_total - tax_hint)
+                net_source = net_source or "gross-taxhint"
+            if gross_total is None and net_total is None and net_fallback is not None:
+                net_total = _dec2(net_fallback)
+                net_source = net_source or "fallback-net"
+            if gross_total is None and tax_fallback is not None and net_total is not None:
+                gross_total = _dec2(net_total + _dec2(tax_fallback))
+                gross_source = gross_source or "net+fallback-tax"
+            vat_total = (
+                _dec2(tax_fallback) if tax_fallback is not None else Decimal("0")
+            )
+            vat_source = "fallback-tax" if tax_fallback is not None else "calculated"
+            if gross_total is None:
+                gross_total = _dec2((net_total or Decimal("0")) + vat_total)
+                if not gross_source:
+                    gross_source = "net+vat"
+            if net_total is None:
+                net_total = Decimal("0")
+                if not net_source:
+                    net_source = "calculated"
+        else:
+            net_total, vat_total, gross_total, variant = best
+            vat_source = variant
+            is_swap = ("swap" in variant) or (variant == "MOA79-9")
+            if is_swap:
+                gross_source, net_source = "MOA79", "MOA9"
+            elif "taxhint" in variant:
+                net_source = "gross-taxhint"
+            else:
+                gross_source = gross_source or "MOA9/388"
+                net_source = net_source or "MOA79"
+            # derive precise gross source from variant prefix only when not swapped
+            if not is_swap:
+                prefix = variant.split("-")[0]
+                if prefix in {"MOA9", "MOA388", "MOA77"}:
+                    gross_source = prefix
+            if tax_hint is not None and abs(vat_total - tax_hint) <= Decimal("0.02"):
+                vat_source = f"{variant}+SG52"
+
+        meta = {
+            "gross_source": gross_source or "calculated",
+            "net_source": net_source or "calculated",
+            "vat_source": vat_source or "calculated",
+            "tax_summary_complete": summary.has_complete,
+            "tax_summary_partial": summary.has_partial,
+        }
+        return net_total, vat_total, gross_total, meta
+    except Exception:
+        return (
+            _dec2(net_fallback) if net_fallback is not None else Decimal("0"),
+            _dec2(tax_fallback) if tax_fallback is not None else Decimal("0"),
+            _dec2(
+                (net_fallback or Decimal("0")) + (tax_fallback or Decimal("0"))
+            ),
+            {
+                "gross_source": "error",
+                "net_source": "error",
+                "vat_source": "error",
+                "tax_summary_complete": False,
+                "tax_summary_partial": False,
+            },
+        )
 
 
 def sum_moa(
@@ -1551,14 +1867,14 @@ def _line_net(sg26: LET._Element) -> Decimal:
 
     base = _line_moa203(sg26)
     has_moa204 = _sum_moa(sg26, DISCOUNT_MOA_LINE, deep=True) != 0
-    if base == 0:
-        val = _first_moa(sg26, {"125"})
-        net = _dec2(val) if val != 0 else Decimal("0.00")
-        if val != 0 and not has_moa204:
-            net -= _line_pct_discount(sg26)
-        return _dec2(net)
-
     val = _first_moa(sg26, {"125"})
+    if base == 0:
+        if val != 0:
+            net = _dec2(val)
+            if not has_moa204:
+                net -= _line_pct_discount(sg26)
+            return _dec2(net)
+
     if val != 0:
         net = _dec2(val)
         if not has_moa204:
@@ -2518,12 +2834,18 @@ def parse_eslog_invoice(
             }
         )
 
-    header_vat = extract_total_tax(root)
-    vat_total = tax_total
-    if header_vat != 0:
-        sum_vat = _dec2(tax_total)
-        diff_vat = header_vat - sum_vat
-        if diff_vat != 0 and line_indices:
+    net_total = _dec2(net_total)
+    preferred_net, preferred_vat, preferred_gross, totals_meta = (
+        extract_header_totals_preferred(
+            root, net_fallback=net_total, tax_fallback=tax_total
+        )
+    )
+
+    sum_vat = _dec2(tax_total)
+    vat_total = sum_vat
+    if preferred_vat != 0:
+        diff_vat = preferred_vat - sum_vat
+        if abs(diff_vat) >= DEC2 and line_indices:
             idx_biggest_vat = max(
                 line_indices, key=lambda i: abs(items[i].get("ddv", Decimal("0")))
             )
@@ -2533,43 +2855,24 @@ def parse_eslog_invoice(
             tax_total = _dec2(
                 sum(items[i].get("ddv", Decimal("0")) for i in line_indices)
             )
-        vat_total = header_vat
+        vat_total = preferred_vat
 
-    net_total = _dec2(net_total)
+    net_total = preferred_net
     gross_calc = (net_total + vat_total).quantize(DEC2, ROUND_HALF_UP)
-    gross_attr = gross_calc
-    header_gross = _first_moa(root, {"9", "388"}, ignore_sg26=True)
-    diff_gross = Decimal("0")
-    ok = True
-    warn_gross = False
-    if header_gross != 0:
-        header_gross = header_gross.quantize(DEC2, ROUND_HALF_UP)
-        diff_gross = abs(gross_calc - header_gross)
-        if diff_gross > DEC2 and _mode_override is None:
-            buf = io.BytesIO(LET.tostring(root))
-            alt_mode = "real" if _INFO_DISCOUNTS else "info"
-            df_alt, ok_alt = parse_eslog_invoice(
-                buf, discount_codes, _mode_override=alt_mode
-            )
-            gross_alt = df_alt.attrs.get("gross_calc", header_gross)
-            diff_alt = abs(gross_alt - header_gross)
-            if diff_alt < diff_gross:
-                return df_alt, ok_alt
-        ok = diff_gross <= DEC2
-        warn_gross = diff_gross > DEC2
-
-    if hdr125 is not None:
-        net_total = _dec2(hdr125)
-    if header_vat != 0:
-        vat_total = header_vat
-    elif header_gross != 0:
-        vat_total = _dec2(header_gross - net_total)
-
-    if hdr125 in (None, Decimal("0")) and header_gross != 0 and header_vat != 0:
-        net_total = _dec2(header_gross - header_vat)
-        gross_calc = (net_total + vat_total).quantize(DEC2, ROUND_HALF_UP)
-    if header_gross != 0:
-        gross_calc = header_gross
+    gross_attr = preferred_gross
+    diff_gross = abs(gross_calc - gross_attr)
+    ok = diff_gross <= DEC2
+    warn_gross = diff_gross > DEC2
+    if warn_gross and _mode_override is None:
+        buf = io.BytesIO(LET.tostring(root))
+        alt_mode = "real" if _INFO_DISCOUNTS else "info"
+        df_alt, ok_alt = parse_eslog_invoice(
+            buf, discount_codes, _mode_override=alt_mode
+        )
+        gross_alt = df_alt.attrs.get("gross_calc", gross_attr)
+        diff_alt = abs(gross_alt - gross_attr)
+        if diff_alt < diff_gross:
+            return df_alt, ok_alt
 
     if net_mismatch:
         ok = False
@@ -2579,16 +2882,21 @@ def parse_eslog_invoice(
             net_diff,
         )
 
+    gross_reference = (
+        gross_attr
+        if str(totals_meta.get("gross_source", "")).startswith("MOA")
+        else Decimal("0")
+    )
     final_diff = diff_gross
-    if header_gross != 0:
+    if gross_reference != 0:
         gross_check = (net_total + vat_total).quantize(DEC2, ROUND_HALF_UP)
-        final_diff = abs(gross_check - header_gross)
+        final_diff = abs(gross_check - gross_reference)
         if final_diff <= DEC2:
             ok = True
         elif warn_gross:
             log.warning(
                 "Invoice total mismatch: MOA 9/38/388 %s vs calculated %s",
-                header_gross,
+                gross_reference,
                 gross_check,
             )
     else:
@@ -2620,7 +2928,8 @@ def parse_eslog_invoice(
     df.attrs["net_warning"] = net_warn
     df.attrs["info_discounts"] = _INFO_DISCOUNTS
     df.attrs["gross_calc"] = gross_attr
-    df.attrs["gross_mismatch"] = header_gross != 0 and final_diff > DEC2
+    df.attrs["gross_mismatch"] = gross_reference != 0 and final_diff > DEC2
+    df.attrs["header_totals_meta"] = totals_meta
     df.attrs["mode"] = mode_result
     if "sifra_dobavitelja" in df.columns and not df["sifra_dobavitelja"].any():
         df["sifra_dobavitelja"] = supplier_code
@@ -2707,35 +3016,28 @@ def parse_invoice_totals(
         _dec2(df_main["ddv"].sum()) if "ddv" in df_main.columns else Decimal("0")
     )
 
-    header_net = extract_header_net(xml_root)
-    header_vat = extract_total_tax(xml_root)
-    header_gross = extract_grand_total(xml_root)
+    preferred_net, preferred_vat, preferred_gross, totals_meta = (
+        extract_header_totals_preferred(
+            xml_root, net_fallback=net_total, tax_fallback=vat_total
+        )
+    )
 
-    header_net_q = _dec2(header_net) if header_net != 0 else Decimal("0")
-    header_vat_q = _dec2(header_vat) if header_vat != 0 else Decimal("0")
-    header_gross_q = _dec2(header_gross) if header_gross != 0 else Decimal("0")
-
-    if header_net_q != 0:
-        net_total = header_net_q
-
-    if header_vat_q != 0:
-        vat_total = header_vat_q
-    elif header_gross_q != 0:
-        vat_total = _dec2(header_gross_q - net_total)
-
+    net_total = preferred_net
+    vat_total = preferred_vat
+    gross_total = preferred_gross
     calc_gross = _dec2(net_total + vat_total)
-    gross_total = header_gross_q if header_gross_q != 0 else calc_gross
-
-    header_total = _dec2(
-        header_gross_q if header_gross_q != 0 else header_net_q + header_vat_q
+    gross_reference = (
+        gross_total
+        if str(totals_meta.get("gross_source", "")).startswith("MOA")
+        else Decimal("0")
     )
 
     mismatch = bool(df.attrs.get("vat_mismatch", False))
-    if header_total != 0 and abs(calc_gross - header_total) > DEC2:
+    if gross_reference != 0 and abs(calc_gross - gross_reference) > DEC2:
         mismatch = True
         log.warning(
             "Invoice total mismatch: MOA 9/38/388 %s vs calculated %s",
-            header_total,
+            gross_reference,
             calc_gross,
         )
 

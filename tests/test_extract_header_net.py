@@ -258,7 +258,7 @@ def test_parse_eslog_invoice_prefers_header_gross_without_header_vat(tmp_path):
 
     df, ok = parse_eslog_invoice(path)
 
-    assert df["ddv"].sum() == Decimal("22.06")
+    assert df["ddv"].sum() == Decimal("22.00")
     assert ok
     assert not df.attrs.get("gross_mismatch", False)
     assert df.attrs["gross_calc"] == Decimal("122.00")
@@ -466,3 +466,72 @@ def test_parse_invoice_totals_uses_header_amounts_with_allowance(tmp_path):
     assert totals["gross"] == Decimal("48.00")
     assert totals["mismatch"] is False
 
+
+def test_parse_invoice_totals_handles_swapped_header_totals(tmp_path):
+    xml = (
+        "<Invoice xmlns='urn:eslog:2.00'>"
+        "  <M_INVOIC>"
+        "    <G_SG26>"
+        "      <S_LIN><D_1082>1</D_1082></S_LIN>"
+        "      <G_SG27>"
+        "        <S_MOA><C_C516><D_5025>203</D_5025><D_5004>100.00</D_5004></C_C516></S_MOA>"
+        "      </G_SG27>"
+        "      <G_SG34>"
+        "        <S_TAX><C_C243><D_5278>22.00</D_5278></C_C243></S_TAX>"
+        "      </G_SG34>"
+        "    </G_SG26>"
+        "    <G_SG50>"
+        "      <S_MOA><C_C516><D_5025>9</D_5025><D_5004>100.00</D_5004></C_C516></S_MOA>"
+        "      <S_MOA><C_C516><D_5025>79</D_5025><D_5004>122.00</D_5004></C_C516></S_MOA>"
+        "    </G_SG50>"
+        "    <G_SG52>"
+        "      <S_MOA><C_C516><D_5025>124</D_5025><D_5004>22.00</D_5004></C_C516></S_MOA>"
+        "      <S_MOA><C_C516><D_5025>125</D_5025><D_5004>100.00</D_5004></C_C516></S_MOA>"
+        "    </G_SG52>"
+        "  </M_INVOIC>"
+        "</Invoice>"
+    )
+    path = tmp_path / "swap_header.xml"
+    path.write_text(xml)
+
+    totals = parse_invoice_totals(LET.parse(str(path)))
+
+    assert totals["gross"] == Decimal("122.00")
+    assert totals["net"] == Decimal("100.00")
+    assert totals["vat"] == Decimal("22.00")
+    assert totals["mismatch"] is False
+
+
+def test_parse_invoice_totals_pr6711_header_totals(tmp_path):
+    xml = (
+        "<Invoice xmlns='urn:eslog:2.00'>"
+        "  <M_INVOIC>"
+        "    <G_SG26>"
+        "      <S_LIN><D_1082>1</D_1082></S_LIN>"
+        "      <G_SG27>"
+        "        <S_MOA><C_C516><D_5025>203</D_5025><D_5004>3820.72</D_5004></C_C516></S_MOA>"
+        "      </G_SG27>"
+        "      <G_SG34>"
+        "        <S_TAX><C_C243><D_5278>22.00</D_5278></C_C243></S_TAX>"
+        "      </G_SG34>"
+        "    </G_SG26>"
+        "    <G_SG50>"
+        "      <S_MOA><C_C516><D_5025>9</D_5025><D_5004>4183.69</D_5004></C_C516></S_MOA>"
+        "      <S_MOA><C_C516><D_5025>79</D_5025><D_5004>3820.72</D_5004></C_C516></S_MOA>"
+        "    </G_SG50>"
+        "    <G_SG52>"
+        "      <S_MOA><C_C516><D_5025>124</D_5025><D_5004>362.97</D_5004></C_C516></S_MOA>"
+        "      <S_MOA><C_C516><D_5025>125</D_5025><D_5004>3820.72</D_5004></C_C516></S_MOA>"
+        "    </G_SG52>"
+        "  </M_INVOIC>"
+        "</Invoice>"
+    )
+    path = tmp_path / "pr6711.xml"
+    path.write_text(xml)
+
+    totals = parse_invoice_totals(LET.parse(str(path)))
+
+    assert totals["gross"] == Decimal("4183.69")
+    assert totals["net"] == Decimal("3820.72")
+    assert abs(totals["vat"] - Decimal("362.97")) <= Decimal("0.01")
+    assert totals["mismatch"] is False

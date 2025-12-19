@@ -8,7 +8,7 @@ import re
 from collections.abc import Callable
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any
 from types import SimpleNamespace
 
 import pandas as pd
@@ -1476,8 +1476,23 @@ def review_links(
 
     log.debug(f"Supplier info: {supplier_info}")
 
-    header_totals = _build_header_totals(
-        invoice_path, invoice_total, invoice_gross
+    header_totals_meta: dict[str, Any] = {}
+    header_result = _build_header_totals(
+        invoice_path, invoice_total, invoice_gross, with_meta=True
+    )
+    if isinstance(header_result, tuple):
+        header_totals, header_totals_meta = header_result
+    else:
+        header_totals = header_result
+
+    log.info(
+        "Header totals resolved: gross=%s (src=%s) net=%s (src=%s) vat=%s (src=%s)",
+        header_totals.get("gross"),
+        header_totals_meta.get("gross_source", "n/a"),
+        header_totals.get("net"),
+        header_totals_meta.get("net_source", "n/a"),
+        header_totals.get("vat"),
+        header_totals_meta.get("vat_source", "n/a"),
     )
 
     service_date = (
@@ -4162,22 +4177,26 @@ def review_links(
             )
         except tk.TclError:
             return
+        header_net_disp = _as_dec(header_totals.get("net"), net)
+        header_vat_disp = _as_dec(header_totals.get("vat"), vat)
+        header_gross_disp = _as_dec(header_totals.get("gross"), gross)
+
         widget = total_frame.children.get("total_net")
         if widget and getattr(widget, "winfo_exists", lambda: True)():
-            widget.config(text=f"Neto: {_format_eur(net)}")
+            widget.config(text=f"Neto: {_format_eur(header_net_disp)}")
         widget = total_frame.children.get("total_vat")
         if widget and getattr(widget, "winfo_exists", lambda: True)():
-            widget.config(text=f"DDV: {_format_eur(vat)}")
+            widget.config(text=f"DDV: {_format_eur(header_vat_disp)}")
         widget = total_frame.children.get("total_gross")
         if widget and getattr(widget, "winfo_exists", lambda: True)():
-            widget.config(text=f"Skupaj: {_format_eur(gross)}")
+            widget.config(text=f"Skupaj: {_format_eur(header_gross_disp)}")
         widget = total_frame.children.get("total_sum")
         if widget and getattr(widget, "winfo_exists", lambda: True)():
             widget.config(
                 text=(
-                    f"Neto:   {_format_eur(net)}\n"
-                    f"DDV:    {_format_eur(vat)}\n"
-                    f"Skupaj: {_format_eur(gross)}"
+                    f"Neto:   {_format_eur(header_net_disp)}\n"
+                    f"DDV:    {_format_eur(header_vat_disp)}\n"
+                    f"Skupaj: {_format_eur(header_gross_disp)}"
                 )
             )
 

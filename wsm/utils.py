@@ -10,7 +10,7 @@ from pathlib import Path
 from decimal import Decimal, ROUND_HALF_UP
 import os
 import re
-from typing import Tuple, Union, List, Dict
+from typing import Tuple, Union, List, Dict, Any
 
 import pandas as pd
 import logging
@@ -111,7 +111,9 @@ def _build_header_totals(
     invoice_path: Path | None,
     invoice_total: Decimal,
     invoice_gross: Decimal | None = None,
-) -> dict[str, Decimal]:
+    *,
+    with_meta: bool = False,
+) -> dict[str, Decimal] | tuple[dict[str, Decimal], dict[str, Any]]:
     """Return header ``net``, ``vat`` and ``gross`` amounts.
 
     When ``invoice_path`` points to an XML invoice, the values are read
@@ -137,28 +139,22 @@ def _build_header_totals(
     if invoice_path and invoice_path.suffix.lower() == ".xml":
         try:
             from wsm.parsing.eslog import (
-                extract_header_net,
-                extract_total_tax,
-                extract_header_gross,
                 DEC2,
+                extract_header_totals_preferred,
             )
 
-            net = extract_header_net(invoice_path)
-            vat = extract_total_tax(invoice_path)
-            gross = extract_header_gross(invoice_path)
-            if gross == 0 and invoice_gross not in (None, Decimal("0")):
+            net, vat, gross, meta = extract_header_totals_preferred(
+                invoice_path, net_fallback=invoice_total, tax_fallback=None
+            )
+            if invoice_gross not in (None, Decimal("0")) and (
+                gross == 0 or gross == invoice_total
+            ):
                 gross = invoice_gross
-
-            if net == 0 and vat != 0 and gross != 0:
-                net = (gross - vat).quantize(DEC2, ROUND_HALF_UP)
-
-            if gross == 0 and net != 0 and vat != 0:
-                gross = (net + vat).quantize(DEC2, ROUND_HALF_UP)
-
-            if vat == 0 and net != 0 and gross != 0:
-                vat = (gross - net).quantize(DEC2, ROUND_HALF_UP)
-
+                if vat == 0 and net != 0:
+                    vat = (gross - net).quantize(DEC2, ROUND_HALF_UP)
             totals = {"net": net, "vat": vat, "gross": gross}
+            if with_meta:
+                return totals, meta
         except Exception as exc:  # pragma: no cover - robust against IO
             log.warning(f"Napaka pri branju zneskov glave: {exc}")
 
@@ -169,6 +165,8 @@ def _build_header_totals(
         totals["vat"],
         totals["gross"],
     )
+    if with_meta:
+        return totals, {}
     return totals
 
 
