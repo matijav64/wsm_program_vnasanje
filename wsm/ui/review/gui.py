@@ -2752,6 +2752,7 @@ def review_links(
     price_tip: tk.Toplevel | None = None
     last_warn_item: str | None = None
     status_tip: tk.Toplevel | None = None
+    net_icon_label_holder: dict[str, tk.Widget | None] = {"widget": None}
 
     # Determine how many rows can fit based on the screen height. Roughly
     # 500px is taken by the header, summary and button sections so we convert
@@ -3741,9 +3742,7 @@ def review_links(
             return 0, len(df)
 
     def _update_summary():
-        icon_holder = globals().setdefault(
-            "net_icon_label_holder", {"widget": None}
-        )
+        icon_holder = net_icon_label_holder
 
         df = globals().get("_CURRENT_GRID_DF")
         if df is None:
@@ -3983,9 +3982,6 @@ def review_links(
         ),
     )
 
-    net_icon_label_holder = globals().setdefault(
-        "net_icon_label_holder", {"widget": None}
-    )
     if net_status == "rounding":
         net_icon = ttk.Label(
             total_frame,
@@ -4062,11 +4058,6 @@ def review_links(
         nonlocal summary_totals
         if closing or not root.winfo_exists():
             return
-
-        # isti holder kot v _update_summary
-        net_icon_label_holder = globals().setdefault(
-            "net_icon_label_holder", {"widget": None}
-        )
 
         warn_state = getattr(_safe_update_totals, "_warn_state", {"val": None})
         _safe_update_totals._warn_state = warn_state

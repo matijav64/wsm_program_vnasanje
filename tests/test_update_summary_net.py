@@ -31,6 +31,7 @@ def _extract_update_summary():
         "_booked_mask_from": rl._booked_mask_from,
         "_norm_wsm_code": rl._norm_wsm_code,
         "doc_discount": Decimal("0"),
+        "net_icon_label_holder": {"widget": None},
     }
     ns["_build_wsm_summary"] = _stub_build_summary(ns)
     exec(snippet, ns)
