@@ -1710,69 +1710,80 @@ def review_links(
     df_doc = _normalize_wsm_display_columns(df_doc)
     df_doc = df_doc.loc[:, ~df_doc.columns.duplicated()].copy()
 
-    doc_discount_raw = df_doc["vrednost"].sum()
+    doc_discount_raw = _sum_decimal(df_doc.get("vrednost", []))
     doc_discount = (
         doc_discount_raw
         if isinstance(doc_discount_raw, Decimal)
         else Decimal(str(doc_discount_raw))
     )
     log.debug("df before _DOC_ filter:\n%s", df.to_string())
-    df = df[df["sifra_dobavitelja"] != "_DOC_"]
+    df = df[df["sifra_dobavitelja"] != "_DOC_"].copy()
     before_correction_len = len(df)
     df = _maybe_apply_rounding_correction(df, header_totals, doc_discount)
     correction_added = len(df) > before_correction_len
     if correction_added:
-        doc_discount_raw = df_doc["vrednost"].sum()
+        doc_discount_raw = _sum_decimal(df_doc.get("vrednost", []))
         doc_discount = (
             doc_discount_raw
             if isinstance(doc_discount_raw, Decimal)
-            else Decimal(str(doc_discount_raw))
+            else _as_dec(doc_discount_raw, "0")
         )
         df_doc = _normalize_wsm_display_columns(df_doc)
         df_doc = df_doc.loc[:, ~df_doc.columns.duplicated()].copy()
         effective_gross = (
             invoice_gross if invoice_gross is not None else header_totals.get("gross")
         )
+        net_base_series = df.get("Skupna neto", df.get("vrednost", []))
         header_totals = _build_header_totals(
             invoice_path,
-            _sum_decimal(df.get("vrednost", [])) + _as_dec(doc_discount, "0"),
+            _sum_decimal(net_base_series) + _as_dec(doc_discount, "0"),
             effective_gross,
         )
-    df["ddv"] = df["ddv"].apply(
-        lambda x: Decimal(str(x)) if not isinstance(x, Decimal) else x
-    )  # ensure VAT values are Decimal for accurate totals
+    # VAT values must stay as-is (net amounts are already without VAT)
+    if "ddv" not in df.columns:
+        df["ddv"] = Decimal("0")
+    df["ddv"] = df["ddv"].apply(lambda x: _as_dec(x, "0"))
     # Ensure a clean sequential index so Treeview item IDs are predictable
     df = df.reset_index(drop=True)
+    # Enotni vir resnice za neto/bruto zneske
+    if "Skupna neto" in df.columns:
+        df["total_net"] = df["Skupna neto"].apply(lambda x: _as_dec(x, "0"))
+    else:
+        df["total_net"] = df["vrednost"].apply(lambda x: _as_dec(x, "0"))
+
+    # raw znesek pred rabatom – robustno tudi, če dobimo samo total_net
+    if "rabata" not in df.columns:
+        df["rabata"] = Decimal("0")
+    df["rabata"] = df["rabata"].apply(lambda x: _as_dec(x, "0"))
+    df["total_raw"] = (df["total_net"] + df["rabata"]).apply(lambda x: _as_dec(x, "0"))
+    df["total_gross"] = (df["total_net"] + df["ddv"]).apply(
+        lambda x: _as_dec(x, "0")
+    )
+    for _c in ("vrednost", "rabata", "Skupna neto"):
+        if _c in df.columns:
+            df[_c] = df[_c].apply(lambda x: _as_dec(x, "0"))
     df["cena_pred_rabatom"] = df.apply(
         lambda r: (
-            (r["vrednost"] + r["rabata"]) / r["kolicina"]
-            if r["kolicina"]
-            else Decimal("0")
+            r["total_raw"] / r["kolicina"] if r["kolicina"] else Decimal("0")
         ),
         axis=1,
     )
     df["cena_po_rabatu"] = df.apply(
         lambda r: (
-            r["vrednost"] / r["kolicina"] if r["kolicina"] else Decimal("0")
+            r["total_net"] / r["kolicina"] if r["kolicina"] else Decimal("0")
         ),
         axis=1,
     )
-
-    for _c in ("vrednost", "rabata"):
-        df[_c] = df[_c].apply(
-            lambda x: x if isinstance(x, Decimal) else Decimal(str(x))
-        )
     df["rabata_pct"] = df.apply(
         lambda r: (
-            (
-                r["rabata"] / (r["vrednost"] + r["rabata"]) * Decimal("100")
-            ).quantize(Decimal("0.01"), ROUND_HALF_UP)
-            if r["vrednost"] != 0 and (r["vrednost"] + r["rabata"]) != 0
+            (r["rabata"] / r["total_raw"] * Decimal("100")).quantize(
+                Decimal("0.01"), ROUND_HALF_UP
+            )
+            if r["total_raw"] != 0
             else Decimal("0")
         ),
         axis=1,
     )
-    df["total_net"] = df["vrednost"]
     df["is_gratis"] = df["rabata_pct"] >= Decimal("99.9")
 
     def _normalize_override_column() -> None:
@@ -2389,13 +2400,19 @@ def review_links(
             df_all, ["kolicina_norm", "Količina"], fill_value=Decimal("0")
         )
 
-        # uporabi isto prioriteto kot zgoraj pri total_s,
-        # da ne bo razlike med net_total in povzetkom
-        amount_s = first_existing_series(
+        # uporabi enotni total_net za seštevke; vrednost je le prikazna
+        amount_raw_s = first_existing_series(
             df_all,
-            ["total_net", "Neto po rabatu", "vrednost", "Skupna neto"],
+            ["total_raw", "vrednost", "total_net", "Skupna neto"],
             fill_value=Decimal("0"),
         )
+        amount_discounted_s = first_existing_series(
+            df_all,
+            ["total_net", "Skupna neto", "Neto po rabatu", "vrednost"],
+            fill_value=Decimal("0"),
+        )
+        if amount_discounted_s is None:
+            amount_discounted_s = pd.Series([Decimal("0")] * len(df_all), index=df_all.index)
 
         rab_s = first_existing_series(
             df_all, ["rabata_pct", "eff_discount_pct"], fill_value=Decimal("0")
@@ -2412,7 +2429,8 @@ def review_links(
             {
                 "code": eff_code,
                 "qty": qty_s,
-                "net": amount_s,
+                "net_raw": amount_raw_s,
+                "net_discounted": amount_discounted_s,
                 "rabat": rab_s,
                 "name": name_s,
             }
@@ -2434,7 +2452,8 @@ def review_links(
                         continue
                 return total
 
-            net_total = _dsum(g["net"])
+            net_total_raw = _dsum(g["net_raw"])
+            net_total_discounted = _dsum(g["net_discounted"])
             qty_total = _dsum(g["qty"])
 
             rab_val = g["rabat"].iloc[0]
@@ -2458,18 +2477,42 @@ def review_links(
                     "WSM šifra": disp_code,
                     "WSM Naziv": disp_name,
                     "Količina": qty_total,
-                    "Znesek": net_total,
+                    "Znesek": net_total_raw,
                     "Rabat (%)": rab_val,
-                    "Neto po rabatu": net_total,
+                    "Neto po rabatu": net_total_discounted,
+                }
+            )
+
+        doc_disc = _as_dec(doc_discount, "0")
+        if doc_disc != 0:
+            records.append(
+                {
+                    "WSM šifra": "",
+                    "WSM Naziv": "DOKUMENTARNI POPUST",
+                    "Količina": Decimal("0"),
+                    "Znesek": doc_disc,
+                    "Rabat (%)": Decimal("0"),
+                    "Neto po rabatu": doc_disc,
                 }
             )
 
         summary_df = summary_df_from_records(records)
 
         # ---- 4) status X / Δ glede na header_totals["net"] ----
-        grid_net_total = summary_df["Neto po rabatu"].map(
-            lambda v: v if isinstance(v, Decimal) else Decimal(str(v))
-        ).sum()
+        doc_disc = _as_dec(doc_discount, "0")
+        net_series = (
+            amount_discounted_s
+            if amount_discounted_s is not None
+            else pd.Series([], dtype=object)
+        )
+        vat_series = df_all.get("ddv", pd.Series([], dtype=object))
+        grid_net_total = (_sum_decimal(net_series) + doc_disc).quantize(
+            Decimal("0.01")
+        )
+        grid_vat_total = _sum_decimal(vat_series).quantize(Decimal("0.01"))
+        grid_gross_total = (grid_net_total + grid_vat_total).quantize(
+            Decimal("0.01")
+        )
 
         try:
             hdr_net = (
@@ -2479,6 +2522,14 @@ def review_links(
             )
         except Exception:
             hdr_net = None
+        try:
+            hdr_gross = (
+                Decimal(str(header_totals.get("gross")))
+                if header_totals.get("gross") is not None
+                else None
+            )
+        except Exception:
+            hdr_gross = None
         net_diff: Decimal | None = None
         tolerance_rounding = Decimal("0.05")
 
@@ -2498,6 +2549,15 @@ def review_links(
                 status = "Δ"
             else:
                 status = ""
+
+        if hdr_gross is not None:
+            gross_diff = (hdr_gross - grid_gross_total).quantize(Decimal("0.01"))
+            log.info(
+                "GROSS DIFF CHECK: doc_gross=%s, grid_gross=%s, diff=%s",
+                hdr_gross,
+                grid_gross_total,
+                gross_diff,
+            )
 
         return summary_df, status, net_diff
 
@@ -2644,6 +2704,7 @@ def review_links(
         .sum()
         .quantize(Decimal("0.01"))
     )
+    net_total = (net_total + _as_dec(doc_discount, "0")).quantize(Decimal("0.01"))
 
     # header_net_dec izračunamo enkrat in ga uporabimo tudi v povzetku
     try:
@@ -3680,7 +3741,9 @@ def review_links(
             return 0, len(df)
 
     def _update_summary():
-        nonlocal net_icon_label
+        icon_holder = globals().setdefault(
+            "net_icon_label_holder", {"widget": None}
+        )
 
         df = globals().get("_CURRENT_GRID_DF")
         if df is None:
@@ -3697,13 +3760,27 @@ def review_links(
                 sum_unbooked_var.set("Ostane: 0")
             except Exception:
                 pass
-            if net_icon_label is not None:
+            net_icon_label = icon_holder["widget"]
+            if net_icon_label is not None and getattr(
+                net_icon_label, "winfo_exists", lambda: False
+            )():
                 net_icon_label.config(text="")
             return
 
+        header_net_for_summary = globals().get("header_net_dec")
+        if header_net_for_summary is None:
+            try:
+                header_net_for_summary = (
+                    header_totals.get("net")
+                    if isinstance(header_totals.get("net"), Decimal)
+                    else Decimal(str(header_totals.get("net")))
+                )
+            except Exception:
+                header_net_for_summary = None
+
         # --- novi povzetek z OSTALO vrstico ---
         summary_df, summary_status, net_diff_val = _build_wsm_summary(
-            df, summary_totals.get("net", header_net_dec)
+            df, header_net_for_summary
         )
 
         _render_summary(summary_df)
@@ -3729,7 +3806,11 @@ def review_links(
         except Exception:
             pass
 
+        if "ttk" not in globals():
+            return
+
         # --- NET indikator (X / Δ) ---
+        net_icon_label = icon_holder["widget"]
         if net_icon_label is None or not net_icon_label.winfo_exists():
             net_icon_label = ttk.Label(total_frame)
             net_icon_label.pack(side="left", padx=5)
@@ -3753,6 +3834,7 @@ def review_links(
             tooltip = None
 
         _bind_status_tooltip(net_icon_label, tooltip)
+        icon_holder["widget"] = net_icon_label
 
     def format_eur(value: Decimal | float | int | str) -> str:
         try:
@@ -3901,14 +3983,16 @@ def review_links(
         ),
     )
 
-    net_icon_label: ttk.Label | None = None
+    net_icon_label_holder = globals().setdefault(
+        "net_icon_label_holder", {"widget": None}
+    )
     if net_status == "rounding":
-        net_icon_label = ttk.Label(
+        net_icon = ttk.Label(
             total_frame,
             text="△",
             foreground="#d48c00",
         )
-        net_icon_label.pack(side="left", padx=5)
+        net_icon.pack(side="left", padx=5)
         diff_text = (
             f"{net_diff:+.2f} €" if isinstance(net_diff, Decimal) else None
         )
@@ -3917,12 +4001,13 @@ def review_links(
             if diff_text
             else "Razlika v neto znesku (verjetno zaokroževanje)."
         )
-        _bind_status_tooltip(net_icon_label, tooltip)
+        _bind_status_tooltip(net_icon, tooltip)
+        net_icon_label_holder["widget"] = net_icon
     elif net_status == "mismatch":
-        net_icon_label = ttk.Label(
+        net_icon = ttk.Label(
             total_frame, text="✗", style="Indicator.Red.TLabel"
         )
-        net_icon_label.pack(side="left", padx=5)
+        net_icon.pack(side="left", padx=5)
         diff_text = (
             f"{net_diff:+.2f} €" if isinstance(net_diff, Decimal) else None
         )
@@ -3931,7 +4016,8 @@ def review_links(
             if diff_text
             else "Razlika v neto znesku – preveri račun!"
         )
-        _bind_status_tooltip(net_icon_label, tooltip)
+        _bind_status_tooltip(net_icon, tooltip)
+        net_icon_label_holder["widget"] = net_icon
 
     indicator_label = ttk.Label(
         total_frame, text="", style="Indicator.Red.TLabel"
@@ -3977,6 +4063,11 @@ def review_links(
         if closing or not root.winfo_exists():
             return
 
+        # isti holder kot v _update_summary
+        net_icon_label_holder = globals().setdefault(
+            "net_icon_label_holder", {"widget": None}
+        )
+
         warn_state = getattr(_safe_update_totals, "_warn_state", {"val": None})
         _safe_update_totals._warn_state = warn_state
 
@@ -3995,29 +4086,32 @@ def review_links(
                 formatted = formatted.replace(".", ",").replace(" ", ".")
                 return f"{formatted} €"
 
-        if "neto" in df.columns:
-            neto_series = df["neto"].apply(lambda x: _as_dec(x, "0"))
+        df_cur = globals().get("_CURRENT_GRID_DF")
+        if df_cur is None:
+            df_cur = df
+        if df_cur is not None:
+            df_cur = df_cur.loc[:, ~df_cur.columns.duplicated()].copy()
+
+        if df_cur is not None and "total_net" in df_cur.columns:
+            net_series = df_cur["total_net"].apply(lambda x: _as_dec(x, "0"))
+        elif df_cur is not None and "vrednost" in df_cur.columns:
+            net_series = df_cur["vrednost"].apply(lambda x: _as_dec(x, "0"))
         else:
-            neto_series = df["total_net"].apply(lambda x: _as_dec(x, "0"))
-        if "ddv" in df.columns:
-            ddv_series = df["ddv"].apply(lambda x: _as_dec(x, "0"))
+            net_series = pd.Series(
+                [_as_dec("0", "0")] * (len(df_cur) if df_cur is not None else 0),
+                index=(df_cur.index if df_cur is not None else None),
+            )
+        if df_cur is not None and "ddv" in df_cur.columns:
+            ddv_series = df_cur["ddv"].apply(lambda x: _as_dec(x, "0"))
         else:
             ddv_series = pd.Series(
-                [_as_dec("0", "0")] * len(df), index=df.index
+                [_as_dec("0", "0")] * (len(df_cur) if df_cur is not None else 0),
+                index=(df_cur.index if df_cur is not None else None),
             )
-        doc_discount_mask = (ddv_series == Decimal("0")) & (neto_series < 0)
-        sum_doc_discount = _sum_decimal(neto_series[doc_discount_mask]).quantize(
-            Decimal("0.01")
-        )
-        sum_net_lines_without_doc_discount = _sum_decimal(
-            neto_series[~doc_discount_mask]
-        ).quantize(Decimal("0.01"))
-        net_after_doc_discount = (
-            sum_net_lines_without_doc_discount + sum_doc_discount
-        ).quantize(Decimal("0.01"))
-        net_total = net_after_doc_discount
+        doc_disc = _as_dec(doc_discount, "0").quantize(Decimal("0.01"))
+        net_total = (_sum_decimal(net_series) + doc_disc).quantize(Decimal("0.01"))
         vat_val = _sum_decimal(ddv_series).quantize(Decimal("0.01"))
-        calc_total = net_total + vat_val
+        calc_total = (net_total + vat_val).quantize(Decimal("0.01"))
         summary_totals.update({"net": net_total, "vat": vat_val, "gross": calc_total})
         inv_total = (
             header_totals["gross"]
@@ -4028,26 +4122,14 @@ def review_links(
         tolerance = _resolve_tolerance(net_total, inv_total)
         diff = inv_total - calc_total
         difference = abs(diff)
-        discount = doc_discount
         if difference > tolerance:
-            if discount:
-                diff2 = inv_total - (calc_total + abs(discount))
-                if abs(diff2) > tolerance:
-                    msg = (
-                        "Razlika med postavkami in računom je "
-                        f"{diff2:+.2f} € in presega dovoljeno zaokroževanje."
-                    )
-                    if warn_state["val"] != msg:
-                        warn_state["val"] = msg
-                        messagebox.showwarning("Opozorilo", msg)
-            else:
-                msg = (
-                    "Razlika med postavkami in računom je "
-                    f"{diff:+.2f} € in presega dovoljeno zaokroževanje."
-                )
-                if warn_state["val"] != msg:
-                    warn_state["val"] = msg
-                    messagebox.showwarning("Opozorilo", msg)
+            msg = (
+                "Razlika med postavkami in računom je "
+                f"{diff:+.2f} € in presega dovoljeno zaokroževanje."
+            )
+            if warn_state["val"] != msg:
+                warn_state["val"] = msg
+                messagebox.showwarning("Opozorilo", msg)
         else:
             # razlika je OK -> dovoli prihodnja opozorila
             warn_state["val"] = None
@@ -4073,40 +4155,21 @@ def review_links(
             )
         except Exception:
             header_net_dec = None
-        net_for_header_compare = sum_net_lines_without_doc_discount
+        net_for_header_compare = net_total
         net_status = _classify_net_difference(
             header_net_dec, net_for_header_compare, tolerance=tolerance
         )
 
         net_diff = (
-            (net_for_header_compare - header_net_dec).quantize(
+            (header_net_dec - net_for_header_compare).quantize(
                 Decimal("0.01"), rounding=_round_half_up
             )
             if header_net_dec is not None
             else None
         )
 
-        # preveri, ali je razlika med glavo in netom po popustu razložena z dokumentarnim popustom
         explained_by_doc_discount = False
-        if header_net_dec is not None and sum_doc_discount != 0:
-            try:
-                net_diff_after_disc = (
-                    (header_net_dec - net_total).quantize(
-                        Decimal("0.01"), rounding=_round_half_up
-                    )
-                )
-                tolerance_doc = Decimal("0.10")  # 0,10 € tolerance
-                if (
-                    abs(abs(net_diff_after_disc) - abs(sum_doc_discount))
-                    <= tolerance_doc
-                ):
-                    explained_by_doc_discount = True
-            except Exception:
-                explained_by_doc_discount = False
-        try:
-            default_net_icon = net_icon_label
-        except NameError:
-            default_net_icon = None
+        default_net_icon = net_icon_label_holder["widget"]
         net_icon_label_ref = getattr(
             _safe_update_totals, "_net_icon", default_net_icon
         )
@@ -4156,6 +4219,7 @@ def review_links(
             except Exception:
                 pass
         _safe_update_totals._net_icon = net_icon_label_ref
+        net_icon_label_holder["widget"] = net_icon_label_ref
         try:
             eslog_mode = eslog_totals.mode  # type: ignore[name-defined]
         except Exception:
