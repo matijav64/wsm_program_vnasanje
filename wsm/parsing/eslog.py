@@ -1476,7 +1476,7 @@ def sum_moa(
     skipped to avoid mistaking VAT totals for discounts.
     """
 
-    wanted = set(codes) - {"124", "125"}
+    wanted = set(codes) - {"124", "125", "176"}
     total = Decimal("0")
 
     # Locate all allowance/charge segments and evaluate sibling MOA values
@@ -1553,7 +1553,7 @@ def _get_document_discount(xml_root: LET._Element) -> Decimal:
     discount_str = discount_el.text if discount_el is not None else None
 
     def _find_moa_values(codes: set[str]) -> Decimal:
-        codes = set(codes) - {"124", "125"}
+        codes = set(codes) - {"124", "125", "176"}
         total = Decimal("0")
         for seg in xml_root.iter():
             if seg.tag.split("}")[-1] != "S_MOA":
