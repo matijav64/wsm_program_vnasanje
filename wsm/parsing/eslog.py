@@ -75,6 +75,7 @@ DEC2 = Decimal("0.01")
 DEC4 = Decimal("0.0001")
 TOL = Decimal("0.01")
 NET_TOL = Decimal("0.10")
+GROSS_TOL = Decimal("0.05")
 
 
 def _first_text(root, xpaths: list[str]) -> str | None:
@@ -1475,7 +1476,7 @@ def sum_moa(
     skipped to avoid mistaking VAT totals for discounts.
     """
 
-    wanted = set(codes)
+    wanted = set(codes) - {"124", "125", "176"}
     total = Decimal("0")
 
     # Locate all allowance/charge segments and evaluate sibling MOA values
@@ -1552,6 +1553,7 @@ def _get_document_discount(xml_root: LET._Element) -> Decimal:
     discount_str = discount_el.text if discount_el is not None else None
 
     def _find_moa_values(codes: set[str]) -> Decimal:
+        codes = set(codes) - {"124", "125", "176"}
         total = Decimal("0")
         for seg in xml_root.iter():
             if seg.tag.split("}")[-1] != "S_MOA":
@@ -1564,7 +1566,7 @@ def _get_document_discount(xml_root: LET._Element) -> Decimal:
                     code = (el.text or "").strip()
                 elif tag == "D_5004":
                     amount = (el.text or "").strip()
-            if code in set(DEFAULT_DOC_DISCOUNT_CODES) and amount is not None:
+            if code in codes and amount is not None:
                 val = Decimal(amount.replace(",", "."))
                 if val < 0:
                     total += -val
@@ -2666,7 +2668,7 @@ def parse_eslog_invoice(
             mode = "real"
 
         gross_selected = gross_info if mode == "info" else gross_real
-        if hdr9 is not None and abs(gross_selected - hdr9) > TOL:
+        if hdr9 is not None and abs(gross_selected - hdr9) > GROSS_TOL:
             other_gross = gross_real if mode == "info" else gross_info
             if abs(hdr9 - other_gross) < abs(gross_selected - hdr9):
                 mode = "real" if mode == "info" else "info"
@@ -2724,7 +2726,7 @@ def parse_eslog_invoice(
         header_net_for_doc is not None
         and hdr9 is not None
         and -TOL <= (sum_line_net - header_net_for_doc) <= TOL
-        and -TOL <= (gross_before_doc - hdr9) <= TOL
+        and -GROSS_TOL <= (gross_before_doc - hdr9) <= GROSS_TOL
     )
 
     # ───────── DOCUMENT ALLOWANCES & CHARGES ─────────
@@ -2861,8 +2863,8 @@ def parse_eslog_invoice(
     gross_calc = (net_total + vat_total).quantize(DEC2, ROUND_HALF_UP)
     gross_attr = preferred_gross
     diff_gross = abs(gross_calc - gross_attr)
-    ok = diff_gross <= DEC2
-    warn_gross = diff_gross > DEC2
+    ok = diff_gross <= GROSS_TOL
+    warn_gross = diff_gross > GROSS_TOL
     if warn_gross and _mode_override is None:
         buf = io.BytesIO(LET.tostring(root))
         alt_mode = "real" if _INFO_DISCOUNTS else "info"
@@ -2891,7 +2893,7 @@ def parse_eslog_invoice(
     if gross_reference != 0:
         gross_check = (net_total + vat_total).quantize(DEC2, ROUND_HALF_UP)
         final_diff = abs(gross_check - gross_reference)
-        if final_diff <= DEC2:
+        if final_diff <= GROSS_TOL:
             ok = True
         elif warn_gross:
             log.warning(
