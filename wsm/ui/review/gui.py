@@ -44,6 +44,13 @@ from .helpers import (
     _norm_wsm_code,
 )
 from .io import _save_and_close, _load_supplier_map
+from .ostalo_store import (
+    make_ostalo_sig,
+    load_confirmed,
+    append_confirmed,
+    export_new,
+    mark_auto_storno,
+)
 from .summary_columns import SUMMARY_COLS, SUMMARY_KEYS, SUMMARY_HEADS
 from .summary_utils import summary_df_from_records
 
@@ -1739,6 +1746,91 @@ def review_links(
             _sum_decimal(net_base_series) + _as_dec(doc_discount, "0"),
             effective_gross,
         )
+
+    # ========================================================================
+    # AUTO-DETECT OSTALO AND STORNO
+    # ========================================================================
+    try:
+        # Setup paths
+        data_dir = Path("wsm/data")
+        data_dir.mkdir(parents=True, exist_ok=True)
+        confirmed_path = data_dir / "confirmed_ostalo.csv"
+        new_ostalo_path = data_dir / f"ostalo_novo_{supplier_code}.csv"
+
+        # Calculate normalized wsm_sifra codes
+        codes_series = _norm_wsm_code(df.get("wsm_sifra", pd.Series("", index=df.index)))
+
+        # Generate OSTALO signatures
+        df["_ostalo_sig"] = make_ostalo_sig(df, supplier_code)
+        log.info("Generated OSTALO signatures for %d items", df["_ostalo_sig"].ne("").sum())
+
+        # Load confirmed OSTALO from previous sessions
+        confirmed_set = load_confirmed(confirmed_path)
+
+        # Detect STORNO pairs (canceling +/- items)
+        storno_mask = mark_auto_storno(df, supplier_code)
+
+        # Determine linked items (by wsm_sifra, NOT by status)
+        linked_mask = codes_series.ne("") & ~codes_series.str.upper().eq("OSTALO")
+
+        # Determine unmapped items (no WSM code or OSTALO, and not storno)
+        unmapped_mask = (
+            (codes_series.eq("") | codes_series.str.upper().eq("OSTALO"))
+            & ~storno_mask
+        )
+
+        # Confirmed OSTALO: unmapped items with signature in confirmed set
+        confirmed_ostalo_mask = (
+            unmapped_mask
+            & df["_ostalo_sig"].isin(confirmed_set)
+            & df["_ostalo_sig"].ne("")
+        )
+
+        # New OSTALO: unmapped items NOT in confirmed set
+        new_ostalo_mask = (
+            unmapped_mask
+            & ~confirmed_ostalo_mask
+            & df["_ostalo_sig"].ne("")
+        )
+
+        # Apply status labels (priority: STORNO > POVEZANO > OSTALO)
+        # Only update if status is not already set (preserve manual changes)
+        if "status" not in df.columns:
+            df["status"] = ""
+
+        # Convert status to string for safe comparison
+        status_series = df["status"].astype(str).str.strip()
+
+        # 1. Mark STORNO pairs (highest priority)
+        storno_update_mask = storno_mask & ~status_series.str.startswith("POVEZANO")
+        if storno_update_mask.any():
+            df.loc[storno_update_mask, "status"] = "STORNO (AUTO)"
+            log.info("Marked %d items as STORNO (AUTO)", storno_update_mask.sum())
+
+        # 2. Mark LINKED items
+        linked_update_mask = linked_mask & ~status_series.str.startswith("POVEZANO")
+        if linked_update_mask.any():
+            df.loc[linked_update_mask, "status"] = "POVEZANO"
+            log.info("Marked %d items as POVEZANO", linked_update_mask.sum())
+
+        # 3. Mark confirmed OSTALO
+        if confirmed_ostalo_mask.any():
+            df.loc[confirmed_ostalo_mask, "status"] = "OSTALO (POTRJENO)"
+            log.info("Marked %d items as OSTALO (POTRJENO)", confirmed_ostalo_mask.sum())
+
+        # 4. Mark new OSTALO and export
+        if new_ostalo_mask.any():
+            df.loc[new_ostalo_mask, "status"] = "OSTALO (NOVO)"
+            log.info("Marked %d items as OSTALO (NOVO)", new_ostalo_mask.sum())
+            export_new(df, new_ostalo_mask, new_ostalo_path)
+
+    except Exception as exc:
+        log.warning("Failed to auto-detect OSTALO/STORNO: %s", exc, exc_info=True)
+
+    # ========================================================================
+    # END AUTO-DETECT
+    # ========================================================================
+
     # VAT values must stay as-is (net amounts are already without VAT)
     if "ddv" not in df.columns:
         df["ddv"] = Decimal("0")
@@ -2634,14 +2726,13 @@ def review_links(
     _init_booking_columns(df)
 
     try:
-        if {"status", "wsm_sifra"}.issubset(df.columns):
-            status_series = (
-                df["status"].astype("string").fillna("").str.strip().str.upper()
-            )
+        if "wsm_sifra" in df.columns:
             codes_series = (
                 df["wsm_sifra"].map(_norm_wsm_code).astype("string").fillna("").str.strip()
             )
-            linked_mask = status_series.str.startswith("POVEZANO") & codes_series.ne("")
+            # linked_mask based ONLY on wsm_sifra, NOT on status
+            # This ensures summary always follows actual codes, regardless of status
+            linked_mask = codes_series.ne("") & ~codes_series.str.upper().eq("OSTALO")
             if linked_mask.any():
                 df.loc[linked_mask, "_booked_sifra"] = codes_series.loc[linked_mask]
                 df.loc[linked_mask, "_summary_key"] = codes_series.loc[linked_mask]
@@ -4460,6 +4551,16 @@ def review_links(
         _safe_update_totals()
         _cleanup()
         df["dobavitelj"] = supplier_name
+
+        # Save confirmed OSTALO items before closing
+        try:
+            data_dir = Path("wsm/data")
+            confirmed_path = data_dir / "confirmed_ostalo.csv"
+            append_confirmed(df, confirmed_path)
+            log.info("Confirmed OSTALO items saved successfully")
+        except Exception as exc:
+            log.warning("Failed to save confirmed OSTALO: %s", exc)
+
         if is_toplevel:
             original_quit = root.quit
             root.quit = root.destroy
